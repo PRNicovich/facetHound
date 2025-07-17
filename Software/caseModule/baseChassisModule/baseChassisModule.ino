@@ -1,23 +1,11 @@
-/**
-   @file Unvarnished_Transmission.ino
-   @author rakwireless.com
-   @brief unvarnished transmission via USB
-   @version 0.1
-   @date 2021-6-28
-   @copyright Copyright (c) 2020
-**/
-
 #define KEYS_TX_PIN 6
 #define KEYS_RX_PIN 7
-
 
 #define DISP_TX_PIN 4
 #define DISP_RX_PIN 5
 
-
 SerialPIO keysSerial(KEYS_TX_PIN,KEYS_RX_PIN);
 SerialPIO dispSerial(DISP_TX_PIN,DISP_RX_PIN);
-
 
 uint8_t keyString[] = {0, 0, 0, 0, 0, 0, 0};
 int k = 0;
@@ -27,25 +15,40 @@ uint8_t lastVal = 0;
 
 bool updateTiltAngle = true;
 float tiltAngle = 0;
+float tiltMult[] = {0.01, 0.1, 1.0};
+int tiltIdx = 0;
+bool tiltLock = false;
+bool spinServoIdx = false;
+bool cheatMode = false;
 
 bool updateTipAngle = true;
 float tipAngle = 44.5;
 
 bool updateZValue = true;
 float zValue = 115.442;
+float zMult[] = {0.001, 0.010, 0.100};
+int zIdx = 0;
+bool zLock = false;
 
 bool updateRPMValue = true;
-uint32_t RPMValue = 4568;
+float RPMValue = 0;
+int8_t RPM_dir = 0;
 
 bool updateFlowRate = true;
-float flowRate = 25.5;
+float flowRate = 0.0;
+int8_t flow_dir = 0;
+float flowRateMin = 0.0;
+float flowRateMax = 64.00;
 
 bool updateForceBar = true;
-uint32_t forceBar = 0;
+float forceBar = 0;
+uint32_t forceRaw = 0;
 
-void setup()
-{
-	time_t serial_timeout = millis();
+int markPointIdx = 0;
+int nMarkPoints = 0;
+
+void setup(){
+
 	Serial.begin(115200);
 
 	keysSerial.begin(115200);
@@ -61,6 +64,9 @@ void setup()
 	}
 	dispSerial.flush();
 
+
+	Serial.flush();
+
 }
 
 
@@ -72,12 +78,15 @@ void loop(){
 		handleKeyboardUART();
 
 		}
+
+
 }
 
 void sendToDisplayUART(char* x){
 
-	dispSerial.println(x);
+	//dispSerial.println(x);
 	Serial.println(x);
+	Serial.flush();
 
 }
 
@@ -122,9 +131,10 @@ void handleKeyboardUART(){
 }
 
 
+
 void keyboardRouter(uint8_t keyString[]){
 
-	for (int i = 0; i < (sizeof(keyString) / sizeof(keyString[0])); i++){
+	for (int i = 0; i < 8; i++){
 		
 		char buff[8];
 		char stringOut[8];
@@ -149,169 +159,147 @@ void keyboardRouter(uint8_t keyString[]){
 
 			case 4:
 				//Serial.print(" 4 ");
-				sendToDisplayUART("a");
+				settingsMode();
 				break;
 
 			case 5:
 				//Serial.print(" 5 ");
-				sendToDisplayUART("b");
+				zeroTilt();
 				break;
 
 			case 6:
 				//Serial.print(" 6 ");
-				sendToDisplayUART("c");
+				undeclaredFunction();
 				break;
 
 			case 7:
 				//Serial.print(" 7 ");
-				sendToDisplayUART("d");
+				toggleZLock();
 				break;
 
 			case 8:
 				//Serial.print(" 8 ");
-				sendToDisplayUART("e");
+				addPositionToList();
 				break;
 
 			case 9:
 				//Serial.print(" 9 ");
-				sendToDisplayUART("f");
+				undeclaredFunction();
 				break;
 
 			case 10:
 				//Serial.print(" 10 ");
-				sendToDisplayUART("g");
+				undeclaredFunction();
 				break;
 
 			case 11:
 				//Serial.print(" 11 ");
-				sendToDisplayUART("h");
+				spinServoModeToggle();
 				break;
 
 			case 12:
 				//Serial.print(" 12 ");
-				sendToDisplayUART("i");
+				changeMarkPointIndex(false);
 				break;
 
 			case 13:
 				//Serial.print(" 13 ");
-				sendToDisplayUART("j");
+				changeMarkPointIndex(true);
 				break;
 
 			case 14:
 				//Serial.print(" 14 ");
-				sendToDisplayUART("k");
+				toggleCheatMode();
 				break;
 
 			case 15:
 			  //Serial.print(" 15 ");
-				sendToDisplayUART("l");
+				toggleTiltLock();
 				break;
 
 
 
 			case 16:
-		 		tiltAngle = tiltAngle + 1;
-				
-				dtostrf(tiltAngle, 1, 2, buff);
-				sprintf(stringOut, "T %s", buff);
-				sendToDisplayUART(stringOut);
+		 		tiltAngle = tiltAngle + tiltMult[tiltIdx];
+				changeTiltAngle();
+				updateTiltAngleOnScreen();
 				break;
 
 			case 17:
-		 		tiltAngle = 0;
-				
-				dtostrf(tiltAngle, 1, 2, buff);
-				sprintf(stringOut, "T %s", buff);
-				sendToDisplayUART(stringOut);
+		 		tiltIdx = tiltIdx + 1;
+				if (tiltIdx >= 3){
+					tiltIdx = 0;
+				}
+				updateTiltIdxOnScreen();
 				break;
 
 			case 18:
-		 		tiltAngle = tiltAngle - 1;
-				
-				dtostrf(tiltAngle, 1, 2, buff);
-				sprintf(stringOut, "T %s", buff);
-				sendToDisplayUART(stringOut);
+		 		tiltAngle = tiltAngle - tiltMult[tiltIdx];
+				changeTiltAngle();
+				updateTiltAngleOnScreen();
 				break;
 
 			case 30:
-		 		flowRate = flowRate + 1;
-				
-				dtostrf(flowRate, 1, 2, buff);
-				sprintf(stringOut, "F %s", buff);
-				sendToDisplayUART(stringOut);
+				flowRate = flowRate + 1;
+				changeFlowRate();
+				updateFlowRateOnScreen();
 				break;
 
 			case 31:
-		 		flowRate = 0;
+
+				chageFlowDirection();
 				
-				dtostrf(flowRate, 1, 2, buff);
-				sprintf(stringOut, "F %s", buff);
-				sendToDisplayUART(stringOut);
 				break;
 
 			case 32:
-		 		flowRate = flowRate - 1;
-				
-				dtostrf(flowRate, 1, 2, buff);
-				sprintf(stringOut, "F %s", buff);
-				sendToDisplayUART(stringOut);
+				flowRate = flowRate - 1;
+				changeFlowRate();
+				updateFlowRateOnScreen();
 				break;
 
 			case 33:
 		 		RPMValue = RPMValue + 1;
-				
-				dtostrf(RPMValue, 1, 2, buff);
-				sprintf(stringOut, "R %s", buff);
-				sendToDisplayUART(stringOut);
+				changeMotorSpeed();
+				updateRPMValueOnScreen();
 				break;
 
 			case 34:
-		 		RPMValue = 0;
+
+				changeMotorDirection();
 				
-				dtostrf(RPMValue, 1, 2, buff);
-				sprintf(stringOut, "R %s", buff);
-				sendToDisplayUART(stringOut);
 				break;
 
 			case 35:
 		 		RPMValue = RPMValue - 1;
-				
-				dtostrf(RPMValue, 1, 2, buff);
-				sprintf(stringOut, "R %s", buff);
-				sendToDisplayUART(stringOut);
+				changeMotorSpeed();
+				updateRPMValueOnScreen();
 				break;
 
 			case 36:
 
-				zValue = zValue + 1;
-				
-				dtostrf(zValue, 1, 3, buff);
-				sprintf(stringOut, "Z %s", buff);
-				sendToDisplayUART(stringOut);
-
+				zValue = zValue + zMult[zIdx];
+				//changeZMotorSteps();
+				//Serial.println(zValue);
+				updateZValueOnScreen();
 				break;
 
 			case 37:
-
-				zValue = 0;
-				dtostrf(zValue, 1, 3, buff);
-				sprintf(stringOut, "Z %s", buff);
-				sendToDisplayUART(stringOut);
-
+				// Change multiplier
+				changeZMultiplier();
+				
 				break;
 
 			case 38:
-
-				zValue = zValue - 1;
-				dtostrf(zValue, 1, 3, buff);
-				sprintf(stringOut, "Z %s", buff);
-				sendToDisplayUART(stringOut);
-
+				zValue = zValue - zMult[zIdx];
+				//changeZMotorSteps();
+				//Serial.println(zValue);
+				updateZValueOnScreen();
 				break;
 
 
 			default:
-				Serial.print(keyString[i]);
+				//Serial.print(keyString[i]);
+				//Serial.println("unidentified character!");
 				break;
 		}
 
@@ -327,3 +315,221 @@ void keyboardRouter(uint8_t keyString[]){
 
 
 }
+
+
+void changeTiltAngle(){
+	// Do something to move the tilt angle
+}
+
+void chageFlowDirection(){
+	// Change DIR pin on TMC2208 to flow pump
+	// Handle pause + lock-out logic 
+	// Handle update to screen commands
+
+	flow_dir = flow_dir + 1;
+		if (flow_dir >= 3){
+			flow_dir = 0;
+		}
+	updateFlowIdxOnScreen();
+}
+
+void changeFlowRate(){
+
+	if (flowRate >= flowRateMax){
+			flowRate = flowRateMax;
+		}
+	else if (flowRate <= flowRateMin){
+			flowRate = flowRateMin;					
+		}
+
+	// Change speed command to TMC for water pump
+}
+
+void changeMotorSpeed(){
+	// Command change in ESC motor via PWM
+}
+
+void changeMotorDirection(){
+	// Update ESC motor direction
+	// Include logic for pause + lock/unlock
+
+		 		RPM_dir = RPM_dir + 1;
+				if (RPM_dir >= 3){
+					RPM_dir = 0;
+				}
+
+	updateRPMIdxOnScreen();
+}
+
+void updateESCLockOnScreen(){
+	// Toggle icons for lock/unlock of ESC motor direction w/ encoder push
+
+}
+
+void changeZMotorSteps(){
+	// Command Z Movement
+	//Serial.println("Move Z!");
+}
+
+
+void changeZMultiplier(){
+
+	zIdx = zIdx + 1;
+
+	if (zIdx >= 3){
+		zIdx = 0;
+	}
+	updateZIdxOnScreen();
+}
+
+void sendCharAndFloat(char* s, float f, int decimals){
+	char buff[12];
+	char stringOut[12];
+
+	dtostrf(f, 1, decimals, buff);
+	sprintf(stringOut, "%s %s", s, buff);
+	sendToDisplayUART(stringOut);
+
+}
+
+void sendCharAndInt(char* s, int i){
+	char stringOut[8];
+	sprintf(stringOut, "%s %d", s, i);
+	sendToDisplayUART(stringOut);
+}
+
+void updateFlowIdxOnScreen(){
+	sendCharAndInt("f", flow_dir);
+}
+
+void updateRPMIdxOnScreen(){
+	sendCharAndInt("r", RPM_dir);
+}
+
+void updateRPMValueOnScreen(){
+	sendCharAndFloat("R", RPMValue, 1);
+}
+
+void updateFlowRateOnScreen(){
+	sendCharAndFloat("F", flowRate, 2);
+}
+
+void updateTiltAngleOnScreen(){
+	sendCharAndFloat("T", tiltAngle, 2);
+}
+
+void updateTiltIdxOnScreen(){
+	sendCharAndInt("t", tiltIdx);
+}
+
+void updateTipAngleOnScreen(){
+	sendCharAndFloat("P", tipAngle, 2);
+}
+
+void updateForceValueOnScreen(){
+	sendCharAndFloat("N", forceBar, 1);
+}
+
+void updateZValueOnScreen(){
+	sendCharAndFloat("Z", zValue, 3);
+
+	//Serial.println(zValue, 3);
+
+
+}
+
+
+void updateZIdxOnScreen(){
+	sendCharAndInt("z", zIdx);
+}
+
+void updateSpinServoOnScreen(){
+	sendCharAndInt("s", spinServoIdx);
+}
+
+void updateZLockOnScreen(){
+	sendCharAndInt("a", zLock);
+}
+
+void updateTiltLockOnScreen(){
+	sendCharAndInt("b", tiltLock);
+}
+
+void updateCheatModeOnOffOnScreen(){
+	sendCharAndInt("g", cheatMode);
+}
+
+void updateMarkPointInfoOnScreen(){
+	char stringOut[8];
+	sprintf(stringOut, "M %d", markPointIdx);
+	// Send info to display about which mark point info to show
+	Serial.println(stringOut);
+	
+}
+
+void settingsMode(){
+	Serial.println("Settings Mode!");
+}
+
+void zeroTilt(){
+	// Zero tilt angle
+	tiltAngle = 0;
+	updateTiltAngleOnScreen();
+}
+
+void toggleZLock(){
+	zLock = not(zLock);
+	// Set ENABLE pin on Z motor driver to lock/unlock free spin
+	updateZLockOnScreen();
+}
+
+void undeclaredFunction(){
+	Serial.println("Key unassigned");
+}
+
+void addPositionToList(){
+	Serial.println("Add position");
+	nMarkPoints = nMarkPoints + 1;
+	updateMarkPointInfoOnScreen();
+}
+
+void spinServoModeToggle(){
+	spinServoIdx = not(spinServoIdx);
+	updateSpinServoOnScreen();
+}
+
+void changeMarkPointIndex(bool dir){
+	if (dir){
+		markPointIdx = markPointIdx + 1; 
+	}
+	else{
+		markPointIdx = markPointIdx - 1;
+	}
+	if (markPointIdx < 0){
+		if (nMarkPoints == 0){
+			markPointIdx = 0;
+		}
+		else{
+			markPointIdx = (nMarkPoints-1);
+		}
+	}
+	else if (markPointIdx >= nMarkPoints){
+		markPointIdx = 0;
+	}
+
+	updateMarkPointInfoOnScreen();
+
+}
+
+void toggleTiltLock(){
+	tiltLock = not(tiltLock);
+
+	// Set ENABLE pin on Z motor driver to lock/unlock free spin
+	updateTiltLockOnScreen();
+}
+
+void toggleCheatMode(){
+	cheatMode = not(cheatMode);
+	updateCheatModeOnOffOnScreen();
+}
+
