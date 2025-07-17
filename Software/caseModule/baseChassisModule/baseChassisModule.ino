@@ -4,8 +4,15 @@
 #define DISP_TX_PIN 4
 #define DISP_RX_PIN 5
 
+#define MAST_TX_PIN 2
+#define MAST_RX_PIN 3
+
+#define DISP_IN 0
+#define MAST_IN 1
+
 SerialPIO keysSerial(KEYS_TX_PIN,KEYS_RX_PIN);
 SerialPIO dispSerial(DISP_TX_PIN,DISP_RX_PIN);
+SerialPIO mastSerial(MAST_TX_PIN, MAST_RX_PIN);
 
 uint8_t keyString[] = {0, 0, 0, 0, 0, 0, 0};
 int k = 0;
@@ -15,6 +22,8 @@ uint8_t lastVal = 0;
 
 bool updateTiltAngle = true;
 float tiltAngle = 0;
+uint32_t tiltEncRaw = 0;
+float tiltConversion = 1e-3;
 float tiltMult[] = {0.01, 0.1, 1.0};
 int tiltIdx = 0;
 bool tiltLock = false;
@@ -23,9 +32,13 @@ bool cheatMode = false;
 
 bool updateTipAngle = true;
 float tipAngle = 44.5;
+uint32_t tipEncRaw = 0;
+float tipConversion = 1e-3;
 
 bool updateZValue = true;
 float zValue = 115.442;
+uint32_t zEncSteps = 0;
+float zConversionFactor = 1e-3;
 float zMult[] = {0.001, 0.010, 0.100};
 int zIdx = 0;
 bool zLock = false;
@@ -43,6 +56,7 @@ float flowRateMax = 64.00;
 bool updateForceBar = true;
 float forceBar = 0;
 uint32_t forceRaw = 0;
+float forceConversion = 1e-3;
 
 int markPointIdx = 0;
 int nMarkPoints = 0;
@@ -64,6 +78,12 @@ void setup(){
 	}
 	dispSerial.flush();
 
+	mastSerial.begin(115200);
+	while (!dispSerial){
+		delay(10);
+	}
+	mastSerial.flush();
+
 
 	Serial.flush();
 
@@ -79,7 +99,112 @@ void loop(){
 
 		}
 
+	if (dispSerial.available()){
+		handleIncomingUART(DISP_IN);
+	}
 
+	if (mastSerial.available()){
+		handleIncomingUART(MAST_IN);
+	}
+
+
+}
+
+void handleIncomingUART(int inputStream){
+	
+	// Read incoming stream from wherever
+	// Parse, convert if needed
+	// Update relevant value
+	// Send to display
+
+	String val;
+
+	if (inputStream == DISP_IN){
+		// Input coming from display
+		// Expect Z encoder values
+
+		val = dispSerial.readStringUntil('\n');		
+
+	}
+	else if (inputStream == MAST_IN){
+		// Input coming from mast
+		// Expect Tip encoder, Tilt encoder, Force
+
+		val = dispSerial.readStringUntil('\n');
+
+	}
+
+	char switchChar = val.charAt(0);
+
+
+	switch (switchChar){
+		case ('w') :
+			updateZEncoderSteps(val.substring(2));
+			break;
+		
+		case ('l') :
+			updateTiltEncoderSteps(val.substring(2));
+			break;
+
+		case ('i') :
+			updateTipEncoderSteps(val.substring(2));
+			break;
+		
+		case ('e') :
+			updateForceRead(val.substring(2));
+			break;
+
+		default:
+			Serial.println(val);
+	}
+}
+
+void updateTiltEncoderSteps(String subVal){
+	char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+	tiltEncRaw = atof(chars);
+	tEncStepsToTiltValue();
+  updateTiltAngleOnScreen();
+}
+
+void tEncStepsToTiltValue(){
+	tiltAngle = tiltEncRaw * tiltConversion;
+}
+
+void updateForceRead(String subVal){
+	char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+	forceRaw = atof(chars);
+	fRawToForceValue();
+  updateForceValueOnScreen();
+}
+
+void fRawToForceValue(){
+	forceBar = forceRaw * forceConversion;
+}
+
+void updateTipEncoderSteps(String subVal){
+	char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+	tipEncRaw = atof(chars);
+	tipEncStepsToTipValue();
+  updateTipAngleOnScreen();
+}
+
+void tipEncStepsToTipValue(){
+	tipAngle = tipEncRaw * tipConversion;
+}
+
+void updateZEncoderSteps(String subVal){
+	char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+	zEncSteps = atof(chars);
+	zEncStepsToZValue();
+  updateZValueOnScreen();
+}
+
+void zEncStepsToZValue(){
+	zValue = zEncSteps * zConversionFactor;
 }
 
 void sendToDisplayUART(char* x){
@@ -87,10 +212,6 @@ void sendToDisplayUART(char* x){
 	//dispSerial.println(x);
 	Serial.println(x);
 	Serial.flush();
-
-}
-
-void handleDisplayUART(){
 
 }
 
@@ -382,7 +503,7 @@ void changeZMultiplier(){
 	updateZIdxOnScreen();
 }
 
-void sendCharAndFloat(char* s, float f, int decimals){
+void sendCharAndFloat(const char* s, float f, int decimals){
 	char buff[12];
 	char stringOut[12];
 
@@ -392,7 +513,7 @@ void sendCharAndFloat(char* s, float f, int decimals){
 
 }
 
-void sendCharAndInt(char* s, int i){
+void sendCharAndInt(const char* s, int i){
 	char stringOut[8];
 	sprintf(stringOut, "%s %d", s, i);
 	sendToDisplayUART(stringOut);
@@ -432,10 +553,6 @@ void updateForceValueOnScreen(){
 
 void updateZValueOnScreen(){
 	sendCharAndFloat("Z", zValue, 3);
-
-	//Serial.println(zValue, 3);
-
-
 }
 
 
