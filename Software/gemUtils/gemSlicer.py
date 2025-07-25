@@ -22,48 +22,8 @@ def plane_from_normal_and_point(normal, point):
     d = np.dot(normal, point)  # d = a*x0 + b*y0 + c*z0
     return a, b, c, d
 
-def intersect_planes(plane1, plane2):
-    """
-    Given two planes, find the line of intersection.
-    Each plane is defined by (a, b, c, d), where the plane equation is: ax + by + cz = d
-    Return the intersection point (if any).
-    """
-    a1, b1, c1, d1 = plane1
-    a2, b2, c2, d2 = plane2
 
-    # Solve the system of two linear equations (ax + by + cz = d)
-    # We solve for the two variables x, y (we can use z=0 as a simplifying assumption)
-    A = np.array([[a1, b1, c1], [a2, b2, c2]])
-    B = np.array([d1, d2])
-
-    # Check if A has full rank (i.e., the planes are not parallel)
-    if np.linalg.matrix_rank(A) < 2:
-        return None  # Planes are parallel, no intersection
-
-    # Solving the system for x, y, z
-    try:
-        intersection_point = np.linalg.lstsq(A, B, rcond=None)[0]  # Least squares solution
-    except np.linalg.LinAlgError:
-        return None  # In case the solution fails, return None
-
-    return intersection_point
-
-def updateVertices(vertices, intersection, newPlane, oldPlane):
-    # Given this info, remove vertices cut by intersection
-    # add new vertices (intersection point)
-    # how to get which vertex to remove?
-    print(vertices)
-    print(intersection)
-    print(oldPlane)
-    print(newPlane)
-    
-    # Regnerate faces for current polyhedron
-    hull = ConvexHull(vertices)
-    polyPlanes = hull.equations
-
-    return polyPlanes, vertices
-
-def create_polyhedron_from_planes(points, normals, vertices = []):
+def create_polyhedron_from_planes(points, normals):
     """
     Given points and normals (each n x 3 array), this function creates the convex polyhedron
     formed by the intersection of the planes defined by these points and normals.
@@ -71,75 +31,67 @@ def create_polyhedron_from_planes(points, normals, vertices = []):
     # Generate the planes
     newPlanes = [plane_from_normal_and_point(normals[i], points[i]) for i in range(len(points))]
 
-    if (vertices is None):
-        
-        vertices = set()
-    else:
-        vertices = vertices
-        
-        hull = ConvexHull(vertices)
-        oldPlanes = hull.equations
+    points = planesToPoints(newPlanes)
 
-    # Check intersections between pairs of planes
-    # Intersections between original solid and new facets, and new facets themselves, in order given
-    # new facets are input from previous faces array
-    # for each new plane, 
-    #    for each old plane,
-    #       check for intersection with new plane
-    #       if not none:
-    #          remove now-external vertices
-    #          intersection points now vertices
-    #    update ConvexHull faces calc'd from vertices, now old planes
-    # return for next gemList['xxx'] bit
-    
-    
-    # Generate face planes from vertices?
-    # Qhull gives planes from ConvexHull?
-    f = len(oldPlanes)
-    j = 0
-    
-    for i in range(len(newPlanes)):
-        while j < f:
-            # intersect planes
-            intersection = intersect_planes(newPlanes[i], oldPlanes[j])
-            
-            if intersection is not None:
-                # Found an intersection!
-
-                
-                vertices = updateVertices(vertices, intersection, newPlanes[i], oldPlanes[j])
-                
-                vertices.add(tuple(intersection))  # Add the intersection point as a vertex
-                # should update input vertices on each iteration
-                # init vertices from input vertices array
-                # able to index w/ faces array? and geometry?
-                # remove verties of connectivity < 3?
-                
-            j += 1
-                
-                
-                
+    return points
 
 
-    # Convert vertices to a list
-    vertices = np.array(list(vertices))
+def getPlaneIntersectionPoint(plane1, plane2, plane3):
+    """
+    Calculates the intersection point of three planes.
 
-    # Debug: Print the intersection points
-    print("Intersection Points:")
-    print(vertices)
+    Args:
+        plane1: Tuple (a1, b1, c1, d1) representing the first plane (a1x + b1y + c1z = d1).
+        plane2: Tuple (a2, b2, c2, d2) representing the second plane.
+        plane3: Tuple (a3, b3, c3, d3) representing the third plane.
 
-    if len(vertices) < 4:
-        print("Too few vertices to form a polyhedron.")
-        return vertices, []
+    Returns:
+        A NumPy array [x, y, z] representing the intersection point, or None if no unique intersection exists.
+    """
+    # Create the coefficient matrix (A)
+    A = np.array([plane1[:3], plane2[:3], plane3[:3]])
 
-    # Use ConvexHull to find the convex polyhedron
+    # Create the constant vector (b)
+    b = np.array([plane1[3], plane2[3], plane3[3]])
+
     try:
-        hull = ConvexHull(vertices)
-        faces = hull.simplices
-        return vertices, faces
-    except Exception as e:
-        print(f"Error in ConvexHull: {e}")
-        return vertices, []
+        # Solve the system of equations
+        intersection_point = np.linalg.solve(A, b)
+        return intersection_point
+    except np.linalg.LinAlgError:
+        # If the matrix is singular (no unique solution), return None
+        return None
+
+
+
+def pointInHull(planes, point):
+    
+    for plane in planes:
+        dist = np.dot(point, plane[:-1]) - plane[-1]
+        
+        print(dist)
+        
+        if (dist > 0.001):
+            return False
+    
+    return True
+
+
+
+def planesToPoints(planes):
+    pointCloud = []
+    for p1 in planes:
+        for p2 in planes:
+            for p3 in planes:
+                
+                point = getPlaneIntersectionPoint(p1, p2, p3)
+                
+                if (not(point is None) and (pointInHull(planes, point))):
+                    pointCloud.append(point)
+                
+    return pointCloud
+
+
     
 def plot_polyhedron(vertices, faces):
     """
@@ -180,7 +132,7 @@ def facetsInCartesian(facetDictSet):
         rho = -rho
         if pitch[0] == 0:
             pitch = 0
-            rho = -rho
+            rho = -rho            
         else:
             pitch = -pitch
             
@@ -208,49 +160,42 @@ if __name__ == "__main__":
                         [-1, 1, 1],
                         [-1, -1, 1],
                         [-1, 1, -1]])
+    
+    hull = ConvexHull(vertices)
 
     
-    basePath = pathlib.Path(r'C:\Users\rusty\Documents\CAD\faceting\diagrams')
-    fName = 'pc01006.asc'
+    basePath = pathlib.Path(r'./data')
+    fName = 'pc42011.asc'
     
     
     gemDict = gemLoader.loadGemCADFile(basePath / pathlib.Path(fName))
     
     facetPointList = []
     for f in gemDict['facetList']:
-        facetPointList.append(facetsInCartesian(f))
-        vertices, edges = create_polyhedron_from_planes(facetsInCartesian(f), facetsInCartesian(f), vertices = vertices)
-        
+        if (f['nFacets'] > 0):
+            facetPointList.append(facetsInCartesian(f))
         
     facetPoints = np.vstack(facetPointList)
-    
-    # facetPoints = facetPoints / np.sqrt(np.amax(np.sum(facetPoints**2, axis = 1)))
-    
-    # facetPoints = 0.2*np.array([[1, 1, 1],
-    #                         [1, -1, 1],
-    #                         [-1, 1, 1],
-    #                         [1, 1, -1],
-    #                         [-1, -1, 1],
-    #                         [1, -1, -1],
-    #                         [-1, -1, -1],
-    #                         [-1, 1, -1]])
-    
-    # # Create the polyhedron
-    # vertices, edges = create_polyhedron_from_planes(facetPoints, facetPoints)
-
-    print('2')
+        
+    points = np.vstack(create_polyhedron_from_planes(facetPoints, facetPoints))
+    points = np.unique(np.round(points, decimals = 4), axis = 0)
+    hull = ConvexHull(points)
 
     # Plot the polyhedron
-    plot_polyhedron(vertices, edges)
+    #plot_polyhedron(points, hull.equations)
 
     fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111, projection='3d')
     
-    s = ax.scatter(facetPoints[:,0], facetPoints[:,1], facetPoints[:,2])
+    gg = ax.scatter(points[:,0], points[:,1], points[:,2], c = 'blue')
+    ss = ax.scatter(facetPoints[:,0], facetPoints[:,1], facetPoints[:,2], c = 'green')
+    
  #   q = ax.quiver3D(0, 0, 0, facetPoints[:,0], facetPoints[:,1], facetPoints[:,2])
     
     
-    
+#    for hs in hull.simplices:
+#        hs = np.append(hs, hs[0])  # Here we cycle back to the first coordinate
+#        ax.plot(points[hs, 0], points[hs, 1], points[hs, 2], "r-")
     
     boundingBox = np.array([[1, 1, 1],
                             [1, -1, 1],
@@ -260,9 +205,9 @@ if __name__ == "__main__":
                             [1, -1, -1],
                             [-1, -1, -1]])
     
-    b = ax.scatter(boundingBox[:,0], boundingBox[:,1], boundingBox[:,2], 'r.')
+    b = ax.scatter(boundingBox[:,0], boundingBox[:,1], boundingBox[:,2], c = 'orange')
     
-    o = ax.scatter(0,0,0,'r.')
+    o = ax.scatter(0,0,0, c = 'red')
     
     ax.set_box_aspect((1, 1, 1))
     

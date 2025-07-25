@@ -60,7 +60,7 @@ def parseFacetLine(line, wheelIndex = 96, appendTo = None):
         splitLine = line.split(' ')
         
         angle = float(splitLine[1])
-        trueForCrown = angle > 0
+        trueForCrown = angle >= 0
         
         depth = float(splitLine[2])
     
@@ -71,6 +71,7 @@ def parseFacetLine(line, wheelIndex = 96, appendTo = None):
                      'isCrown' : trueForCrown,
                      'depth' : depth,
                      'facets' : facetIndex,
+                     'nFacets' : len(facetIndex),
                      'comments' : facetComment}
         
         return facetDict
@@ -96,19 +97,24 @@ def parseAllLines(txt):
            if doFirstLine:
                gemCADver = float(t.split(' ')[-1])
                doFirstLine = False
+               lastWasFacetLine = False
 
            
            if t.startswith('g'):
                wheelIndex = int(t.split(' ')[1])
+               lastWasFacetLine = False
                
            elif t.startswith('y'):
                foldSymmetry = int(t.split(' ')[1])
                hasMirrorPlane = (t.split(' ')[2] == 'y')
+               lastWasFacetLine = False
            
            elif t.startswith('I'):
                refIndex = float(t.split(' ')[1])
+               lastWasFacetLine = False
                
            elif t.startswith('H'):
+               lastWasFacetLine = False
                if doFirstTitle:
                    bigName = t[2:].rstrip()
                    doFirstTitle = False
@@ -130,7 +136,7 @@ def parseAllLines(txt):
                    parseFacetLine(t, 
                                   wheelIndex = wheelIndex,
                                   appendTo = facetList[-1])
-                   lastWasFacetLine = False
+                   lastWasFacetLine = True
                else:
                    continue
                 
