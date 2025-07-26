@@ -36,10 +36,12 @@ def parseFacetLine(line, wheelIndex = 96, appendTo = None):
                 facetComment = ' '.join(lineList[(i+1):]).rstrip()
                 break
             
-            facetIndex.append({'value' : int(sL), 
+            idx = float(sL)
+
+            facetIndex.append({'value' : idx, 
                                'name' : '', 
-                               'deg' : 360*(float(sL)/wheelInd), 
-                               'frac' : float(sL)/wheelInd})
+                               'deg' : 360*(idx/wheelInd), 
+                               'frac' : idx/wheelInd})
             
         return facetIndex, facetComment
     
@@ -65,6 +67,9 @@ def parseFacetLine(line, wheelIndex = 96, appendTo = None):
         depth = float(splitLine[2])
     
         facetIndex, facetComment = facetParse(splitLine[3::], wheelInd = wheelIndex)
+        
+        
+
        
             
         facetDict = {'angle' : angle,
@@ -153,7 +158,18 @@ def parseAllLines(txt):
                   'facetList' : facetList,
                   'comments' : commentLines}   
        
+       #gemDict = correctDepthForRI(gemDict)
+       
        return gemDict
+   
+
+def correctDepthForRI(gemDict):
+    
+    for i, x in enumerate(gemDict['facetList']):
+        
+        gemDict['facetList'][i]['depth'] =   gemDict['refractiveIndex'] * x['depth']**5
+        
+    return gemDict
 
 
 def loadGemCADFile(pth):

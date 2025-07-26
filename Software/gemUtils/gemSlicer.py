@@ -8,111 +8,31 @@ Created on Wed Nov 20 21:23:23 2024
 import gemLoader
 import pathlib
 import numpy as np
+import cdd
 from matplotlib import pyplot as plt
 from scipy.spatial import ConvexHull
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-
-def plane_from_normal_and_point(normal, point):
-    """
-    Given a normal vector and a point on the plane, return the coefficients (a, b, c, d) of the plane equation:
-    a*x + b*y + c*z = d
-    """
-    a, b, c = normal
-    d = np.dot(normal, point)  # d = a*x0 + b*y0 + c*z0
-    return a, b, c, d
-
-
-def create_polyhedron_from_planes(points, normals):
-    """
-    Given points and normals (each n x 3 array), this function creates the convex polyhedron
-    formed by the intersection of the planes defined by these points and normals.
-    """
-    # Generate the planes
-    newPlanes = [plane_from_normal_and_point(normals[i], points[i]) for i in range(len(points))]
-
-    points = planesToPoints(newPlanes)
-
-    return points
-
-
-def getPlaneIntersectionPoint(plane1, plane2, plane3):
-    """
-    Calculates the intersection point of three planes.
-
-    Args:
-        plane1: Tuple (a1, b1, c1, d1) representing the first plane (a1x + b1y + c1z = d1).
-        plane2: Tuple (a2, b2, c2, d2) representing the second plane.
-        plane3: Tuple (a3, b3, c3, d3) representing the third plane.
-
-    Returns:
-        A NumPy array [x, y, z] representing the intersection point, or None if no unique intersection exists.
-    """
-    # Create the coefficient matrix (A)
-    A = np.array([plane1[:3], plane2[:3], plane3[:3]])
-
-    # Create the constant vector (b)
-    b = np.array([plane1[3], plane2[3], plane3[3]])
-
-    try:
-        # Solve the system of equations
-        intersection_point = np.linalg.solve(A, b)
-        return intersection_point
-    except np.linalg.LinAlgError:
-        # If the matrix is singular (no unique solution), return None
-        return None
-
-
-
-def pointInHull(planes, point):
     
-    for plane in planes:
-        dist = np.dot(point, plane[:-1]) - plane[-1]
-        
-        print(dist)
-        
-        if (dist > 0.001):
-            return False
-    
-    return True
-
-
-
-def planesToPoints(planes):
-    pointCloud = []
-    for p1 in planes:
-        for p2 in planes:
-            for p3 in planes:
-                
-                point = getPlaneIntersectionPoint(p1, p2, p3)
-                
-                if (not(point is None) and (pointInHull(planes, point))):
-                    pointCloud.append(point)
-                
-    return pointCloud
-
-
-    
-def plot_polyhedron(vertices, faces):
+def plot_polyhedron(fig, gemDict, vertcolor = 'none', facecolor = 'red', edgecolor = 'black', 
+                    titleString = ''):
     """
     Visualize the polyhedron using matplotlib.
     """
-    fig = plt.figure()
+    fig.clf()
     ax = fig.add_subplot(111, projection='3d')
-
-    # Plot the vertices
-    ax.scatter(vertices[:, 0], vertices[:, 1], vertices[:, 2], color='c', label='Vertices')
-
+    
     # Plot the faces
-    for face in faces:
-        # Each face should be a list of vertices (3D points), which should be a 2D array of shape (n, 3)
-        poly3d = [vertices[face]]  # Face is already a list of indices, extract the corresponding vertices
-        ax.add_collection3d(Poly3DCollection(poly3d, facecolors='cyan', linewidths=1, edgecolors='r', alpha=.25))
+    for f in gemDict['facetList']:
+        if (f['nFacets'] > 0):
+            for fz in f['facets']:
+                verts = [tuple(fz['points'])]
+                ax.add_collection3d(Poly3DCollection(verts, alpha = 0.4, facecolor = facecolor, edgecolor = edgecolor))
+    
 
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_title("Convex Polyhedron")
+        
+    plt.axis('off')
+    plt.title(titleString)
     plt.show()
 
 
@@ -134,7 +54,7 @@ def facetsInCartesian(facetDictSet):
             pitch = 0
             rho = -rho            
         else:
-            pitch = -pitch
+            pitch = pitch
             
     coord = polar2cart(rho, pitch, roll)
 
@@ -150,73 +70,108 @@ def polar2cart(r, theta, phi):
     
     return outStack
 
+
+def convertRepresentations(halfspaces):
+    
+    mat = cdd.matrix_from_array(halfspaces, rep_type=cdd.RepType.INEQUALITY)
+    poly = cdd.polyhedron_from_matrix(mat)
+    ext = cdd.copy_generators(poly)
+    points = -np.array(ext.array)[:,1:]
+    adj = cdd.copy_adjacency(poly)
+    
+    return points, adj
+
+
+def coplanarPoints(points, facet):
+    
+    fc = np.tile(facet, (points.shape[0], 1))
+    
+    v = points[:,0]*fc[:,1] + points[:,1]*fc[:,2] + points[:,2]*fc[:,3] - fc[:,0]
+    
+    ptsBack = np.where(np.abs(v) < 1e-6)
+    
+    return ptsBack
+
+
+def project_points_onto_plane(points, plane_point, plane_normal):
+    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+    projected_points = []
+    for p in points:
+        v = p - plane_point
+        distance = np.dot(v, plane_normal)
+        projected = p - distance * plane_normal
+        projected_points.append(projected)
+    return np.array(projected_points)
+
+def sort_points_clockwise(points, plane_normal):
+    
+    projected_points = project_points_onto_plane(points, plane_normal, plane_normal)
+    
+    # Compute a local basis (u, v) on the plane
+    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+    u = np.array([1, 0, 0]) if not np.allclose(plane_normal, [1, 0, 0]) else np.array([0, 1, 0])
+    u = np.cross(plane_normal, u)
+    u = u / np.linalg.norm(u)
+    v = np.cross(plane_normal, u)
+
+    # Choose a center point to measure angles from
+    center = np.mean(projected_points, axis=0)
+    
+    # Convert 3D points to 2D in the plane's coordinate system
+    points_2d = []
+    for p in projected_points:
+        vec = p - center
+        x = np.dot(vec, u)
+        y = np.dot(vec, v)
+        angle = np.arctan2(y, x)
+        points_2d.append((angle, p))
+
+    # Sort by angle in clockwise order (reverse=False for counter-clockwise)
+    points_sorted = [p for _, p in sorted(points_2d, key=lambda x: -x[0])]
+    return np.array(points_sorted)
+
+
 if __name__ == "__main__":
     
-    # Example usage
-    vertices = 2*np.array([[-1, -1, -1], 
-                        [1, -1, -1], 
-                        [1, 1, -1], 
-                        [1, 1, 1], 
-                        [-1, 1, 1],
-                        [-1, -1, 1],
-                        [-1, 1, -1]])
-    
-    hull = ConvexHull(vertices)
 
-    
     basePath = pathlib.Path(r'./data')
-    fName = 'pc42011.asc'
+    fName = 'pc01236.asc'
     
-    
+    girdleDepth = None
+
     gemDict = gemLoader.loadGemCADFile(basePath / pathlib.Path(fName))
     
-    facetPointList = []
     for f in gemDict['facetList']:
         if (f['nFacets'] > 0):
-            facetPointList.append(facetsInCartesian(f))
-        
-    facetPoints = np.vstack(facetPointList)
-        
-    points = np.vstack(create_polyhedron_from_planes(facetPoints, facetPoints))
-    points = np.unique(np.round(points, decimals = 4), axis = 0)
-    hull = ConvexHull(points)
+            
+            carts = np.hstack((np.atleast_2d(np.sum(facetsInCartesian(f)**2, axis = 1)).T, facetsInCartesian(f)))
+            
+            for fi, fz in enumerate(f['facets']):
+                fz['coefficients'] = carts[fi,:]
+
+
+    halfspaces = np.vstack([[i['coefficients'] for i in f['facets']] for f in gemDict['facetList']])
+
+    points, adj = convertRepresentations(halfspaces)
+    
+    gemDict['vertices'] = points
+    
+
+    for f in gemDict['facetList']:
+        if (f['nFacets'] > 0):
+            for fi, fz in enumerate(f['facets']):
+                fz['corners'] = coplanarPoints(points, fz['coefficients'])
+                fz['points'] = sort_points_clockwise(np.squeeze(points[fz['corners'], :]), 
+                                                     np.atleast_2d(fz['coefficients'])[0,1:])
+
+    #points = np.vstack(create_polyhedron_from_planes(facetPoints, facetPoints))
+    #points = np.unique(np.round(points, decimals = 4), axis = 0)
+    hull = ConvexHull(points, qhull_options = 'Qc')
 
     # Plot the polyhedron
-    #plot_polyhedron(points, hull.equations)
+    fig = plt.figure(1)
+    plot_polyhedron(fig, gemDict, titleString = gemDict['boldTitle'])
+    
+    #fig.gca().scatter(halfspaces[:,1], halfspaces[:,2], halfspaces[:,3], '.')
 
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    
-    gg = ax.scatter(points[:,0], points[:,1], points[:,2], c = 'blue')
-    ss = ax.scatter(facetPoints[:,0], facetPoints[:,1], facetPoints[:,2], c = 'green')
-    
- #   q = ax.quiver3D(0, 0, 0, facetPoints[:,0], facetPoints[:,1], facetPoints[:,2])
-    
-    
-#    for hs in hull.simplices:
-#        hs = np.append(hs, hs[0])  # Here we cycle back to the first coordinate
-#        ax.plot(points[hs, 0], points[hs, 1], points[hs, 2], "r-")
-    
-    boundingBox = np.array([[1, 1, 1],
-                            [1, -1, 1],
-                            [-1, 1, 1],
-                            [1, 1, -1],
-                            [-1, -1, 1],
-                            [1, -1, -1],
-                            [-1, -1, -1]])
-    
-    b = ax.scatter(boundingBox[:,0], boundingBox[:,1], boundingBox[:,2], c = 'orange')
-    
-    o = ax.scatter(0,0,0, c = 'red')
-    
-    ax.set_box_aspect((1, 1, 1))
-    
-    
-    plt.show()
-    
 
-    
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    plt.show()
