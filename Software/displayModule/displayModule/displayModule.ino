@@ -28,6 +28,11 @@
 #define LABELS dcTerminal_30
 #define SPRITE_FILL 0x0000
 
+#define TXPin 8
+#define RXPin 9
+
+SerialPIO baseSerial(TXPin,RXPin);
+
 PioEncoder encoder(10); // encoder is connected to GPI11 and GPI12
 
 TFT_eSPI tft = TFT_eSPI();       // Invoke custom library
@@ -44,9 +49,9 @@ TFT_eSprite downLabels = TFT_eSprite(&tft); // Sprite object stext1
 
 bool printed_blank = false;
 
-bool useSerial = true;
-bool useUART = false;
-bool verbose = false;
+//bool useSerial = true;
+//bool useUART = false;
+//bool verbose = false;
 
 bool serialFound = false;
 bool usbFound = false;
@@ -74,6 +79,10 @@ float flowRate = 25.5;
 bool updateForceBar = true;
 uint32_t forceBar = 0;
 
+int32_t encCount = 0;
+int32_t lastEnc = 0;
+volatile unsigned long encTick = millis();
+
 
 volatile long screenTick = 0;
 volatile long mainTick = 0;
@@ -89,9 +98,9 @@ void setup() {
 
 void loop() {
 
-  while (Serial1.available()){
+  while (baseSerial.available()){
 
-    String val = Serial1.readStringUntil('\n');
+    String val = baseSerial.readStringUntil('\n');
     
     inputHandler(val);
   }
@@ -99,7 +108,33 @@ void loop() {
 
   spriteTickHandler();
 
+  encoderHandler();
 
+}
+
+void encoderHandler(){
+
+  if ((millis() - encTick) > 5){
+
+    encCount = encoder.getCount();
+  
+    if (lastEnc == encCount){
+      return;
+    }
+
+    else{
+      lastEnc = encCount;
+      encTick = millis();
+      sendCharAndInt("w", encCount);
+    }
+  }
+}
+
+
+void sendCharAndInt(const char* s, int i){
+	char stringOut[8];
+	sprintf(stringOut, "%s %d", s, i);
+	baseSerial.println(stringOut);
 }
 
 void spriteTickHandler(){
@@ -255,13 +290,26 @@ void updateF(String subVal){
 void initConnections(){
 
   
+  Serial.begin(115200);
+
   if (true){
+   // Serial1.setRX(RXPin);
+   // Serial1.setTX(TXPin);
     Serial1.begin(115200);
     while (!Serial1){
       delay(10);
     }
-    uartFound = true;
+    
   }
+
+  encoder.begin();
+
+  baseSerial.begin(115200);
+	while (!baseSerial){
+		delay(10);
+	}
+  uartFound = true;
+	baseSerial.flush();
 
   tft.init();
   tft.setRotation(2);

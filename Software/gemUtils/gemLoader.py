@@ -98,6 +98,8 @@ def parseAllLines(txt):
        
        for t in txt:
            
+           
+           
            gemCADver = None
            if doFirstLine:
                gemCADver = float(t.split(' ')[-1])
@@ -129,23 +131,25 @@ def parseAllLines(txt):
            
            elif t.startswith('a'):
                # Always follows 'g' line in spec
+
                facetList.append(parseFacetLine(t, 
-                                               wheelIndex = wheelIndex))
-               lastWasFacetLine = True
+                              wheelIndex = wheelIndex))
                
            elif t.startswith('F'):
                commentLines.append(t[2:].rstrip())
-           
+               
+               
+           elif t.startswith(' '):
+                 # Unresolved split
+                 continue
+             
            else: 
                if lastWasFacetLine:
-                   parseFacetLine(t, 
-                                  wheelIndex = wheelIndex,
-                                  appendTo = facetList[-1])
-                   lastWasFacetLine = True
+                   
+                   lastWasFacetLine = False
+
                else:
                    continue
-                
-
                 
            
        gemDict = {'gemCad_version' : gemCADver,
@@ -157,27 +161,41 @@ def parseAllLines(txt):
                   'littleTitle' : littleTitleLines,
                   'facetList' : facetList,
                   'comments' : commentLines}   
-       
-       #gemDict = correctDepthForRI(gemDict)
-       
+
        return gemDict
    
-
-def correctDepthForRI(gemDict):
     
-    for i, x in enumerate(gemDict['facetList']):
+def mergeSplitLines(txt):
+    
+    # In Gemcad spec, any line beginning with a space character is a continuation of the line previous
+    
+    while any([t.startswith(' ') for t in txt]):
         
-        gemDict['facetList'][i]['depth'] =   gemDict['refractiveIndex'] * x['depth']**5
+        whichLinesAreSplits = [i for i, t in enumerate(txt) if t.startswith(' ')]
         
-    return gemDict
+        # Go backwards so you don't have to update indices
+        for k in whichLinesAreSplits[::-1]:
+            
+            newLine = txt[k-1].rstrip() + txt[k]
+            
+            txt[k-1] = newLine
+            del txt[k]
 
+    return txt
+        
+    
+   
 
 def loadGemCADFile(pth):
     
     with open(pth, 'r') as fID:
         txt = fID.readlines()
-        gemDict = parseAllLines(txt)
         
+        
+        txt = mergeSplitLines(txt)
+        
+        gemDict = parseAllLines(txt)
+
     return gemDict
 
 

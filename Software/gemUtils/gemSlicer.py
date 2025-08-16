@@ -14,7 +14,7 @@ from scipy.spatial import ConvexHull
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     
-def plot_polyhedron(fig, gemDict, vertcolor = 'none', facecolor = 'red', edgecolor = 'black', 
+def plot_polyhedron(fig, gemDict, vertcolor = 'none', facecolor = 'white', edgecolor = 'black', 
                     titleString = ''):
     """
     Visualize the polyhedron using matplotlib.
@@ -27,11 +27,16 @@ def plot_polyhedron(fig, gemDict, vertcolor = 'none', facecolor = 'red', edgecol
         if (f['nFacets'] > 0):
             for fz in f['facets']:
                 verts = [tuple(fz['points'])]
-                ax.add_collection3d(Poly3DCollection(verts, alpha = 0.4, facecolor = facecolor, edgecolor = edgecolor))
+                
+                #centroid = np.mean(fz['points'], axis = 0)
+                #ax.text(centroid[0], centroid[1], centroid[2], fz['name'])
+                
+                ax.add_collection3d(Poly3DCollection(verts, alpha = 0.8, facecolor = facecolor, edgecolor = edgecolor, linewidth = 0.5))
     
 
         
     plt.axis('off')
+    plt.axis('equal')
     plt.title(titleString)
     plt.show()
 
@@ -135,7 +140,7 @@ if __name__ == "__main__":
     
 
     basePath = pathlib.Path(r'./data')
-    fName = 'pc01236.asc'
+    fName = 'pc01391.asc'
     
     girdleDepth = None
 

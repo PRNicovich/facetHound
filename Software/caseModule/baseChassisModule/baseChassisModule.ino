@@ -1,11 +1,14 @@
-#define KEYS_TX_PIN 6
-#define KEYS_RX_PIN 7
+#include <TMC2209.h>
+#include "FreqCountRP2.h"
 
-#define DISP_TX_PIN 4
-#define DISP_RX_PIN 5
+#define KEYS_TX_PIN 7
+#define KEYS_RX_PIN 6
 
-#define MAST_TX_PIN 2
-#define MAST_RX_PIN 3
+#define DISP_TX_PIN 5
+#define DISP_RX_PIN 4
+
+#define MAST_TX_PIN 3
+#define MAST_RX_PIN 2
 
 #define DISP_IN 0
 #define MAST_IN 1
@@ -13,6 +16,70 @@
 SerialPIO keysSerial(KEYS_TX_PIN,KEYS_RX_PIN);
 SerialPIO dispSerial(DISP_TX_PIN,DISP_RX_PIN);
 SerialPIO mastSerial(MAST_TX_PIN, MAST_RX_PIN);
+
+
+
+
+/*
+#define motorALMpin 8
+#define motorPGpin 27
+#define motorSVpin 6
+#define motorBKpin 14
+#define motorENpin 15
+#define motorFRpin 26
+
+#define motorMaxRPM 3500
+#define motorNPoles 3
+
+
+
+
+#define FAN_PIN 28
+#define LAMP_PIN 29
+
+uint8_t FAN_SPEED = 50;
+
+
+*/
+
+#define TMC2209_SERIAL_BAUD_RATE 19200
+#define TWIST_EN_PIN 18
+#define TWIST_TX_PIN 15
+#define TWIST_DIR_PIN 17
+#define TWIST_STEP_PIN 16
+
+#define ZED_EN_PIN 14
+#define ZED_TX_PIN 28
+#define ZED_DIR_PIN 0
+#define ZED_STEP_PIN 1
+
+#define PUMP_EN_PIN 22
+#define PUMP_TX_PIN 19
+#define PUMP_DIR_PIN 21
+#define PUMP_STEP_PIN 20
+
+SerialPIO twistSerial(TWIST_TX_PIN, SerialPIO::NOPIN);
+SerialPIO pumpSerial(PUMP_TX_PIN, SerialPIO::NOPIN);
+SerialPIO zedSerial(ZED_TX_PIN, SerialPIO::NOPIN);
+
+// Instantiate TMC2209 class objects
+TMC2209 twistDriver;
+TMC2209 zedDriver;
+TMC2209 pumpDriver;
+
+
+
+// current values may need to be reduced to prevent overheating depending on
+// specific motor and power supply voltage
+const uint8_t TWIST_RMS_CURRENT = 1500;
+const int32_t TWIST_RUN_VELOCITY = 200000;
+
+const uint8_t ZED_RMS_CURRENT = 1500;
+const int32_t ZED_RUN_VELOCITY = 100000;
+
+const uint8_t PUMP_RMS_CURRENT = 1500;
+const int32_t PUMP_RUN_VELOCITY = 1000;
+
 
 uint8_t keyString[] = {0, 0, 0, 0, 0, 0, 0};
 int k = 0;
@@ -23,22 +90,23 @@ uint8_t lastVal = 0;
 bool updateTiltAngle = true;
 float tiltAngle = 0;
 uint32_t tiltEncRaw = 0;
-float tiltConversion = 1e-3;
+float tiltConversion = 360.0/16384.0;
 float tiltMult[] = {0.01, 0.1, 1.0};
-int tiltIdx = 0;
-bool tiltLock = false;
+int tiltIdx = 1;
+bool tiltLock = true;
+bool tiltDir = false;
 bool spinServoIdx = false;
 bool cheatMode = false;
 
 bool updateTipAngle = true;
 float tipAngle = 44.5;
 uint32_t tipEncRaw = 0;
-float tipConversion = 1e-3;
+float tipConversion = 360.0/16384.0;
 
 bool updateZValue = true;
-float zValue = 115.442;
-uint32_t zEncSteps = 0;
-float zConversionFactor = 1e-3;
+float zValue = 0;
+int32_t zEncSteps = 0;
+float zConversionFactor = 5e-3/16;
 float zMult[] = {0.001, 0.010, 0.100};
 int zIdx = 0;
 bool zLock = false;
@@ -79,15 +147,22 @@ void setup(){
 	dispSerial.flush();
 
 	mastSerial.begin(115200);
-	while (!dispSerial){
+	
+	while (!mastSerial){
 		delay(10);
 	}
+	
 	mastSerial.flush();
 
 
 	Serial.flush();
 
+
+	initSteppers();
+
+
 }
+
 
 
 void loop(){
@@ -110,6 +185,43 @@ void loop(){
 
 }
 
+void initSteppers(){
+	// Motor start
+	// Twist
+	twistDriver.setup(twistSerial, TMC2209_SERIAL_BAUD_RATE);
+  twistDriver.setHardwareEnablePin(TWIST_EN_PIN);
+  twistDriver.setMicrostepsPerStep(256);
+  twistDriver.setRMSCurrent(TWIST_RMS_CURRENT, 0.11);
+  twistDriver.enableAutomaticCurrentScaling();
+  twistDriver.enableCoolStep();
+  //twistDriver.enable();
+  
+	pinMode(TWIST_STEP_PIN, OUTPUT);
+	pinMode(TWIST_DIR_PIN, OUTPUT);
+
+
+	// Z
+	zedDriver.setup(zedSerial, TMC2209_SERIAL_BAUD_RATE);
+  zedDriver.setHardwareEnablePin(ZED_EN_PIN);
+  zedDriver.setMicrostepsPerStep(128);
+  zedDriver.setRMSCurrent(ZED_RMS_CURRENT, 0.11);
+  zedDriver.enableAutomaticCurrentScaling();
+  zedDriver.enableCoolStep();
+  //zedDriver.enable();
+  //zedDriver.moveAtVelocity(ZED_RUN_VELOCITY);
+
+	// Pump
+	pumpDriver.setup(pumpSerial, TMC2209_SERIAL_BAUD_RATE);
+  pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
+  pumpDriver.setMicrostepsPerStep(32);
+  pumpDriver.setRMSCurrent(PUMP_RMS_CURRENT, 0.11);
+  pumpDriver.enableAutomaticCurrentScaling();
+  pumpDriver.enableCoolStep();
+  pumpDriver.enable();
+  pumpDriver.moveAtVelocity(PUMP_RUN_VELOCITY);
+}
+
+
 void handleIncomingUART(int inputStream){
 	
 	// Read incoming stream from wherever
@@ -130,7 +242,8 @@ void handleIncomingUART(int inputStream){
 		// Input coming from mast
 		// Expect Tip encoder, Tilt encoder, Force
 
-		val = dispSerial.readStringUntil('\n');
+		val = mastSerial.readStringUntil('\n');
+		//Serial.println(val);
 
 	}
 
@@ -168,7 +281,7 @@ void updateTiltEncoderSteps(String subVal){
 }
 
 void tEncStepsToTiltValue(){
-	tiltAngle = tiltEncRaw * tiltConversion;
+	tiltAngle = float(tiltEncRaw)  * tiltConversion;
 }
 
 void updateForceRead(String subVal){
@@ -192,7 +305,7 @@ void updateTipEncoderSteps(String subVal){
 }
 
 void tipEncStepsToTipValue(){
-	tipAngle = tipEncRaw * tipConversion;
+	tipAngle = float(tipEncRaw) * tipConversion;
 }
 
 void updateZEncoderSteps(String subVal){
@@ -209,7 +322,9 @@ void zEncStepsToZValue(){
 
 void sendToDisplayUART(char* x){
 
-	//dispSerial.println(x);
+	dispSerial.println(x);
+	dispSerial.flush();
+
 	Serial.println(x);
 	Serial.flush();
 
@@ -342,6 +457,7 @@ void keyboardRouter(uint8_t keyString[]){
 
 			case 16:
 		 		tiltAngle = tiltAngle + tiltMult[tiltIdx];
+				tiltDir = true;
 				changeTiltAngle();
 				updateTiltAngleOnScreen();
 				break;
@@ -356,6 +472,7 @@ void keyboardRouter(uint8_t keyString[]){
 
 			case 18:
 		 		tiltAngle = tiltAngle - tiltMult[tiltIdx];
+				tiltDir = false;
 				changeTiltAngle();
 				updateTiltAngleOnScreen();
 				break;
@@ -440,6 +557,9 @@ void keyboardRouter(uint8_t keyString[]){
 
 void changeTiltAngle(){
 	// Do something to move the tilt angle
+
+	digitalWrite(TWIST_DIR_PIN, tiltDir);
+
 }
 
 void chageFlowDirection(){
@@ -505,11 +625,12 @@ void changeZMultiplier(){
 
 void sendCharAndFloat(const char* s, float f, int decimals){
 	char buff[12];
-	char stringOut[12];
+	char stringFloat[12];
 
 	dtostrf(f, 1, decimals, buff);
-	sprintf(stringOut, "%s %s", s, buff);
-	sendToDisplayUART(stringOut);
+	sprintf(stringFloat, "%s %s", s, buff);
+
+	sendToDisplayUART(stringFloat);
 
 }
 
@@ -597,6 +718,16 @@ void zeroTilt(){
 void toggleZLock(){
 	zLock = not(zLock);
 	// Set ENABLE pin on Z motor driver to lock/unlock free spin
+
+	if (zLock){
+		zedDriver.enable();
+		zedDriver.moveAtVelocity(ZED_RUN_VELOCITY);
+	}
+	else{
+		zedDriver.disable();
+	}
+
+
 	updateZLockOnScreen();
 }
 
@@ -642,6 +773,13 @@ void toggleTiltLock(){
 	tiltLock = not(tiltLock);
 
 	// Set ENABLE pin on Z motor driver to lock/unlock free spin
+	if (tiltLock){
+		twistDriver.enable();
+		twistDriver.moveAtVelocity(TWIST_RUN_VELOCITY);
+	}
+	else{
+		twistDriver.disable();
+	}
 	updateTiltLockOnScreen();
 }
 

@@ -34,9 +34,6 @@ typedef struct queueItem {
 //------------- Core0 -------------//
 void setup() {
 
-
-  //Serial1.begin(115200); 
-
   queue_init(&queue, sizeof(item), QUEUE_LENGTH); //initialize the queue
 
   kickTheDog();
@@ -60,7 +57,7 @@ void loop() {
     lastTime = millis();
     kickTheDog();
 
-    Serial.println("woof!");
+    //Serial.println("woof!");
   
     
   }
@@ -120,39 +117,6 @@ void checkOnDog(){
   }
 }
 
-/*
-void setup1() {
-
-  Serial1.begin(115200);
-
-  pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
-  pio_cfg.pin_dp = PIN_USB_HOST_DP;
-  USBHost.configure_pio_usb(1, &pio_cfg);
-
-  USBHost.begin(1);
-  //rp2040.fifo.push_nb(0xDD); // 'Startup successful' 
-  //SoftSerial.println(0xDD);
-
-}
-
-
-
-
-void loop1() {
-
-  // Core1 loop
-  // Decode incoming USB reports and push to FIFO
-  // Every 5 sec push 0xCC to FIFO to show core is alive
-
-  USBHost.task();
-
-  //delayMicroseconds(100);
-  
-  //checkOnDog();
-}
-*/
-
-
 
 static void process_kbd_report(uint8_t dev_addr, hid_keyboard_report_t const *report)
 {
@@ -171,7 +135,6 @@ static void process_kbd_report(uint8_t dev_addr, hid_keyboard_report_t const *re
         Serial1.print(keycode);
         Serial1.print(",");
         flush = true;
-
 
       }
 
