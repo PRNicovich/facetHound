@@ -1,4 +1,5 @@
 #include "hardware/uart.h"
+#include "RunningAverage.h"
 
 #define forcePin 28
 
@@ -13,6 +14,13 @@
 #define TXPin 8
 #define RXPin 9
 
+#define CUI_12_BIT 0
+#define CUI_14_BIT 1
+
+#define TWIST_AVG_N 16
+#define TIP_AVG_N 8
+#define FORCE_AVG_N 4
+
 SerialPIO baseSerial(TXPin,RXPin);
 
 unsigned volatile int lastTransmission = millis();
@@ -24,6 +32,10 @@ unsigned long lastTip = 0;
 unsigned long twistCount = 0;
 unsigned long lastTwist = 0;
 
+RunningAverage twistRA(TWIST_AVG_N);
+RunningAverage tipRA(TIP_AVG_N);
+RunningAverage forceRA(FORCE_AVG_N);
+
 void setup(){
 
 
@@ -31,6 +43,8 @@ void setup(){
   while (!baseSerial){
     delay(10);
   }
+
+  Serial.begin(115200);
 
   pinMode(forcePin, INPUT);
 
@@ -51,6 +65,10 @@ void setup(){
 
   baseSerial.flush();
 
+  twistRA.clear();
+  tipRA.clear();
+  forceRA.clear();
+
   //Serial.println("Setup complete!");
   delay(500);
 
@@ -60,36 +78,51 @@ void setup(){
 void loop(){
 
   bool sent = false;
+  String val;
+  long twistAvg;
+  long tipAvg;
+  long forceAvg;
 
-  if ((millis() - lastTransmission) > 50){
+  forceSensor = analogRead(forcePin);
 
-    forceSensor = analogRead(forcePin);
+  tipCount = readEncoderBitBang(pitch_CS, pitch_CLK, pitch_DT, CUI_14_BIT);
+  twistCount = readEncoderBitBang(twist_CS, twist_CLK, twist_DT, CUI_12_BIT);
 
-    tipCount = readEncoderBitBang(pitch_CS, pitch_CLK, pitch_DT);
-    twistCount = readEncoderBitBang(twist_CS, twist_CLK, twist_DT);
+  twistRA.addValue(twistCount*TWIST_AVG_N);
+  twistAvg = int(twistRA.getFastAverage());
 
-    if (lastTip == tipCount){
-    }
-    else{
-      sendCharAndInt("i", tipCount);
-      lastTip = tipCount;
-      sent = true;
-    }
+  tipRA.addValue(tipCount*TIP_AVG_N);
+  tipAvg = int(tipRA.getFastAverage());
 
-    if (lastTwist == twistCount){
-    }
-    else{
-      sendCharAndInt("l", twistCount);
-      lastTip = tipCount;
-      sent = true;
-    }
-
-    if (sent){
-      lastTransmission = millis();
-    }
+  forceRA.addValue(forceSensor*FORCE_AVG_N);
+  forceAvg = int(forceRA.getFastAverage());
+/*
+  Serial.print(forceAvg);
+  Serial.print("  -  ");
+  Serial.print(tipAvg);
+  Serial.print("  -  ");
+  Serial.println(twistAvg);
+*/
+  if (baseSerial.available()){
     
+    val = baseSerial.readStringUntil('\n');
+
+    char switchChar = val.charAt(0);
+
+    switch (switchChar){
+      case('?') : 
+        // Send Frame        
+        sendCharAndInt("i", tipAvg);
+        sendCharAndInt("l", twistAvg);
+        //Serial.println(twistCount);
+
+        sendCharAndInt("e", forceAvg);
+    }
+
+
   }
 
+  
 }
 
 void sendCharAndInt(const char* s, int i){
@@ -99,7 +132,7 @@ void sendCharAndInt(const char* s, int i){
   baseSerial.flush();
 }
 
-long readEncoderBitBang(int csPin, int ckPin, int dtPin){
+long readEncoderBitBang(int csPin, int ckPin, int dtPin, int mode){
 
   digitalWrite(csPin, false);
   delayMicroseconds(20);
@@ -132,7 +165,17 @@ long readEncoderBitBang(int csPin, int ckPin, int dtPin){
 
   digitalWrite(csPin, true);
 
-  outVal = (outVal & 0xFFFF) >> 2;
+  if (mode == CUI_12_BIT){
+    outVal = (outVal & 0x3FFF) >> 2;
+  }
+  else if (mode == CUI_14_BIT){
+    outVal = (outVal & 0xFFFF) >> 2;
+  }
+  else{
+    outVal = 0;
+  }
+
+  
 
 
   return outVal;

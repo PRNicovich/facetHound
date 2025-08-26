@@ -103,39 +103,17 @@ void loop() {
     String val = baseSerial.readStringUntil('\n');
     
     inputHandler(val);
-  }
+  } 
 
+  if ((millis() - screenTick) > 50){
+    requestFrame();
+    screenTick = millis();
+  }
 
   spriteTickHandler();
 
-  encoderHandler();
-
 }
 
-void encoderHandler(){
-
-  if ((millis() - encTick) > 5){
-
-    encCount = encoder.getCount();
-  
-    if (lastEnc == encCount){
-      return;
-    }
-
-    else{
-      lastEnc = encCount;
-      encTick = millis();
-      sendCharAndInt("w", encCount);
-    }
-  }
-}
-
-
-void sendCharAndInt(const char* s, int i){
-	char stringOut[8];
-	sprintf(stringOut, "%s %d", s, i);
-	baseSerial.println(stringOut);
-}
 
 void spriteTickHandler(){
 
@@ -165,6 +143,18 @@ void spriteTickHandler(){
   }
 
 
+}
+
+
+void encoderHandler(){
+    encCount = encoder.getCount();
+}
+
+
+void sendCharAndInt(const char* s, int i){
+	char stringOut[8];
+	sprintf(stringOut, "%s %d", s, i);
+	baseSerial.println(stringOut);
 }
 
 void inputHandler(String val){
@@ -242,12 +232,34 @@ void inputHandler(String val){
 
       break;
 
+    case ('?') :
+      encoderHandler();
+      transmitFrame();
+      break;
+
     default:
       //Serial.println(switchChar);
       break;
   }
 
+  
+}
 
+void transmitFrame(){
+
+	char stringOut[8];
+	sprintf(stringOut, "w %d", encCount);
+	baseSerial.println(stringOut);
+
+  //Serial.println(stringOut);
+
+  baseSerial.flush();
+
+}
+
+void requestFrame(){
+  //baseSerial.flush();
+  baseSerial.println('?');
 }
 
 void updateT(String subVal){
@@ -276,6 +288,7 @@ void updateR(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
   RPMValue =  atof(chars);
+  //Serial.println(RPMValue);
   updateRPMValue = true;
 }
 
@@ -309,7 +322,7 @@ void initConnections(){
 		delay(10);
 	}
   uartFound = true;
-	baseSerial.flush();
+	//baseSerial.flush();
 
   tft.init();
   tft.setRotation(2);
