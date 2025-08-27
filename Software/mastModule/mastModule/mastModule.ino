@@ -1,5 +1,6 @@
-#include "hardware/uart.h"
+//#include "hardware/uart.h"
 #include "RunningAverage.h"
+#include "Adafruit_TinyUSB.h"
 
 #define forcePin 28
 
@@ -21,6 +22,10 @@
 #define TIP_AVG_N 8
 #define FORCE_AVG_N 4
 
+#define STEPS_12_BIT_FLOAT 4095.0
+#define STEPS_TWIST_FLOAT STEPS_12_BIT_FLOAT*TWIST_AVG_N
+#define STEPS_14_BIT_FLOAT 16383.0
+
 SerialPIO baseSerial(TXPin,RXPin);
 
 unsigned volatile int lastTransmission = millis();
@@ -33,6 +38,8 @@ unsigned long twistCount = 0;
 unsigned long lastTwist = 0;
 
 RunningAverage twistRA(TWIST_AVG_N);
+RunningAverage twistRA_COS(TWIST_AVG_N);
+RunningAverage twistRA_SIN(TWIST_AVG_N);
 RunningAverage tipRA(TIP_AVG_N);
 RunningAverage forceRA(FORCE_AVG_N);
 
@@ -45,6 +52,9 @@ void setup(){
   }
 
   Serial.begin(115200);
+    while (!Serial){
+    delay(10);
+  }
 
   pinMode(forcePin, INPUT);
 
@@ -66,6 +76,8 @@ void setup(){
   baseSerial.flush();
 
   twistRA.clear();
+  twistRA_COS.clear();
+  twistRA_SIN.clear();
   tipRA.clear();
   forceRA.clear();
 
@@ -88,8 +100,18 @@ void loop(){
   tipCount = readEncoderBitBang(pitch_CS, pitch_CLK, pitch_DT, CUI_14_BIT);
   twistCount = readEncoderBitBang(twist_CS, twist_CLK, twist_DT, CUI_12_BIT);
 
-  twistRA.addValue(twistCount*TWIST_AVG_N);
-  twistAvg = int(twistRA.getFastAverage());
+  float cosVal = cos(2*PI*float(twistCount)/STEPS_12_BIT_FLOAT);
+  float sinVal = sin(2*PI*float(twistCount)/STEPS_12_BIT_FLOAT);
+
+
+  twistRA_COS.addValue(cosVal);
+  twistRA_SIN.addValue(sinVal);
+  float twistTanAvg = (STEPS_TWIST_FLOAT)*(0.5 + (atan2(twistRA_SIN.getFastAverage(), twistRA_COS.getFastAverage())/(2*PI)));
+
+  //Serial.println(twistTanAvg);
+
+  //twistRA.addValue(twistCount*TWIST_AVG_N);
+  twistAvg = int(twistTanAvg);
 
   tipRA.addValue(tipCount*TIP_AVG_N);
   tipAvg = int(tipRA.getFastAverage());
