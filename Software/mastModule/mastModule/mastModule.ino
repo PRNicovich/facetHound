@@ -20,7 +20,7 @@
 
 #define TWIST_AVG_N 16
 #define TIP_AVG_N 8
-#define FORCE_AVG_N 4
+#define FORCE_AVG_N 32
 
 #define STEPS_12_BIT_FLOAT 4095.0
 #define STEPS_TWIST_FLOAT STEPS_12_BIT_FLOAT*TWIST_AVG_N
@@ -52,9 +52,7 @@ void setup(){
   }
 
   Serial.begin(115200);
-    while (!Serial){
-    delay(10);
-  }
+
 
   pinMode(forcePin, INPUT);
 
@@ -89,7 +87,7 @@ void setup(){
 
 void loop(){
 
-  bool sent = false;
+
   String val;
   long twistAvg;
   long tipAvg;
@@ -136,7 +134,7 @@ void loop(){
         // Send Frame        
         sendCharAndInt("i", tipAvg);
         sendCharAndInt("l", twistAvg);
-        //Serial.println(twistCount);
+        Serial.println(twistCount);
 
         sendCharAndInt("e", forceAvg);
     }

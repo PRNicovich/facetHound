@@ -33,6 +33,9 @@
 #define TXPin 8
 #define RXPin 9
 
+#define ACK 1
+#define NAK 0
+
 SerialPIO baseSerial(TXPin,RXPin);
 
 PioEncoder encoder(10); // encoder is connected to GPI11 and GPI12
@@ -80,14 +83,15 @@ bool updateTiltAngle = true;
 bool updateTiltError = true;
 float tiltSetAngle = 210.05;
 float tiltSetError = 80.02;
-bool tiltLock = true;
+int tiltLock = 0;
 bool updateTiltLockBool = true;
 bool updateTiltStepIndexBool = true;
-bool tiltStepIndex = 2;
+int tiltStepIndex = 2;
+int cheatModeIdx = 0;
+bool updateCheatModeBool = false;
 
-
-bool tiltServoMode = true;
-bool updateTiltServoMode = true;
+int spinServoIdx =  0;
+bool updateSpinServoIdxBool = true;
 
 bool updateTipAngle = true;
 float tipAngle = 44.5;
@@ -95,23 +99,24 @@ float tipAngle = 44.5;
 
 bool updateZValue = true;
 float zValue = 115.44;
-bool zedLock = true;
+int zedLock = 0;
 bool updateZedLockBool = true;
-bool updateZedStepIndex = true;
-bool zedStepIndex = 2;
+int zedStepIndex = 2;
+bool updateZedStepIndexBool = true;
 
 bool updateRPMValue = true;
 uint32_t RPMValue = 4568;
-bool RPM_dir = false;
+int RPM_dir = 0;
 bool updateRPMDirBool = true;
 
 bool updateFlowRate = true;
 float flowRate = 25.5;
-bool Flow_dir = true;
+int Flow_dir = 0;
 bool updateFlowDirBool = true;
 
 bool updateForceBarBool = true;
-uint8_t forceBar = 118;
+int forceBar = 10;
+int fillBarWidth = 0;
 
 int32_t encCount = 0;
 int32_t lastEnc = 0;
@@ -141,6 +146,8 @@ void loop() {
     inputHandler(val);
   } 
 
+
+
   if ((millis() - screenTick) > 50){
     requestFrame();
     screenTick = millis();
@@ -168,7 +175,6 @@ void spriteTickHandler(){
     updateTiltErrorSprite();
     updateTiltError = false;
   }
-
 
 
   if (updateZValue){
@@ -221,14 +227,14 @@ void spriteTickHandler(){
     updateTiltStepIndexBool = false;
   }
 
-  if (updateTiltServoMode){
+  if (updateSpinServoIdxBool){
     updateStepServoSprite();
-    updateTiltServoMode = false;
+    updateSpinServoIdxBool = false;
   }
 
-  if (updateZedStepIndex){
+  if (updateZedStepIndexBool){
     updateZedStepIndexSprite();
-    updateZedStepIndex = false;
+    updateZedStepIndexBool = false;
   }
 
 
@@ -259,40 +265,50 @@ void inputHandler(String val){
   switch (switchChar)
   {
     case ('a'):
-      Serial.println("a");
+
+      updateZLock(val.substring(2));
       break;
 
     case ('b'):
-      Serial.println("b");
+
+      updateTiltLock(val.substring(2));
+      //Serial.println(val);
       break;
 
     case ('c'):
-      Serial.println("c");
+      updateTiltErrorIncoming(val.substring(2));
       break;
 
-    case ('d'):
-      Serial.println("d");
-      break;
-
-    case ('e'):
-      Serial.println("e");
-      break;
 
     case ('f'):
-      updateForce(val.substring(2));
+      updateFlowDirValue(val.substring(2));
       break;
 
     case ('g'):
-      Serial.println("g");
+
+      updateCheatMode(val.substring(2));
       break;
 
-    case ('h'):
-      Serial.println("h");
+    case ('r'):
+      // rpm index
+
+      updateRPMDirIdx(val.substring(2));
       break;
 
-    case ('i'):
-      Serial.println("i");
+    case ('s'):
+
+      updateSpinServoIdx(val.substring(2));
       break;
+
+    case ('t'):
+      // tilt Index
+
+      updateTiltStepIndex(val.substring(2));
+      break;
+
+    case ('z'):
+
+      updateZedStepIndex(val.substring(2));
 
     case ('R'):
 
@@ -318,11 +334,23 @@ void inputHandler(String val){
 
       break;
 
+    case ('N'):
+      updateForceBar(val.substring(2));
+      break;
+
     case ('P'):
       // tip
       updateP(val.substring(2));
 
       break;
+
+    case ('X'):
+      //
+      break;
+
+    case ('W'):
+      //wheel Index
+      updateIndex(val.substring(2));
 
     case ('?') :
       encoderHandler();
@@ -330,12 +358,15 @@ void inputHandler(String val){
       break;
 
     default:
-      //Serial.println(switchChar);
+      baseSerial.println(NAK);
+      //Serial.println(NAK);
+      Serial.println(val);
       break;
   }
 
   
 }
+
 
 void transmitFrame(){
 
@@ -369,12 +400,59 @@ void updateZ(String subVal){
   updateZValue = true;
 }
 
+bool stringIsNumeric(char *str, bool skipLastOne) {
+  for (byte i = 0; str[i]; i++) {
+
+      if (str[i] != '\0'){
+        if (!digitIsNumeric(str[i])) {
+              //Serial.print("!");
+              //Serial.println(int(str[i]));
+
+            if (str[i] == 13){
+              if (i == 0){
+                return false;
+              }
+              else{
+                continue;
+              }
+              
+            }
+
+            return false;
+          }
+        else{
+
+        }
+      }
+  }
+    return true;
+  
+}
+
+boolean digitIsNumeric(char c) {
+  return (isDigit(c) || ( '.' == c));
+}
+
 void updateP(String subVal){
   char chars[8];
+  bool allNumeric = false;
   subVal.toCharArray(chars, subVal.length()+1);
-  tipAngle =  atof(chars);
-  updateTipAngle = true;
+  
+
+  allNumeric = stringIsNumeric(chars, true);
+
+  if (allNumeric){
+   // Serial.println(chars);
+    tipAngle =  atof(chars);
+    updateTipAngle = true;
+  }
+  else{
+    updateTiltAngle = false;
+  }
+  
+  
 }
+
 
 void updateR(String subVal){
   char chars[8];
@@ -387,15 +465,35 @@ void updateR(String subVal){
 void updateF(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
-  flowRate =  atof(chars);
-  updateFlowRate = true;
+
+  if (stringIsNumeric(chars, true)){
+    //Serial.println(chars);
+    flowRate =  atof(chars);
+    updateFlowRate = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" F");
+  }
+  else{
+    updateFlowRate = false;
+  }
+
+
 }
 
-void updateForce(String subVal){
+void updateForceBar(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
-  forceBar =  atof(chars);
+
+ if (stringIsNumeric(chars, true)){
+  //Serial.println(chars);
+  forceBar =  atoi(chars);
   updateForceBarBool = true;
+ }
+ else{
+  updateForceBarBool = false;
+ }
+
+
 }
 
 void updateTiltErrorIncoming(String subVal){
@@ -406,30 +504,170 @@ void updateTiltErrorIncoming(String subVal){
 }
 
 
+void updateIndex(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+
+  if (stringIsNumeric(chars, true)){
+    wheelIndex =  atoi(chars);
+    updateWheelIndexBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" W");
+  }
+  else {
+    updateWheelIndexBool = false;
+  }
+
+}
+
+void updateRPMDirIdx(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+
+  if (stringIsNumeric(chars, true)){
+    RPM_dir =  atoi(chars);
+    updateRPMDirBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" r");
+  }
+  else {
+    updateRPMDirBool = false;
+  }
+
+}
+
+void updateTiltStepIndex(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+
+  if (stringIsNumeric(chars, true)){
+    tiltStepIndex =  atoi(chars);
+    updateTiltStepIndexBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" t");
+  }
+  else {
+    updateTiltStepIndexBool = false;
+  }
+
+
+
+}
+
+void updateZedStepIndex(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+
+  if (stringIsNumeric(chars, true)){
+    zedStepIndex =  atoi(chars);
+    updateZedStepIndexBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" z");
+  }
+  else {
+    updateZedStepIndexBool = false;
+  }
+
+
+
+}
+
+void updateZLock(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+  zedLock =  atoi(chars);
+
+  if (stringIsNumeric(chars, true)){
+    zedLock =  atoi(chars);
+    updateZedLockBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" a");
+  }
+  else {
+    updateZedLockBool = false;
+  }
+}
+
+void updateTiltLock(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+
+  //Serial.println(chars);
+
+  if (stringIsNumeric(chars, true)){
+    tiltLock =  atoi(chars);
+    updateTiltLockBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" b");
+    //Serial.println(subVal);
+  }
+  else {
+    updateTiltLockBool = false;
+    //Serial.println(subVal);
+  }
+}
+
+void updateFlowDirValue(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+  
+  if (stringIsNumeric(chars, true)){
+    
+    Flow_dir =  atoi(chars);
+    updateFlowDirBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" f");
+  }
+  else {
+    updateFlowDirBool = false;
+  }
+  
+}
+
+void updateCheatMode(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+  cheatModeIdx =  atoi(chars);
+  updateCheatModeBool = true;
+}
+
+void updateSpinServoIdx(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+  spinServoIdx =  atoi(chars);
+
+
+  if (stringIsNumeric(chars, true)){
+    spinServoIdx =  atoi(chars);
+    updateSpinServoIdxBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" s");
+  }
+  else {
+    updateSpinServoIdxBool = false;
+  }
+
+
+
+  updateSpinServoIdxBool = true;
+}
+
+
+
 
 void initConnections(){
 
   
   Serial.begin(115200);
 
-  if (true){
-   // Serial1.setRX(RXPin);
-   // Serial1.setTX(TXPin);
-    Serial1.begin(115200);
-    while (!Serial1){
-      delay(10);
-    }
-    
-  }
-
   encoder.begin();
 
-  baseSerial.begin(115200);
+  baseSerial.begin(38400);
 	while (!baseSerial){
 		delay(10);
 	}
   uartFound = true;
-	//baseSerial.flush();
+	baseSerial.flush();
 
   tft.init();
   tft.setRotation(2);
@@ -461,7 +699,7 @@ void drawSplashScreen(){
 
   splash.unloadFont();
   
-  delay(1000);
+  delay(1500);
 
   TFT_eSprite logo = TFT_eSprite(&tft); // Sprite object stext1
 
@@ -473,7 +711,7 @@ void drawSplashScreen(){
   logo.drawString("FACET HOUND", 160, 25);
   logo.pushSprite(0, 100);
   logo.unloadFont();
-  delay(2000);
+  delay(2500);
   
   logo.unloadFont();
 
@@ -527,13 +765,14 @@ void drawMainScreen(bool initHere) {
     stext1.setTextColor(0x07FE); // White text, no background
     stext1.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
 
+    // Tip
     stext2.setColorDepth(8);
-    stext2.createSprite(256, 110);
+    stext2.createSprite(256, 60);
     stext2.loadFont(NUMBERS);
     stext2.setTextColor(0xEF00); // White text, no background
     stext2.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
 
-
+    //Zed
     stext3.setColorDepth(8);
     stext3.createSprite(256, 110);
     stext3.loadFont(NUMBERS);
@@ -633,6 +872,12 @@ void updateAllSprites(){
   updateFlowSprite();
   updateForceBarSprite();
   updateTiltLockSprite();
+  updateWheelIndexSprite();
+  updateZedLockSprite();
+  updateZedStepIndexSprite();
+  updateRPMDirSprite();
+  updateFlowDirSprite();
+  updateStepServoSprite();
 }
 
 void updateTiltSprite(){
@@ -643,8 +888,9 @@ void updateTiltSprite(){
 
 void updateTipSprite(){
   stext2.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  stext2.drawFloat(tipAngle, 2, 256, 110); // plot value in font 2
-  stext2.pushSprite(30, 170);
+  stext2.drawFloat(tipAngle, 2, 256, 75); // plot value in font 2
+  //Serial.println(tipAngle);
+  stext2.pushSprite(30, 210);
 }
 
 void updateZSprite(){
@@ -667,18 +913,23 @@ void updateFlowSprite(){
 
 void updateForceBarSprite(){
 
-  sBar1.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  sBar1.drawRect(0, 0, 280, 10, 0x00FF00);
-  
+  int lastFillBarWidth = fillBarWidth;
+  fillBarWidth = (forceBar*280)/20;
 
-  int fillBarWidth = forceBar*(280/255);
-  sBar1.fillRect(0, 0, fillBarWidth, 10, 0x00FF00);
-  sBar1.pushSprite(20, 170);
+  if (lastFillBarWidth != fillBarWidth){
+  
+    sBar1.fillSprite(SPRITE_FILL); // Fill sprite with blue
+    sBar1.drawRect(0, 0, 280, 10, 0x00FF00);
+
+    sBar1.fillRect(0, 0, fillBarWidth, 10, 0x00FF00);
+    sBar1.pushSprite(20, 170);
+  }
+
 }
 
 void updateTiltErrorSprite(){
   stext6.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  stext6.drawFloat(tiltSetError, 2, 110, 40); // plot value in font 2
+  stext6.drawFloat(abs(tiltSetError), 2, 110, 40); // plot value in font 2
   if (tiltSetError >= 0){
     stext6.drawString("+",15, 40);
   }
@@ -692,11 +943,14 @@ void updateTiltErrorSprite(){
 void updateTiltLockSprite(){
   
   stext7.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  if (tiltLock){
+  if (tiltLock == 1){
+    stext7.drawString("O", 20, 30);
+  }
+  else if (tiltLock = 2){
     stext7.drawString("X", 20, 30);
   }
   else{
-    stext7.drawString("O", 20, 30);
+    stext7.drawString("n", 20, 30);
   }
   
   stext7.pushSprite(40, 20);
@@ -710,13 +964,18 @@ void updateWheelIndexSprite(){
 
 
 void updateZedLockSprite(){
+
+  //Serial.println(zedLock);
   
   stext8.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  if (zedLock){
+  if (zedLock == 1){
     stext8.drawString("X", 20, 30);
   }
+  else if (zedLock == 0) {
+    stext8.drawString("-", 20, 30);
+  }
   else{
-    stext8.drawString("O", 20, 30);
+    stext8.drawString("?", 20, 30);
   }
   
   stext8.pushSprite(2, 305);
@@ -724,11 +983,23 @@ void updateZedLockSprite(){
 
 void updateRPMDirSprite(){
   stext10.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  if (RPM_dir){
-    stext10.drawString("X", 20, 30);
-  }
-  else{
-    stext10.drawString("O", 20, 30);
+  //Serial.println(RPM_dir);
+  switch (RPM_dir){
+    case (0):
+      stext10.drawString("L", 20, 30);
+      break;
+
+    case (1):
+      stext10.drawString("l", 20, 30);
+      break;
+
+    case (2):
+      stext10.drawString("R", 20, 30);
+      break;
+
+    case (3):
+      stext10.drawString("r", 20, 30);
+      break;
   }
   
   stext10.pushSprite(10, 447);
@@ -736,11 +1007,23 @@ void updateRPMDirSprite(){
 
 void updateFlowDirSprite(){
   stext11.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  if (Flow_dir){
-    stext11.drawString("X", 20, 30);
-  }
-  else{
-    stext11.drawString("O", 20, 30);
+  //Serial.println(Flow_dir);
+  switch (Flow_dir){
+    case (0):
+      stext11.drawString("U", 20, 30);
+      break;
+
+    case (1):
+      stext11.drawString("u", 20, 30);
+      break;
+
+    case (2):
+      stext11.drawString("D", 20, 30);
+      break;
+
+    case (3):
+      stext11.drawString("d", 20, 30);
+      break;
   }
   
   stext11.pushSprite(190, 447);
@@ -763,11 +1046,14 @@ void updateTiltStepIndexSprite(){
 
 void updateStepServoSprite(){
   stext14.fillSprite(SPRITE_FILL); // Fill sprite with blue
-  if (tiltServoMode){
+  if (spinServoIdx == 0){
     stext14.drawString("K", 20, 30);
   }
-  else{
+  else if (spinServoIdx == 1){
     stext14.drawString("S", 20, 30);
+  }
+  else{
+    stext14.drawString("-", 20, 30);
   }
   
   stext14.pushSprite(80, 20);

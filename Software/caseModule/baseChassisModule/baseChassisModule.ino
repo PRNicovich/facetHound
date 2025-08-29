@@ -13,7 +13,8 @@
 #define MAST_TX_PIN 3
 #define MAST_RX_PIN 2
 
-
+#define ACK 1
+#define NAK 0
 
 #define motorALMpin 8
 #define motorPGpin 9
@@ -50,6 +51,9 @@
 #define DISP_IN 0
 #define MAST_IN 1
 
+#define doubleClickTime  350 // milliseconds
+
+
 
 SerialPIO keysSerial(KEYS_TX_PIN, KEYS_RX_PIN);
 SerialPIO dispSerial(DISP_TX_PIN, DISP_RX_PIN);
@@ -76,18 +80,19 @@ float TWIST_MAX_SPEED = 200000.0;
 float TWIST_ACCELERATION = 100000.0;
 float TWIST_STEP_SPEED = 2500;
 
-uint32_t ZED_RMS_CURRENT = 700;
+uint32_t ZED_RMS_CURRENT = 1000;
 int32_t ZED_RUN_VELOCITY = 100000;
 bool ZED_DIR = false;
 uint16_t ZED_MICROSTEPS = 128;
 float ZED_MAX_SPEED = 40000.0;
 float ZED_ACCELLERATION = 100000.0;
-float ZED_STEP_SPEED = 1500;
+float ZED_STEP_SPEED = 5000;
 
 uint32_t PUMP_RMS_CURRENT = 1100;
 int32_t PUMP_RUN_VELOCITY = 1000;
 bool PUMP_DIR = true;
 uint16_t PUMP_MICROSTEPS = 4;
+
 
 
 //FastAccelStepperEngine engine = FastAccelStepperEngine();
@@ -103,13 +108,14 @@ bool lastValWasSep = true;
 uint8_t lastVal = 0;
 
 uint32_t lastQueryTime = 0;
-uint8_t frameCycleTime = 20;  // milliseconds
+uint8_t frameCycleTime = 30;  // milliseconds
 
 uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
 
-float wheelIndex = 96.0;
+float wheelIndexSet = 96.0;
+float wheelIndex = 64.0;
 float tipEncoderSteps = 65535.0;
 bool updateTiltAngle = true;
 float tiltAngle = 0;
@@ -129,8 +135,9 @@ float servoCapture = 105.0; // degrees
 bool cheatMode = false;
 float tiltRecall = 0;
 bool firstCrossServoThreshold = true;
-float twistErrorProportionalTerm = 0.5;
+float twistErrorProportionalTerm = 0.1;
 float degreesAndDirection = 0;
+float positionErrorTolerance = 0.001;
 
 float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84};
 int8_t tiltMemIdx = 4;
@@ -171,23 +178,27 @@ unsigned int motorSpeedSet = 0;
 unsigned int motorSpeedCorr = 0;
 unsigned int motorSpeedSetRaw = 0;
 bool motorTrueForHardBrake = false;
+long lastMotorDirClick = millis();
 
 int freqCountDuration = 500;  // ms, motor speed
 
-bool updateFlowRate = true;
 int16_t flowRate = 0;
-int8_t flow_dir = -1;
+int flow_dir = 0;
 int16_t flowRateMin = 0;
 int16_t flowRateMax = 750;
 float floatTicksTo_mLperMin = 0.052;
 int16_t floatTicksToPUMPVELOCITY = 4;
 float flowRateIn_mLperMin = 0;
+long lastFlowDirClick = millis();
 
 
 bool updateForceBar = true;
-float forceBar = 0;
+int forceBar = 0;
+int lastForceBar = 0;
 uint32_t forceRaw = 0;
-float forceConversion = 1e-1;
+float forceMax = 25600;
+uint8_t forceOut = 0;
+int forceSteps = 20;
 
 bool updateRPMbool = false;
 bool updateZbool = false;
@@ -195,6 +206,16 @@ bool updateTiltbool = false;
 bool updateTipbool = false;
 bool updateForcebool = false;
 bool updateFlowbool = true;
+bool updateWheelIndexBool = true;
+bool updateFlowIdxBool = true;
+bool updateRPMIdxBool = true;
+bool updateTipLockBool = true;
+bool updateZedLockBool = true;
+bool updateSpinServoBool = true;
+bool updateZedStepIdxBool = true;
+bool updateTwistIdxBool = true;
+
+bool transmitAccessories = false;
 
 int reason = -1;
 
@@ -246,11 +267,11 @@ void setup() {
 	keysSerial.flush();
 
 
-	dispSerial.begin(115200);
+	dispSerial.begin(38400);
 	while (!dispSerial) {
 		delay(10);
 	}
-	dispSerial.flush();	
+	
 
 	mastSerial.begin(115200);
 
@@ -259,7 +280,7 @@ void setup() {
 	}
 
 	mastSerial.flush();
-
+	dispSerial.flush();	
 	Serial.flush();
 
 	pinMode(FAN_PIN, OUTPUT);
@@ -275,7 +296,9 @@ void setup() {
   pinMode(ZED_DIR_PIN, OUTPUT);
 
 
-	changeTiltAngle(true);
+	updateWheelIndex(wheelIndexSet);
+
+
 
 }
 
@@ -291,16 +314,24 @@ void loop() {
 		//float tiltError = targetTilt_float - tiltAngle;
 
 		lastQueryTime = millis();
-		if (abs((targetTilt_float - tiltAngle)) > 0) {
 
 
-			degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
-			long stepsToMoveHere = twistErrorProportionalTerm*(degreesAndDirection)*tiltStepsPerIndexUnit;
-			
-	
+
+
+
+		if (abs((targetTilt_float - tiltAngle)) > positionErrorTolerance) {
 			if (twistDirStep.distanceToGo() == 0){
+				degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
+
+
+
+				long stepsToMoveHere = twistErrorProportionalTerm*(degreesAndDirection)*tiltStepsPerIndexUnit;
+
+
 				twistDirStep.move(stepsToMoveHere);
 			}
+
+
 
 		}
 	}
@@ -320,6 +351,7 @@ void loop() {
 	}
 
 	if (FreqCountRP2.available()) {
+		
 		unsigned long frequency = FreqCountRP2.read();
 		// Do something with the frequency...
 
@@ -342,6 +374,10 @@ float shortestArcPath(float target, float current){
 
 	float degAndDir = target - current;
 
+	//Serial.print(degAndDir);
+
+
+
 	if (degAndDir > 0){
 		if (abs(degAndDir) > (wheelIndex/2)){
 			degAndDir = (degAndDir - wheelIndex);
@@ -354,11 +390,29 @@ float shortestArcPath(float target, float current){
 
 		
 	}
+	/*
+	Serial.print(" ++++ ");
+	Serial.print(tiltEncRaw);
+	Serial.print(" ++++ ");
+	Serial.println(degAndDir);
+	*/
+
 	return degAndDir;
 }
 
 
 void transmitFrame() {
+
+	if (transmitAccessories){
+		updateAccessories();
+	}
+
+	else{
+		// Accessories are OK
+	}
+
+	
+
 
 	if (updateRPMbool) {
 		updateRPMValueOnScreen();
@@ -385,10 +439,6 @@ void transmitFrame() {
 		updateForcebool = false;
 	}
 
-	if (updateFlowbool) {
-		updateFlowRateOnScreen();
-		updateFlowbool = false;
-	}
 
 }
 
@@ -415,7 +465,6 @@ void initSteppers() {
 	zedDriver.enableCoolStep();
 
 	twistDriver.setStandstillMode(TMC2209::STRONG_BRAKING);
-	zedDriver.enable();
 
 	zedDriver.moveUsingStepDirInterface();
 
@@ -524,12 +573,69 @@ void handleIncomingUART(int inputStream) {
 
 		case ('e'):
 			updateForceRead(val.substring(2));
-			updateForcebool = true;
+
 			break;
+
 
 		case ('?'):
 			//Serial.println("transmit");
 			transmitFrame();
+			break;
+
+		case ('1') :
+			//Serial.println("ACK");
+			
+			switch (val.charAt(2)){
+				case ('a'):
+				
+					updateZedLockBool = false;
+					break;
+
+				case ('b'):
+
+					updateTipLockBool = false;
+					//transmitAccessories = false;
+					break;
+
+				case ('f'):
+					updateFlowIdxBool = false;
+					break;
+
+				case ('F'):
+					updateFlowbool = false;
+					break;
+				
+
+
+				case ('r'):
+					updateRPMIdxBool = false;
+					break;
+
+				case ('s'):
+					updateSpinServoBool = false;
+					break;
+
+
+				case ('t'):
+					updateTwistIdxBool = false;
+					break;
+
+
+				case ('W'):
+					updateWheelIndexBool = false;
+					break;
+
+				case ('z'):
+					updateZedStepIdxBool = false;
+					break;
+			}
+
+			
+			dispSerial.flush();
+			break;
+
+		case ('2') :
+			//Serial.println("NAK");
 			break;
 
 		default:
@@ -553,12 +659,24 @@ void updateForceRead(String subVal) {
 	char chars[8];
 	subVal.toCharArray(chars, subVal.length() + 1);
 	forceRaw = atof(chars);
+
 	fRawToForceValue();
-	//Serial.println(forceRaw);
+
+	if (forceRaw == lastForceBar){
+		updateForcebool = false;
+		
+	}
+	else{
+		lastForceBar = forceRaw;
+		updateForcebool = true;
+	}
+
+
 }
 
 void fRawToForceValue() {
-	forceBar = forceRaw * forceConversion;
+	forceBar = int(forceSteps*(forceRaw / forceMax));
+	//forceBar = int(forceRaw);
 }
 
 void updateTipEncoderSteps(String subVal) {
@@ -569,7 +687,10 @@ void updateTipEncoderSteps(String subVal) {
 }
 
 void tipEncStepsToTipValue() {
-	tipAngle = float(tipEncRaw - tipZero) * tipConversion;
+	if (tipEncRaw > 0){
+		tipAngle = float(tipEncRaw - tipZero) * tipConversion;
+	}
+	
 }
 
 void updateZEncoderSteps(String subVal) {
@@ -733,7 +854,10 @@ void keyboardRouter(uint8_t keyString[]) {
 				if (tiltIdx >= 3) {
 					tiltIdx = 0;
 				}
-				updateTiltIdxOnScreen();
+				updateTwistIdxBool = true;
+
+				changeTwistIndex();
+
 				break;
 
 			case 18:
@@ -753,6 +877,15 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 31:
 
+				if ((millis() - lastFlowDirClick) < doubleClickTime){
+					Serial.println("double!");
+				}
+				else{
+					Serial.println((millis() - lastFlowDirClick));
+				}
+
+				lastFlowDirClick = millis();
+
 				chageFlowDirection();
 
 				break;
@@ -771,6 +904,14 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 
 			case 34:
+				if ((millis() - lastMotorDirClick) < doubleClickTime){
+					Serial.println("double!");
+				}
+				else{
+					Serial.println((millis() - lastMotorDirClick));
+				}
+
+				lastFlowDirClick = millis();
 
 				changeMotorDirection();
 
@@ -933,6 +1074,9 @@ void chageFlowDirection() {
 
 
 	updateFlowIdxOnScreen();
+	transmitAccessories = true;
+	updateFlowIdxBool = true;
+
 }
 
 void changeFlowRate() {
@@ -949,6 +1093,8 @@ void changeFlowRate() {
 
 	// Change speed command to TMC for water pump
 	updateFlowbool = true;
+	transmitAccessories = true;
+
 }
 
 void changeMotorSpeed() {
@@ -963,7 +1109,7 @@ void changeMotorSpeed() {
 
 	// Command change in ESC motor via PWM
 	analogWrite(motorSVpin, RPMValue);
-	Serial.println(RPMValue);
+	//Serial.println(RPMValue);
 
 }
 
@@ -1007,8 +1153,10 @@ void changeMotorDirection() {
 	setMotorPins();
 
 
-	Serial.println(RPM_dir);
+	//Serial.println(RPM_dir);
 	updateRPMIdxOnScreen();
+	transmitAccessories = true;
+	updateRPMIdxBool = true;
 }
 
 void updateESCLockOnScreen() {
@@ -1043,30 +1191,122 @@ void changeZMultiplier() {
 	if (zIdx >= 3) {
 		zIdx = 0;
 	}
-	updateZIdxOnScreen();
+	
+	updateZedStepIdxBool = true;
+	transmitAccessories = true;
+
+}
+
+void changeTwistIndex(){
+	tiltIdx = tiltIdx + 1;
+
+	if (tiltIdx >= 3) {
+		tiltIdx = 0;
+	}
+	
+	updateTwistIdxBool = true;
+	transmitAccessories = true;
+
+}
+
+
+void updateAccessories(){
+	//sendCharAndInt ("X", 12345678);
+
+	if ((updateFlowbool ||
+		   updateWheelIndexBool ||
+			 updateFlowIdxBool || 
+			 updateRPMIdxBool ||
+		   updateTipLockBool ||
+			 updateZedLockBool ||
+			 updateSpinServoBool ||  
+			 updateZedStepIdxBool ||
+			 updateTwistIdxBool)){
+			
+			//Serial.println("X");
+
+			 }
+		else{
+			//Serial.println("Y");
+			transmitAccessories = false;
+			return;
+		}
+
+	if (updateFlowbool ) {
+		updateFlowRateOnScreen();
+
+	}
+
+	if (updateWheelIndexBool){
+		updateWheelIndexOnScreen();
+
+	}
+
+	if (updateFlowIdxBool){
+		updateFlowIdxOnScreen();
+
+	}
+
+	if (updateRPMIdxBool){
+		updateRPMIdxOnScreen();
+
+	}
+
+	if (updateTipLockBool){
+		updateTiltLockOnScreen();
+		
+	}
+
+
+	if (updateZedLockBool){
+		updateZLockOnScreen();
+
+	}
+
+	if (updateSpinServoBool){
+		updateSpinServoOnScreen();
+
+	}
+
+
+	if (updateZedStepIdxBool){
+		updateZIdxOnScreen();
+
+	}	
+
+	if (updateTwistIdxBool){
+		updateTiltIdxOnScreen();
+	}
+
+
 }
 
 void updateFlowIdxOnScreen() {
+
 	sendCharAndInt("f", flow_dir);
+
 }
 
 void updateFlowRateOnScreen() {
+
 	sendCharAndFloat("F", flowRateIn_mLperMin, 2);
 }
 
 void updateRPMIdxOnScreen() {
-	
+
 	sendCharAndInt("r", RPM_dir);
 }
 
 void updateRPMValueOnScreen() {
+	
 	sendCharAndInt("R", motorSpeedCorr);
 }
 
 
 
 void updateTiltAngleOnScreen() {
-	sendCharAndFloat("T", tiltAngle, 2);
+	sendCharAndFloat("T", targetTilt_float, 2);
+	sendCharAndFloat("c", shortestArcPath(targetTilt_float, tiltAngle), 2);
 }
 
 void updateTiltIdxOnScreen() {
@@ -1078,10 +1318,13 @@ void updateTipAngleOnScreen() {
 }
 
 void updateForceValueOnScreen() {
-	sendCharAndFloat("N", forceBar, 1);
+
+	sendCharAndInt("N", forceBar);
 }
 
 void updateZValueOnScreen() {
+
+	//Serial.println(zValue);
 	sendCharAndFloat("Z", zValue, 3);
 }
 
@@ -1091,20 +1334,21 @@ void updateZIdxOnScreen() {
 }
 
 void updateSpinServoOnScreen() {
-	firstCrossServoThreshold = true;
-	sendCharAndInt("s", spinServoIdx);
+
+	sendCharAndInt("s", int(spinServoIdx));
 }
 
 void updateZLockOnScreen() {
-	sendCharAndInt("a", zLock);
+
+	sendCharAndInt("a", int(zLock));
 }
 
 void updateTiltLockOnScreen() {
-	sendCharAndInt("b", tiltLock);
+	sendCharAndInt("b", int(tiltLock+1));
 }
 
 void updateCheatModeOnOffOnScreen() {
-	sendCharAndInt("g", cheatMode);
+	sendCharAndInt("g", int(cheatMode));
 }
 
 void updateMarkPointInfoOnScreen() {
@@ -1113,6 +1357,7 @@ void updateMarkPointInfoOnScreen() {
 	// Send info to display about which mark point info to show
 	//Serial.println(stringOut);
 }
+
 
 void settingsMode() {
 	//Serial.println("Settings Mode!");
@@ -1136,7 +1381,9 @@ void toggleZLock() {
 	}
 
 
-	updateZLockOnScreen();
+	updateZedLockBool = true; 
+	transmitAccessories = true;
+	
 }
 
 void undeclaredFunction() {
@@ -1150,8 +1397,25 @@ void addPositionToList() {
 }
 
 void spinServoModeToggle() {
+
 	spinServoIdx = not(spinServoIdx);
+
+	if (spinServoIdx ){
+		checkServoStatus();
+	}
+	else{
+		if (tiltLock){
+			targetTilt_float = tiltAngle;
+			tiltLock = true;
+			twistDriver.enable();
+		}
+	}
+
+	firstCrossServoThreshold = true;
+
 	updateSpinServoOnScreen();
+	transmitAccessories = true;
+	updateSpinServoBool = true;
 }
 
 
@@ -1188,7 +1452,6 @@ void changeMarkPointIndex(bool dir) {
 void toggleTiltLock() {
 	tiltLock = not(tiltLock);
 
-	// Set ENABLE pin on Z motor driver to lock/unlock free spin
 	if (tiltLock) {
 		targetTilt_float = tiltAngle;
 		twistDriver.enable();
@@ -1197,9 +1460,27 @@ void toggleTiltLock() {
 		twistDriver.disable();
 	}
 	updateTiltLockOnScreen();
+	transmitAccessories = true;
+	updateTipLockBool = true;
 }
 
 void toggleCheatMode() {
 	cheatMode = not(cheatMode);
 	updateCheatModeOnOffOnScreen();
+	transmitAccessories = true;
+}
+
+void updateWheelIndex(float newWheelValue){
+
+	wheelIndex = newWheelValue;
+	tiltConversion = wheelIndex / tipEncoderSteps;
+	tiltStepsPerIndexUnit = TILT_STEPS_PER_ROT/wheelIndex;
+
+	updateWheelIndexBool = true;
+	transmitAccessories = true;
+}
+
+void updateWheelIndexOnScreen(){
+	sendCharAndInt("W", int(wheelIndex));
+	transmitAccessories = true;
 }
