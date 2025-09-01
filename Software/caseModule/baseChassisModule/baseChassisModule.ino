@@ -43,7 +43,7 @@
 #define PUMP_STEP_PIN 20
 
 
-#define RPM_LIMIT_HIGH 500
+#define RPM_LIMIT_HIGH 100
 #define RPM_LIMIT_LOW 0
 #define motorMaxRPM 3500
 #define motorNPoles 3
@@ -51,7 +51,7 @@
 #define DISP_IN 0
 #define MAST_IN 1
 
-#define doubleClickTime  350 // milliseconds
+#define doubleClickTime  250 // milliseconds
 
 
 
@@ -80,7 +80,7 @@ float TWIST_MAX_SPEED = 200000.0;
 float TWIST_ACCELERATION = 100000.0;
 float TWIST_STEP_SPEED = 2500;
 
-uint32_t ZED_RMS_CURRENT = 1000;
+uint32_t ZED_RMS_CURRENT = 800;
 int32_t ZED_RUN_VELOCITY = 100000;
 bool ZED_DIR = false;
 uint16_t ZED_MICROSTEPS = 128;
@@ -168,11 +168,11 @@ int zIdx = 0;
 bool zLock = false;
 
 bool updateRPMValue = true;
-int16_t RPMValue = 0;
-int8_t RPM_dir = 0;
+long RPMValue = 0;
+int8_t RPM_dir = 3;
 bool motorAlarm = false;
-bool motorOn = false;
-bool motorDir = true;
+bool motorOn = true;
+bool motorDir = false;
 unsigned int motorSpeedRaw = 0;
 unsigned int motorSpeedSet = 0;
 unsigned int motorSpeedCorr = 0;
@@ -183,7 +183,7 @@ long lastMotorDirClick = millis();
 int freqCountDuration = 500;  // ms, motor speed
 
 int16_t flowRate = 0;
-int flow_dir = 0;
+int flow_dir = 1;
 int16_t flowRateMin = 0;
 int16_t flowRateMax = 750;
 float floatTicksTo_mLperMin = 0.052;
@@ -214,8 +214,13 @@ bool updateZedLockBool = true;
 bool updateSpinServoBool = true;
 bool updateZedStepIdxBool = true;
 bool updateTwistIdxBool = true;
+bool updateRPMsetValueBool = true;
 
 bool transmitAccessories = false;
+long clickTimer_ESC = millis();
+bool inClickTimer_ESC = false;
+long clickTimer_pump = millis();
+bool inClickTimer_pump = false;
 
 int reason = -1;
 
@@ -315,23 +320,14 @@ void loop() {
 
 		lastQueryTime = millis();
 
-
-
-
-
 		if (abs((targetTilt_float - tiltAngle)) > positionErrorTolerance) {
 			if (twistDirStep.distanceToGo() == 0){
 				degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
 
-
-
 				long stepsToMoveHere = twistErrorProportionalTerm*(degreesAndDirection)*tiltStepsPerIndexUnit;
-
 
 				twistDirStep.move(stepsToMoveHere);
 			}
-
-
 
 		}
 	}
@@ -367,6 +363,22 @@ void loop() {
 
 	if(zedDirStep.distanceToGo() != 0){
 		zedDirStep.run();
+	}
+
+	if (inClickTimer_ESC){
+		if ((millis() - lastMotorDirClick) > 2*doubleClickTime){
+			// Single click
+			inClickTimer_ESC = false;
+			changeMotorDirection(false);
+		}
+	}
+
+	if (inClickTimer_pump){
+		if ((millis() - lastFlowDirClick) > 2*doubleClickTime){
+			// Single click
+			inClickTimer_pump = false;
+			chageFlowDirection(false);
+		}
 	}
 }
 
@@ -464,7 +476,7 @@ void initSteppers() {
 	zedDriver.enableAutomaticCurrentScaling();
 	zedDriver.enableCoolStep();
 
-	twistDriver.setStandstillMode(TMC2209::STRONG_BRAKING);
+	twistDriver.setStandstillMode(TMC2209::NORMAL);
 
 	zedDriver.moveUsingStepDirInterface();
 
@@ -605,7 +617,9 @@ void handleIncomingUART(int inputStream) {
 					updateFlowbool = false;
 					break;
 				
-
+				case ('h'):
+					updateRPMsetValueBool = false;
+				break;
 
 				case ('r'):
 					updateRPMIdxBool = false;
@@ -869,58 +883,58 @@ void keyboardRouter(uint8_t keyString[]) {
 				//updateTiltAngleOnScreen();
 				break;
 
-			case 30:
+			case 33:
 				flowRate = flowRate + 1;
 				changeFlowRate();
 				//updateFlowRateOnScreen();
 				break;
 
-			case 31:
+			case 34:
 
 				if ((millis() - lastFlowDirClick) < doubleClickTime){
-					Serial.println("double!");
+
+					chageFlowDirection(true);
+					inClickTimer_pump = false;
 				}
 				else{
-					Serial.println((millis() - lastFlowDirClick));
+					inClickTimer_pump = true;
 				}
 
 				lastFlowDirClick = millis();
 
-				chageFlowDirection();
+				//chageFlowDirection(false);
 
 				break;
 
-			case 32:
+			case 35:
 				flowRate = flowRate - 1;
 				changeFlowRate();
 				//updateFlowRateOnScreen();
 				break;
 
-			case 33:
+			case 30:
 				
 				RPMValue = RPMValue + 1;
 				changeMotorSpeed();
-				updateRPMValueOnScreen();
 				break;
 
-			case 34:
+			case 31:
 				if ((millis() - lastMotorDirClick) < doubleClickTime){
-					Serial.println("double!");
+
+					changeMotorDirection(true);
+					inClickTimer_ESC = false;
 				}
 				else{
-					Serial.println((millis() - lastMotorDirClick));
+					inClickTimer_ESC = true;
 				}
 
-				lastFlowDirClick = millis();
-
-				changeMotorDirection();
+				lastMotorDirClick = millis();
 
 				break;
 
-			case 35:
+			case 32:
 				RPMValue = RPMValue - 1;
 				changeMotorSpeed();
-				updateRPMValueOnScreen();
 				break;
 
 			case 36:
@@ -1041,15 +1055,53 @@ void changeTiltAngle(bool directSet) {
 	}
 }
 
-void chageFlowDirection() {
+void chageFlowDirection(bool isDoubleClick) {
 	// Change DIR pin on TMC2208 to flow pump
 	// Handle pause + lock-out logic
 	// Handle update to screen commands
 
-	flow_dir = flow_dir + 1;
-	if (flow_dir >= 4) {
-		flow_dir = 0;
+	if (isDoubleClick){
+		// Change to pause state of opposite direction
+		if (flow_dir == 0) {
+				// On to left -> off to right
+				flow_dir = 3;
+		}
+		else if (flow_dir == 1) {
+			// off to left -> off to right
+				flow_dir = 3;
+		} 
+		else if (flow_dir == 2) {
+			// on to right -> off to left
+				flow_dir = 1;
+		} 
+		else if (flow_dir == 3) {
+			// off to right -> off to left
+				flow_dir = 1;
+		} 
+				
+		
 	}
+	else{
+		// Change to pause state of opposite direction
+		if (flow_dir == 0) {
+				// On to left -> off to right
+				flow_dir = 1;
+		}
+		else if (flow_dir == 1) {
+			// off to right -> off to left
+				flow_dir = 0;
+		} 
+		else if (flow_dir == 2) {
+			// off to right -> off to left
+				flow_dir = 3;
+		} 
+		else if (flow_dir == 3) {
+			// off to right -> off to left
+				flow_dir = 2;
+		} 
+
+	}
+
 
 	if (flow_dir == 0) {
 		pumpDriver.enable();
@@ -1073,7 +1125,7 @@ void chageFlowDirection() {
 	}
 
 
-	updateFlowIdxOnScreen();
+	//updateFlowIdxOnScreen();
 	transmitAccessories = true;
 	updateFlowIdxBool = true;
 
@@ -1106,10 +1158,12 @@ void changeMotorSpeed() {
 	if (RPMValue < RPM_LIMIT_LOW){
 		RPMValue = RPM_LIMIT_LOW;
 	}
+	
 
 	// Command change in ESC motor via PWM
 	analogWrite(motorSVpin, RPMValue);
-	//Serial.println(RPMValue);
+	updateRPMsetValueBool = true;
+	transmitAccessories = true;
 
 }
 
@@ -1120,32 +1174,75 @@ void setMotorPins(){
 	digitalWrite(motorBKpin, motorTrueForHardBrake);
 }
 
-void changeMotorDirection() {
+void changeMotorDirection(bool isDoubleClick) {
 	// Update ESC motor direction
 	// Include logic for pause + lock/unlock
 
-	RPM_dir = RPM_dir + 1;
+
+if (isDoubleClick){
+		// Change to pause state of opposite direction
+		if (RPM_dir == 0) {
+				// On to left -> off to right
+				RPM_dir = 1;
+		}
+		else if (RPM_dir == 1) {
+			// off to right -> off to right
+				RPM_dir = 3;
+		} 
+		else if (RPM_dir == 2) {
+			// on to right -> off to left
+				RPM_dir = 3;
+		} 
+		else if (RPM_dir == 3) {
+			// off to right -> off to left
+				RPM_dir = 1;
+		} 
+				
+		
+	}
+	else{
+		// Change to pause state of opposite direction
+		if (RPM_dir == 0) {
+				// On to left -> off to left
+				RPM_dir = 3;
+		}
+		else if (RPM_dir == 1) {
+			// off to right -> on to right
+				RPM_dir = 2;
+		} 
+		else if (RPM_dir == 2) {
+			// on to right -> off to right
+				RPM_dir = 1;
+		} 
+		else if (RPM_dir == 3) {
+			// off to left -> on to left
+				RPM_dir = 0;
+		} 
+
+	}
+
+
+	
 
 	switch (RPM_dir) {
-		case 1 : 
-			motorOn = true;
+		case 0 : // on to left
+			motorOn = false;
 			motorDir = false;
 			break;
 		
-		case 2 :
-			motorOn = false;
-			motorDir = true;
-			break;
-
-		case 3 :
+		case 1 : // off to right
 			motorOn = true;
 			motorDir = true;
 			break;
 
-		case 4 :
+		case 2 : // on to right
 			motorOn = false;
+			motorDir = true;
+			break;
+
+		case 3 : // off to left
+			motorOn = true;
 			motorDir = false;
-			RPM_dir = 0;
 			break;
 				
 		}
@@ -1154,7 +1251,7 @@ void changeMotorDirection() {
 
 
 	//Serial.println(RPM_dir);
-	updateRPMIdxOnScreen();
+	//updateRPMIdxOnScreen();
 	transmitAccessories = true;
 	updateRPMIdxBool = true;
 }
@@ -1221,7 +1318,8 @@ void updateAccessories(){
 			 updateZedLockBool ||
 			 updateSpinServoBool ||  
 			 updateZedStepIdxBool ||
-			 updateTwistIdxBool)){
+			 updateTwistIdxBool || 
+			 updateRPMsetValueBool)){
 			
 			//Serial.println("X");
 
@@ -1278,13 +1376,22 @@ void updateAccessories(){
 		updateTiltIdxOnScreen();
 	}
 
+	if (updateRPMsetValueBool){
+		updateRPMSetValueOnScreen();
+	}
+
 
 }
+
+
+void updateRPMSetValueOnScreen(){
+	sendCharAndInt("h", RPMValue);
+}
+
 
 void updateFlowIdxOnScreen() {
 
 	sendCharAndInt("f", flow_dir);
-
 }
 
 void updateFlowRateOnScreen() {
@@ -1295,6 +1402,7 @@ void updateFlowRateOnScreen() {
 void updateRPMIdxOnScreen() {
 
 	sendCharAndInt("r", RPM_dir);
+	//Serial.println(RPM_dir);
 }
 
 void updateRPMValueOnScreen() {

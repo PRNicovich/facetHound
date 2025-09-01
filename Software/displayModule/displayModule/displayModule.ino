@@ -57,6 +57,7 @@ TFT_eSprite stext11 = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite stext12 = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite stext13 = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite stext14 = TFT_eSprite(&tft); // Sprite object stext1
+TFT_eSprite stext15 = TFT_eSprite(&tft); // Sprite object stext1
 
 TFT_eSprite sBar1 = TFT_eSprite(&tft); // Sprite object stext1
 
@@ -105,6 +106,8 @@ int zedStepIndex = 2;
 bool updateZedStepIndexBool = true;
 
 bool updateRPMValue = true;
+bool updateRPMsetValueBool = true;
+long rpmSetValue = 1234;
 uint32_t RPMValue = 4568;
 int RPM_dir = 0;
 bool updateRPMDirBool = true;
@@ -237,6 +240,11 @@ void spriteTickHandler(){
     updateZedStepIndexBool = false;
   }
 
+  if (updateRPMsetValueBool){
+    updateRPMSetValueSprite();
+    updateRPMsetValueBool = false;
+  }
+
 
 
 
@@ -287,6 +295,11 @@ void inputHandler(String val){
     case ('g'):
 
       updateCheatMode(val.substring(2));
+      break;
+
+    case ('h'):
+
+      updateRPMSetValue(val.substring(2));
       break;
 
     case ('r'):
@@ -432,6 +445,7 @@ bool stringIsNumeric(char *str, bool skipLastOne) {
 boolean digitIsNumeric(char c) {
   return (isDigit(c) || ( '.' == c));
 }
+
 
 void updateP(String subVal){
   char chars[8];
@@ -634,8 +648,6 @@ void updateCheatMode(String subVal){
 void updateSpinServoIdx(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
-  spinServoIdx =  atoi(chars);
-
 
   if (stringIsNumeric(chars, true)){
     spinServoIdx =  atoi(chars);
@@ -646,10 +658,24 @@ void updateSpinServoIdx(String subVal){
   else {
     updateSpinServoIdxBool = false;
   }
+}
 
 
 
-  updateSpinServoIdxBool = true;
+void updateRPMSetValue(String subVal){
+  char chars[8];
+  subVal.toCharArray(chars, subVal.length()+1);
+
+  if (stringIsNumeric(chars, true)){
+    rpmSetValue =  atoi(chars);
+    updateRPMsetValueBool = true;
+    baseSerial.print(ACK);
+    baseSerial.println(" h");
+  }
+  else {
+    updateRPMsetValueBool = false;
+  }
+
 }
 
 
@@ -854,6 +880,13 @@ void drawMainScreen(bool initHere) {
     stext14.setTextColor(0x07FE); // White text, no background
     stext14.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
 
+    stext15.setColorDepth(8);
+    stext15.createSprite(60, 30);
+    stext15.loadFont(LABELS);
+    stext15.setTextColor(0xC618); // White text, no background
+    stext15.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
+
+
 
   }
   else{
@@ -990,7 +1023,7 @@ void updateRPMDirSprite(){
       break;
 
     case (1):
-      stext10.drawString("l", 20, 30);
+      stext10.drawString("r", 20, 30);
       break;
 
     case (2):
@@ -998,7 +1031,7 @@ void updateRPMDirSprite(){
       break;
 
     case (3):
-      stext10.drawString("r", 20, 30);
+      stext10.drawString("l", 20, 30);
       break;
   }
   
@@ -1057,6 +1090,14 @@ void updateStepServoSprite(){
   }
   
   stext14.pushSprite(80, 20);
+}
+
+
+void updateRPMSetValueSprite(){
+
+  stext15.fillSprite(SPRITE_FILL); // Fill sprite with blue
+  stext15.drawNumber(rpmSetValue,60, 30); // plot value in font 2
+  stext15.pushSprite(110, 445);
 }
 
 
