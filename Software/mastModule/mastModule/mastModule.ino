@@ -46,12 +46,10 @@ RunningAverage forceRA(FORCE_AVG_N);
 void setup(){
 
 
-  baseSerial.begin(115200);
-  while (!baseSerial){
-    delay(10);
-  }
+
 
   Serial.begin(115200);
+
 
 
   pinMode(forcePin, INPUT);
@@ -71,6 +69,15 @@ void setup(){
   digitalWrite(twist_CS, true);
   digitalWrite(twist_CLK, false);
 
+
+
+  baseSerial.begin(115200);
+  
+
+  while (!baseSerial){
+    delay(10);
+  }
+
   baseSerial.flush();
 
   twistRA.clear();
@@ -79,7 +86,6 @@ void setup(){
   tipRA.clear();
   forceRA.clear();
 
-  //Serial.println("Setup complete!");
   delay(500);
 
 }
@@ -116,6 +122,7 @@ void loop(){
 
   forceRA.addValue(forceSensor*FORCE_AVG_N);
   forceAvg = int(forceRA.getFastAverage());
+
 /*
   Serial.print(forceAvg);
   Serial.print("  -  ");
@@ -123,18 +130,19 @@ void loop(){
   Serial.print("  -  ");
   Serial.println(twistAvg);
 */
+
   if (baseSerial.available()){
+
+    int incomingByte = baseSerial.read();
     
-    val = baseSerial.readStringUntil('\n');
+    //Serial.println(incomingByte);
 
-    char switchChar = val.charAt(0);
-
-    switch (switchChar){
+    switch (incomingByte){
       case('?') : 
         // Send Frame        
         sendCharAndInt("i", tipAvg);
         sendCharAndInt("l", twistAvg);
-        Serial.println(twistCount);
+        //Serial.println(twistCount);
 
         sendCharAndInt("e", forceAvg);
     }

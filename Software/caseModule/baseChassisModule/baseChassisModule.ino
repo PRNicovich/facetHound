@@ -43,7 +43,7 @@
 #define PUMP_STEP_PIN 20
 
 
-#define RPM_LIMIT_HIGH 100
+#define RPM_LIMIT_HIGH 200
 #define RPM_LIMIT_LOW 0
 #define motorMaxRPM 3500
 #define motorNPoles 3
@@ -84,9 +84,9 @@ uint32_t ZED_RMS_CURRENT = 800;
 int32_t ZED_RUN_VELOCITY = 100000;
 bool ZED_DIR = false;
 uint16_t ZED_MICROSTEPS = 128;
-float ZED_MAX_SPEED = 40000.0;
+float ZED_MAX_SPEED = 400000.0;
 float ZED_ACCELLERATION = 100000.0;
-float ZED_STEP_SPEED = 5000;
+float ZED_STEP_SPEED = 10000;
 
 uint32_t PUMP_RMS_CURRENT = 1100;
 int32_t PUMP_RUN_VELOCITY = 1000;
@@ -102,19 +102,21 @@ AccelStepper twistDirStep(AccelStepper::DRIVER, TWIST_STEP_PIN, TWIST_DIR_PIN);
 AccelStepper zedDirStep(AccelStepper::DRIVER, ZED_STEP_PIN, ZED_DIR_PIN);
 
 uint8_t keyString[] = { 0, 0, 0, 0, 0, 0, 0 };
-int k = 0;
+long k = 0;
 
 bool lastValWasSep = true;
 uint8_t lastVal = 0;
 
-uint32_t lastQueryTime = 0;
-uint8_t frameCycleTime = 30;  // milliseconds
+long lastQueryTime = 0;
+long frameCycleTime = 30;  // milliseconds
 
 uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
+float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
+uint8_t indexIndex = 14;
 
-float wheelIndexSet = 96.0;
+float wheelIndexSet = supportedIndexes[indexIndex];
 float wheelIndex = 64.0;
 float tipEncoderSteps = 65535.0;
 bool updateTiltAngle = true;
@@ -147,7 +149,7 @@ bool updateTipAngle = true;
 float tipAngle = 0;
 uint32_t tipEncRaw = 0;
 float tipConversion = 360.0 / 131072.0;
-long tipZero = 47800;
+long tipZero = 48230;
 
 bool updateZValue = true;
 
@@ -169,7 +171,7 @@ bool zLock = false;
 
 bool updateRPMValue = true;
 long RPMValue = 0;
-int8_t RPM_dir = 3;
+int8_t RPM_dir = 1;
 bool motorAlarm = false;
 bool motorOn = true;
 bool motorDir = false;
@@ -204,7 +206,6 @@ bool updateRPMbool = false;
 bool updateZbool = false;
 bool updateTiltbool = false;
 bool updateTipbool = false;
-bool updateForcebool = false;
 bool updateFlowbool = true;
 bool updateWheelIndexBool = true;
 bool updateFlowIdxBool = true;
@@ -264,6 +265,8 @@ void setup() {
 
 	Serial.begin(115200);
 
+delay(500);
+
 
 	keysSerial.begin(115200);
 	while (!keysSerial) {
@@ -271,12 +274,12 @@ void setup() {
 	}
 	keysSerial.flush();
 
-
 	dispSerial.begin(38400);
 	while (!dispSerial) {
 		delay(10);
 	}
-	
+
+
 
 	mastSerial.begin(115200);
 
@@ -285,6 +288,10 @@ void setup() {
 	}
 
 	mastSerial.flush();
+
+
+
+
 	dispSerial.flush();	
 	Serial.flush();
 
@@ -303,19 +310,20 @@ void setup() {
 
 	updateWheelIndex(wheelIndexSet);
 
-
-
 }
 
 
 
 void loop() {
 
+	//Serial.println(lastQueryTime);
+
 
 	if ((millis() - lastQueryTime) > frameCycleTime) {
 
 		sendQuery();
-
+		
+		//Serial.println("in");
 		//float tiltError = targetTilt_float - tiltAngle;
 
 		lastQueryTime = millis();
@@ -380,14 +388,14 @@ void loop() {
 			chageFlowDirection(false);
 		}
 	}
+
+
+
 }
 
 float shortestArcPath(float target, float current){
 
 	float degAndDir = target - current;
-
-	//Serial.print(degAndDir);
-
 
 
 	if (degAndDir > 0){
@@ -444,11 +452,6 @@ void transmitFrame() {
 	if (updateTipbool) {
 		updateTipAngleOnScreen();
 		updateTipbool = false;
-	}
-
-	if (updateForcebool) {
-		updateForceValueOnScreen();
-		updateForcebool = false;
 	}
 
 
@@ -517,7 +520,11 @@ void initSteppers() {
 
 void initESCMotor(){
 
-	pinMode(motorALMpin, INPUT);
+	pinMode(motorALMpin, OUTPUT);
+
+	pinMode(motorALMpin, true);
+
+
 	pinMode(motorPGpin, INPUT);
 	pinMode(motorSVpin, OUTPUT);
 	pinMode(motorBKpin, OUTPUT);
@@ -557,7 +564,9 @@ void handleIncomingUART(int inputStream) {
 		//Serial.println(val);
 	}
 
-	//Serial.println(val);
+	if (val.length() > 12){
+		return;
+	}
 
 	char switchChar = val.charAt(0);
 
@@ -616,6 +625,10 @@ void handleIncomingUART(int inputStream) {
 				case ('F'):
 					updateFlowbool = false;
 					break;
+
+				case ('N'):
+					updateForceBar = false;
+					break;
 				
 				case ('h'):
 					updateRPMsetValueBool = false;
@@ -658,11 +671,56 @@ void handleIncomingUART(int inputStream) {
 	}
 }
 
+bool stringIsNumeric(char *str, bool skipLastOne) {
+  for (byte i = 0; str[i]; i++) {
+
+      if (str[i] != '\0'){
+        if (!digitIsNumeric(str[i])) {
+              //Serial.print("!");
+              //Serial.println(int(str[i]));
+
+            if (str[i] == 13){
+              if (i == 0){
+                // String is blank.  Just \r.
+                return false;
+              }
+
+              else if (str[i-1] == 46){
+                // Truncated at decimal
+                 return false;
+              }
+
+              else{
+                continue;
+              }
+              
+            }
+
+            return false;
+          }
+        else{
+
+        }
+      }
+  }
+    return true;
+  
+}
+
+boolean digitIsNumeric(char c) {
+  return (isDigit(c) || ( '.' == c) || ('-' == c));
+}
+
 void updateTiltEncoderSteps(String subVal) {
 	char chars[8];
 	subVal.toCharArray(chars, subVal.length() + 1);
-	tiltEncRaw = atof(chars);
-	tEncStepsToTiltValue();
+
+	if (stringIsNumeric(chars, true)){
+
+		tiltEncRaw = atof(chars);
+		tEncStepsToTiltValue();
+	}
+
 }
 
 void tEncStepsToTiltValue() {
@@ -672,18 +730,25 @@ void tEncStepsToTiltValue() {
 void updateForceRead(String subVal) {
 	char chars[8];
 	subVal.toCharArray(chars, subVal.length() + 1);
-	forceRaw = atof(chars);
 
-	fRawToForceValue();
+	if (stringIsNumeric(chars, true)){
+		forceRaw = atof(chars);
 
-	if (forceRaw == lastForceBar){
-		updateForcebool = false;
-		
+		fRawToForceValue();	
+
+		if (forceBar == lastForceBar){
+		}
+		else{
+			lastForceBar = forceBar;
+			updateForceBar = true;
+			
+			transmitAccessories = true;
+			
+		}
+
 	}
-	else{
-		lastForceBar = forceRaw;
-		updateForcebool = true;
-	}
+	
+
 
 
 }
@@ -696,8 +761,12 @@ void fRawToForceValue() {
 void updateTipEncoderSteps(String subVal) {
 	char chars[8];
 	subVal.toCharArray(chars, subVal.length() + 1);
-	tipEncRaw = atof(chars);
-	tipEncStepsToTipValue();
+
+	if (stringIsNumeric(chars, true)){
+		tipEncRaw = atof(chars);
+		tipEncStepsToTipValue();
+	}
+
 }
 
 void tipEncStepsToTipValue() {
@@ -710,8 +779,10 @@ void tipEncStepsToTipValue() {
 void updateZEncoderSteps(String subVal) {
 	char chars[8];
 	subVal.toCharArray(chars, subVal.length() + 1);
-	zEncSteps = atof(chars);
-	zEncStepsToZValue();
+	if (stringIsNumeric(chars, true)){
+		zEncSteps = atof(chars);
+		zEncStepsToZValue();
+	}
 }
 
 void zEncStepsToZValue() {
@@ -728,6 +799,8 @@ void sendToDisplayUART(char* x) {
 }
 
 void sendQuery() {
+	//Serial.println("query");
+
 	dispSerial.println('?');
 	dispSerial.flush();
 
@@ -835,12 +908,12 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 12:
 				//Serial.print(" 12 ");
-				changeMarkPointIndex(false);
+				changeMarkPointIndex(true);
 				break;
 
 			case 13:
 				//Serial.print(" 13 ");
-				changeMarkPointIndex(true);
+				changeMarkPointIndex(false);
 				break;
 
 			case 14:
@@ -1041,11 +1114,19 @@ void changeTiltAngle(bool directSet) {
 		if (not(directSet)) {
 
 			if (tiltDir){
-				targetTilt_float = targetTilt_float + tiltMult[tiltIdx];
+				targetTilt_float = (targetTilt_float + tiltMult[tiltIdx]);
 			}
 			else{
-				targetTilt_float = targetTilt_float - tiltMult[tiltIdx];
+				targetTilt_float = (targetTilt_float - tiltMult[tiltIdx]);
 			}
+		}
+
+		if (targetTilt_float > wheelIndex){
+			targetTilt_float = targetTilt_float - wheelIndex;
+		}
+
+		if (targetTilt_float < 0){
+			targetTilt_float = targetTilt_float + wheelIndex;
 		}
 
 		degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
@@ -1168,6 +1249,8 @@ void changeMotorSpeed() {
 }
 
 void setMotorPins(){
+	
+	//Serial.println("setMotorPins");
 
 	digitalWrite(motorENpin, motorOn);
 	digitalWrite(motorFRpin, motorDir);
@@ -1177,6 +1260,7 @@ void setMotorPins(){
 void changeMotorDirection(bool isDoubleClick) {
 	// Update ESC motor direction
 	// Include logic for pause + lock/unlock
+
 
 
 if (isDoubleClick){
@@ -1319,7 +1403,8 @@ void updateAccessories(){
 			 updateSpinServoBool ||  
 			 updateZedStepIdxBool ||
 			 updateTwistIdxBool || 
-			 updateRPMsetValueBool)){
+			 updateRPMsetValueBool ||
+			 updateForceBar)){
 			
 			//Serial.println("X");
 
@@ -1380,6 +1465,10 @@ void updateAccessories(){
 		updateRPMSetValueOnScreen();
 	}
 
+	if (updateForceBar){
+		updateForceValueOnScreen();
+	}
+
 
 }
 
@@ -1428,6 +1517,7 @@ void updateTipAngleOnScreen() {
 void updateForceValueOnScreen() {
 
 	sendCharAndInt("N", forceBar);
+	//Serial.println(forceBar);
 }
 
 void updateZValueOnScreen() {
