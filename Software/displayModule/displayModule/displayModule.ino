@@ -423,8 +423,15 @@ bool stringIsNumeric(char *str, bool skipLastOne) {
 
             if (str[i] == 13){
               if (i == 0){
+                // String is blank.  Just \r.
                 return false;
               }
+
+              else if (str[i-1] == 46){
+                // Truncated at decimal
+                 return false;
+              }
+
               else{
                 continue;
               }
@@ -449,16 +456,19 @@ boolean digitIsNumeric(char c) {
 
 void updateP(String subVal){
   char chars[8];
-  bool allNumeric = false;
   subVal.toCharArray(chars, subVal.length()+1);
-  
 
-  allNumeric = stringIsNumeric(chars, true);
-
-  if (allNumeric){
-   // Serial.println(chars);
-    tipAngle =  atof(chars);
-    updateTipAngle = true;
+  if (stringIsNumeric(chars, false)){
+    if (int(chars[subVal.length()-1]) == 46){
+      //Serial.print("X : ");
+      //Serial.println(chars);
+      updateTipAngle = false;
+    }
+    else {
+      //Serial.println(chars);
+      tipAngle =  atof(chars);
+      updateTipAngle = true;
+    }
   }
   else{
     updateTiltAngle = false;
@@ -497,11 +507,13 @@ void updateF(String subVal){
 void updateForceBar(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
-
- if (stringIsNumeric(chars, true)){
   //Serial.println(chars);
+ if (stringIsNumeric(chars, true)){
+  
   forceBar =  atoi(chars);
   updateForceBarBool = true;
+  baseSerial.print(ACK);
+  baseSerial.println(" N");
  }
  else{
   updateForceBarBool = false;
@@ -684,7 +696,7 @@ void updateRPMSetValue(String subVal){
 void initConnections(){
 
   
-  Serial.begin(115200);
+  //Serial.begin(115200);
 
   encoder.begin();
 
@@ -977,7 +989,7 @@ void updateTiltLockSprite(){
   
   stext7.fillSprite(SPRITE_FILL); // Fill sprite with blue
   if (tiltLock == 1){
-    stext7.drawString("O", 20, 30);
+    stext7.drawString("-", 20, 30);
   }
   else if (tiltLock = 2){
     stext7.drawString("X", 20, 30);
