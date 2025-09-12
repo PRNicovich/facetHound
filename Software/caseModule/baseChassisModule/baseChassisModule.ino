@@ -135,9 +135,10 @@ float servoCapture = 105.0; // degrees
 bool cheatMode = false;
 float tiltRecall = 0;
 bool firstCrossServoThreshold = true;
-float twistErrorProportionalTerm = 0.1;
+float twistErrorProportionalTerm = 0.2;
 float degreesAndDirection = 0;
-float positionErrorTolerance = 0.001;
+float positionErrorTolerance = 0.008;
+int nLocks = 0;
 
 float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84};
 int8_t tiltMemIdx = 4;
@@ -163,7 +164,7 @@ float zedGearRatio = 4;
 float zedEncoderOversample = 4;
 float zConversionFactor = zedIndexInitsPerWheelTurn / (zedGearRatio*zedEncoderOversample);
 float zedStepsPerIndexUnit = ZED_MOTOR_STEPS_PER_ROT / zedIndexInitsPerWheelTurn;
-float zMult[] = {int(zedStepsPerIndexUnit), int(0.05*zedStepsPerIndexUnit), int(0.0005*zedStepsPerIndexUnit)};
+int zMult[] = {int(zedStepsPerIndexUnit), int(0.05*zedStepsPerIndexUnit), int(0.0005*zedStepsPerIndexUnit)};
 int zIdx = 0;
 bool zLock = false;
 
@@ -320,14 +321,28 @@ void loop() {
 
 		lastQueryTime = millis();
 
-		if (abs((targetTilt_float - tiltAngle)) > positionErrorTolerance) {
-			if (twistDirStep.distanceToGo() == 0){
-				degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
+    if (nLocks > 3){
+      twistDirStep.move(0);
+    }
+    else {
+      if (abs((targetTilt_float - tiltAngle)) > positionErrorTolerance) {
 
-				long stepsToMoveHere = twistErrorProportionalTerm*(degreesAndDirection)*tiltStepsPerIndexUnit;
+        nLocks = 0;
 
-				twistDirStep.move(stepsToMoveHere);
-			}
+        if (twistDirStep.distanceToGo() == 0){
+          degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
+
+          long stepsToMoveHere = twistErrorProportionalTerm*(degreesAndDirection)*tiltStepsPerIndexUnit;
+
+          twistDirStep.move(stepsToMoveHere);
+        }
+      }
+      else {
+
+        nLocks++;
+        Serial.println("lock!");
+      }
+
 
 		}
 	}
@@ -919,6 +934,7 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 
 			case 31:
+			
 				if ((millis() - lastMotorDirClick) < doubleClickTime){
 
 					changeMotorDirection(true);
@@ -933,18 +949,17 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 
 			case 32:
+			
 				RPMValue = RPMValue - 1;
 				changeMotorSpeed();
+				
 				break;
 
 			case 36:
 
-				//zValue = zValue + zMult[zIdx];
 				zedDir = true;
 				changeZMotorSteps();
-				//zedDir = false;
-				//Serial.println(zValue);
-				//updateZValueOnScreen();
+
 				break;
 
 			case 37:
@@ -969,14 +984,11 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 		}
 
-		// Serial.print('.');
+
 
 		keyString[i] = 0;
 	}
 
-	//Serial.println();
-
-	//Serial.println(keyString);
 }
 
 
@@ -1048,9 +1060,17 @@ void changeTiltAngle(bool directSet) {
 			}
 		}
 
+    if (targetTilt_float > wheelIndex){
+      targetTilt_float = targetTilt_float - wheelIndex;
+    }
+    else if (targetTilt_float < 0){
+      targetTilt_float = targetTilt_float + wheelIndex;
+    }
+
 		degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
 		long stepsToMoveHere = degreesAndDirection*tiltStepsPerIndexUnit;
 
+    nLocks = 0;
 		twistDirStep.move(stepsToMoveHere);
 	}
 }
@@ -1179,7 +1199,7 @@ void changeMotorDirection(bool isDoubleClick) {
 	// Include logic for pause + lock/unlock
 
 
-if (isDoubleClick){
+	if (isDoubleClick){
 		// Change to pause state of opposite direction
 		if (RPM_dir == 0) {
 				// On to left -> off to right
@@ -1220,47 +1240,37 @@ if (isDoubleClick){
 		} 
 
 	}
-
-
 	
 
-	switch (RPM_dir) {
-		case 0 : // on to left
-			motorOn = false;
-			motorDir = false;
-			break;
+	if (RPM_dir == 0) {
+		motorOn = false;
+		motorDir = false;
+	}
+	else if (RPM_dir == 1){
+
+		motorOn = true;
+		motorDir = true;
+	}
+
+	else if (RPM_dir == 2){
 		
-		case 1 : // off to right
-			motorOn = true;
-			motorDir = true;
-			break;
+		motorOn = false;
+		motorDir = true;
+	}
+	else if (RPM_dir == 3){
 
-		case 2 : // on to right
-			motorOn = false;
-			motorDir = true;
-			break;
-
-		case 3 : // off to left
-			motorOn = true;
-			motorDir = false;
-			break;
-				
-		}
+		motorOn = true;
+		motorDir = false;
+					
+	}
 
 	setMotorPins();
 
-
-	//Serial.println(RPM_dir);
-	//updateRPMIdxOnScreen();
 	transmitAccessories = true;
 	updateRPMIdxBool = true;
 }
 
-void updateESCLockOnScreen() {
 
-	
-	// Toggle icons for lock/unlock of ESC motor direction w/ encoder push
-}
 
 void changeZMotorSteps() {
 
@@ -1311,15 +1321,15 @@ void updateAccessories(){
 	//sendCharAndInt ("X", 12345678);
 
 	if ((updateFlowbool ||
-		   updateWheelIndexBool ||
-			 updateFlowIdxBool || 
-			 updateRPMIdxBool ||
-		   updateTipLockBool ||
-			 updateZedLockBool ||
-			 updateSpinServoBool ||  
-			 updateZedStepIdxBool ||
-			 updateTwistIdxBool || 
-			 updateRPMsetValueBool)){
+		 updateWheelIndexBool ||
+		 updateFlowIdxBool || 
+		 updateRPMIdxBool ||
+		 updateTipLockBool ||
+		 updateZedLockBool ||
+		 updateSpinServoBool ||  
+		 updateZedStepIdxBool ||
+		 updateTwistIdxBool || 
+		 updateRPMsetValueBool)){
 			
 			//Serial.println("X");
 
@@ -1402,7 +1412,6 @@ void updateFlowRateOnScreen() {
 void updateRPMIdxOnScreen() {
 
 	sendCharAndInt("r", RPM_dir);
-	//Serial.println(RPM_dir);
 }
 
 void updateRPMValueOnScreen() {
@@ -1432,7 +1441,6 @@ void updateForceValueOnScreen() {
 
 void updateZValueOnScreen() {
 
-	//Serial.println(zValue);
 	sendCharAndFloat("Z", zValue, 3);
 }
 
@@ -1532,9 +1540,9 @@ void spinServoModeToggle() {
 
 void changeMarkPointIndex(bool dir) {
 	if (dir) {
-		tiltMemIdx = tiltMemIdx + 1;
-	} else {
 		tiltMemIdx = tiltMemIdx - 1;
+	} else {
+		tiltMemIdx = tiltMemIdx + 1;
 	}
 
 	
