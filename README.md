@@ -7,4 +7,4 @@ Complete design is included in ./Hardware/FaceHoundv7.step.  Sub-folders of ./Ha
 
 Sub-folders of ./Software/ are the sketch files for each of the four sub-modules.  The main module is a Raspberry Pi Pico 2 and peripherals are RP2040 Zero clones.  All are programmed in C using the Arduino IDE.  All necessary dependencies are straightforward to install through the IDE. 
 
-These are preliminary designs that may include errors.  Feel free to contribute your own modifications or bug fixes as pull requests. 
+These are preliminary designs that may be incomplete or include errors.  Feel free to contribute your own modifications or bug fixes as pull requests. 
