@@ -114,23 +114,23 @@ uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
 float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
-uint8_t indexIndex = 14;
+uint8_t indexIndex = 19;
 
 float wheelIndexSet = supportedIndexes[indexIndex];
 float wheelIndex = 64.0;
-float tipEncoderSteps = 65535.0;
+float indexEncoderSteps = 65535.0;
 bool updateTiltAngle = true;
 float tiltAngle = 0;
 float targetTilt_float = 48.0;
 uint32_t targetTilt = 0;
 uint32_t tiltEncRaw = 0;
-float tiltConversion = wheelIndex / tipEncoderSteps;
-float tiltStepsPerIndexUnit = TILT_STEPS_PER_ROT/wheelIndex;
+float tiltConversion = 0;
+float tiltStepsPerIndexUnit = 0;
 float tiltMult[] = { 1.0, 0.1, 0.005 };
 int tiltIdx = 1;
 bool tiltLock = true;
 bool tiltDir = false;
-float tiltZero = 0;
+float tiltZero = 1;
 bool spinServoIdx = false;
 float servoRelease = 120.0; // degrees
 float servoCapture = 105.0; // degrees
@@ -139,12 +139,13 @@ float tiltRecall = 0;
 bool firstCrossServoThreshold = true;
 float twistErrorProportionalTerm = 0.2;
 float degreesAndDirection = 0;
-float positionErrorTolerance = 0.008;
+float positionErrorTolerance = 0.013;
 int nLocks = 0;
 
-float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84};
-int8_t tiltMemIdx = 4;
-uint8_t tiltMemNPts = 8;
+// float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
+float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96};
+int8_t tiltMemIdx = 6;
+uint8_t tiltMemNPts = sizeof(tiltAngleMemory) / sizeof(tiltAngleMemory[0]);
 
 bool updateTipAngle = true;
 float tipAngle = 0;
@@ -333,22 +334,26 @@ void loop() {
       twistDirStep.move(0);
     }
     else {
-      if (abs((targetTilt_float - tiltAngle)) > positionErrorTolerance) {
+      
+      degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
+      long totalStepstoMove = (degreesAndDirection)*tiltStepsPerIndexUnit;
+      long stepsToMoveHere = twistErrorProportionalTerm*totalStepstoMove;
+      
+
+      if (abs(degreesAndDirection) > positionErrorTolerance) {
 
         nLocks = 0;
+        Serial.println(abs(degreesAndDirection), 4);
 
         if (twistDirStep.distanceToGo() == 0){
-          degreesAndDirection = shortestArcPath(targetTilt_float, tiltAngle);
-
-          long stepsToMoveHere = twistErrorProportionalTerm*(degreesAndDirection)*tiltStepsPerIndexUnit;
-
+          
           twistDirStep.move(stepsToMoveHere);
         }
       }
       else {
 
+        //Serial.println(nLocks);
         nLocks++;
-        Serial.println("lock!");
       }
 
 
@@ -1509,7 +1514,7 @@ void updateRPMValueOnScreen() {
 
 void updateTiltAngleOnScreen() {
 	sendCharAndFloat("T", targetTilt_float, 2);
-	sendCharAndFloat("c", shortestArcPath(targetTilt_float, tiltAngle), 2);
+	sendCharAndFloat("c", -shortestArcPath(targetTilt_float, tiltAngle), 2);
 }
 
 void updateTiltIdxOnScreen() {
@@ -1676,8 +1681,8 @@ void toggleCheatMode() {
 void updateWheelIndex(float newWheelValue){
 
 	wheelIndex = newWheelValue;
-	tiltConversion = wheelIndex / tipEncoderSteps;
-	tiltStepsPerIndexUnit = TILT_STEPS_PER_ROT/wheelIndex;
+	tiltConversion = (wheelIndex) / indexEncoderSteps;
+	tiltStepsPerIndexUnit = TILT_STEPS_PER_ROT/(wheelIndex);
 
 	updateWheelIndexBool = true;
 	transmitAccessories = true;
