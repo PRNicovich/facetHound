@@ -72,7 +72,7 @@ TMC2209 pumpDriver;
 
 // current values may need to be reduced to prevent overheating depending on
 // specific motor and power supply voltage
-uint32_t TWIST_RMS_CURRENT = 800;
+uint32_t TWIST_RMS_CURRENT = 1000;
 int32_t TWIST_RUN_VELOCITY = 2000;
 bool TWIST_DIR = false;
 uint16_t TWIST_MICROSTEPS = 256;
@@ -114,14 +114,14 @@ uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
 float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
-uint8_t indexIndex = 19;
+uint8_t indexIndex = 10;
 
 float wheelIndexSet = supportedIndexes[indexIndex];
 float wheelIndex = 64.0;
 float indexEncoderSteps = 65535.0;
 bool updateTiltAngle = true;
 float tiltAngle = 0;
-float targetTilt_float = 48.0;
+float targetTilt_float = 0.0;
 uint32_t targetTilt = 0;
 uint32_t tiltEncRaw = 0;
 float tiltConversion = 0;
@@ -143,8 +143,9 @@ float positionErrorTolerance = 0.013;
 int nLocks = 0;
 
 // float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
-float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96};
-int8_t tiltMemIdx = 6;
+// float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96}; // 104 wheel
+float tiltAngleMemory[] = {0, 16, 32, 48, 64}; // 80 wheel
+int8_t tiltMemIdx = 1;
 uint8_t tiltMemNPts = sizeof(tiltAngleMemory) / sizeof(tiltAngleMemory[0]);
 
 bool updateTipAngle = true;
