@@ -43,10 +43,11 @@
 #define PUMP_STEP_PIN 20
 
 
-#define RPM_LIMIT_HIGH 200
+#define RPM_LIMIT_HIGH 100
 #define RPM_LIMIT_LOW 0
 #define motorMaxRPM 3500
 #define motorNPoles 3
+#define RPMScalar 2
 
 #define DISP_IN 0
 #define MAST_IN 1
@@ -72,7 +73,7 @@ TMC2209 pumpDriver;
 
 // current values may need to be reduced to prevent overheating depending on
 // specific motor and power supply voltage
-uint32_t TWIST_RMS_CURRENT = 1000;
+uint32_t TWIST_RMS_CURRENT = 900;
 int32_t TWIST_RUN_VELOCITY = 2000;
 bool TWIST_DIR = false;
 uint16_t TWIST_MICROSTEPS = 256;
@@ -114,9 +115,14 @@ uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
 float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
-uint8_t indexIndex = 10;
+uint8_t nSupIndexes = 27;  //  counted.  could be calc'd
+uint8_t indexIndex = 14;
+//float tiltAngleMemory[] = {5, 10, 14, 19, 24, 34, 43, 53, 58, 63, 67, 72}; // 77 wheel
+float tiltAngleMemory[] = {0, 2, 6, 26, 30, 34, 58, 62, 66, 70, 90, 94}; // 96 wheel cube illusion
+uint8_t tiltMemNPts = 0;
+int8_t tiltMemIdx = 0;
 
-float wheelIndexSet = supportedIndexes[indexIndex];
+
 float wheelIndex = 64.0;
 float indexEncoderSteps = 65535.0;
 bool updateTiltAngle = true;
@@ -142,17 +148,13 @@ float degreesAndDirection = 0;
 float positionErrorTolerance = 0.013;
 int nLocks = 0;
 
-// float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
-// float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96}; // 104 wheel
-float tiltAngleMemory[] = {0, 16, 32, 48, 64}; // 80 wheel
-int8_t tiltMemIdx = 1;
-uint8_t tiltMemNPts = sizeof(tiltAngleMemory) / sizeof(tiltAngleMemory[0]);
+
 
 bool updateTipAngle = true;
 float tipAngle = 0;
 uint32_t tipEncRaw = 0;
 float tipConversion = 360.0 / 131072.0;
-long tipZero = 48230;
+float tipZero = 48230;
 
 bool updateZValue = true;
 
@@ -310,8 +312,8 @@ delay(500);
 	pinMode(ZED_STEP_PIN, OUTPUT);
   pinMode(ZED_DIR_PIN, OUTPUT);
 
-
-	updateWheelIndex(wheelIndexSet);
+	updateWheelIndex(supportedIndexes[indexIndex]);
+  updateWheelIndexMemory(indexIndex);
 
 }
 
@@ -792,7 +794,7 @@ void updateTipEncoderSteps(String subVal) {
 
 void tipEncStepsToTipValue() {
 	if (tipEncRaw > 0){
-		tipAngle = float(tipEncRaw - tipZero) * tipConversion;
+		tipAngle = (float(tipEncRaw) - tipZero) * tipConversion;
 	}
 	
 }
@@ -894,12 +896,12 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 5:
 				//Serial.print(" 5 ");
-				zeroTilt();
+				incrementWheelIndexIndex();
 				break;
 
 			case 6:
 				//Serial.print(" 6 ");
-				undeclaredFunction();
+				zeroTilt();
 				break;
 
 			case 7:
@@ -951,7 +953,7 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 16:
 				//tiltAngle = tiltAngle + tiltMult[tiltIdx];
-				tiltDir = true;
+				tiltDir = false;
 				//twistDirStep.move(-100);
 				changeTiltAngle(false);
 				//updateTiltAngleOnScreen();
@@ -972,13 +974,13 @@ void keyboardRouter(uint8_t keyString[]) {
 				//tiltAngle = tiltAngle - tiltMult[tiltIdx];
 
 				//twistDirStep.move(100);
-				tiltDir = false;
+				tiltDir = true;
 				changeTiltAngle(false);
 				//updateTiltAngleOnScreen();
 				break;
 
 			case 33:
-				flowRate = flowRate + 1;
+				flowRate = flowRate - 1;
 				changeFlowRate();
 				//updateFlowRateOnScreen();
 				break;
@@ -1001,14 +1003,14 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 
 			case 35:
-				flowRate = flowRate - 1;
+				flowRate = flowRate + 1;
 				changeFlowRate();
 				//updateFlowRateOnScreen();
 				break;
 
 			case 30:
 				
-				RPMValue = RPMValue + 1;
+				RPMValue = RPMValue - 1;
 				changeMotorSpeed();
 				break;
 
@@ -1029,7 +1031,7 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 32:
 			
-				RPMValue = RPMValue - 1;
+				RPMValue = RPMValue + 1;
 				changeMotorSpeed();
 				
 				break;
@@ -1098,6 +1100,8 @@ void checkServoStatus(){
 			tiltRecall = tiltAngle;
 			firstCrossServoThreshold = false;
 			twistDriver.disable();
+
+      nLocks = 0;
 		}
 	}
 	
@@ -1127,8 +1131,6 @@ void checkServoStatus(){
 
 void changeTiltAngle(bool directSet) {
 
-	if (tiltLock){
-
 		if (not(directSet)) {
 
 			if (tiltDir){
@@ -1153,6 +1155,8 @@ void changeTiltAngle(bool directSet) {
 		long stepsToMoveHere = degreesAndDirection*tiltStepsPerIndexUnit;
 
     nLocks = 0;
+  
+  if (tiltLock){
 		twistDirStep.move(stepsToMoveHere);
 	}
 }
@@ -1263,7 +1267,7 @@ void changeMotorSpeed() {
 	
 
 	// Command change in ESC motor via PWM
-	analogWrite(motorSVpin, RPMValue);
+	analogWrite(motorSVpin, RPMValue*RPMScalar);
 	updateRPMsetValueBool = true;
 	transmitAccessories = true;
 
@@ -1679,6 +1683,162 @@ void toggleCheatMode() {
 	transmitAccessories = true;
 }
 
+void updateWheelIndexMemory(uint8_t newIndex){
+
+/*
+
+  switch (newIndex){
+
+    case (0):
+      // 1,0
+      tiltAngleMemory = {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6. 0.7, 0.8, 0.9};
+      break;
+
+    case (1):
+      // 2.0
+      tiltAngleMemory = {0, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 1.75};
+      break;
+
+    case (2):
+      // 2*pi
+      tiltAngleMemory = {PI/3, 2*PI/3, PI, 4*PI/3, 5*PI/3};
+      break;
+
+    case (3):
+      // 32 
+      tiltAngleMemory = {0, 4, 8, 12, 16, 20, 24, 28};
+      break;
+
+    case (4):
+      // 40
+      tiltAngleMemory = {0, 8, 16, 24, 32};
+      break;
+
+    case 5:
+      // 48
+      tiltAngleMemory = {0, 8, 16, 24, 32, 40};
+      break;
+
+    case 6:
+      // 60
+      tiltAngleMemory = {0, 10, 20, 30, 40, 50};
+     break;
+    
+    case 7:
+    // 64
+      tiltAngleMemory = {0, 8, 16, 24, 32, 40, 48, 56};
+    break;
+
+    case 8:
+      // 72
+      tiltAngleMemory = {0, 8, 16, 24, 32};
+      break;
+
+    case 9:
+      // 77
+      tiltAngleMemory = {5, 10, 14, 19, 24, 34, 43, 53, 58, 63, 67, 72}; // 77 wheel
+    break;
+
+    case 10:
+      // 80
+      tiltAngleMemory = {0, 8, 16, 24, 32, 40, 48, 56, 64, 72};
+    break;
+    
+    case 11:
+    // 81
+      tiltAngleMemory = {0, 9, 18, 27, 36, 45, 54, 63, 72};
+    break;
+
+    case 12:
+      // 88
+      tiltAngleMemory = {0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80};
+    break;
+
+    case 13:
+      // 91
+      tiltAngleMemory = {0, 7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84};
+    break;
+    
+    case 14:
+    // 96
+      tiltAngleMemory = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
+    break;
+
+    case 15:
+    // 98
+      tiltAngleMemory = {0, 14, 28, 42, 56, 70, 84}; 
+    break;
+
+    case 16:
+    // 99
+       tiltAngleMemory = {0, 9, 18, 27, 36, 45, 54, 63, 72, 81, 90}; 
+    break;
+
+    case 17:
+      // 100
+       tiltAngleMemory = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90}; 
+    break;
+
+    case 18:
+      // 102
+       tiltAngleMemory = {0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96}; 
+    break;
+
+    case 19:
+      // 104
+       tiltAngleMemory = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96}; // 104 wheel
+    break;
+
+    case 20:
+    // 120
+       tiltAngleMemory = {0, 14, 28, 42, 56, 70, 84}; 
+    break;
+
+    case 21:
+    // 128
+       tiltAngleMemory = {0, 9, 18, 27, 36, 45, 54, 63, 72, 81, 90}; 
+    break;
+
+    case 22:
+      // 144
+       tiltAngleMemory = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90}; 
+    break;
+
+    case 23:
+      // 192
+       tiltAngleMemory = {0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96}; 
+    break;
+
+    case 24:
+      // 256
+       tiltAngleMemory = {0, 16, 32, 48, 64, 80, 96, 102, 128, 144, 160, 172, 184, 196, 208, 224, 240};
+    break;
+
+    case 25:
+      // 360
+       tiltAngleMemory = {0, 60, 120, 180, 240, 300}; 
+    break;
+
+    case 26:
+      // 400
+       tiltAngleMemory = {0, 50, 100, 150, 200, 250, 300, 350}; 
+    break;
+
+    default :
+      tiltAngleMemory = {};
+    break;
+
+
+  }
+
+
+  */
+
+  tiltMemNPts = sizeof(tiltAngleMemory) / sizeof(tiltAngleMemory[0]);
+
+
+}
+
 void updateWheelIndex(float newWheelValue){
 
 	wheelIndex = newWheelValue;
@@ -1687,9 +1847,28 @@ void updateWheelIndex(float newWheelValue){
 
 	updateWheelIndexBool = true;
 	transmitAccessories = true;
+
+  if (targetTilt_float > wheelIndex){
+    targetTilt_float = 0;
+  }
+
+  nLocks = 0;
 }
 
 void updateWheelIndexOnScreen(){
 	sendCharAndInt("W", int(wheelIndex));
 	transmitAccessories = true;
 }
+
+
+void incrementWheelIndexIndex(){
+  indexIndex = indexIndex + 1;
+
+  if (indexIndex == nSupIndexes){
+    indexIndex = 0;
+  }
+
+  updateWheelIndex(supportedIndexes[indexIndex]);
+
+}
+

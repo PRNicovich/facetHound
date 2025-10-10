@@ -59,6 +59,8 @@ TFT_eSprite stext13 = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite stext14 = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite stext15 = TFT_eSprite(&tft); // Sprite object stext1
 
+//TFT_eSprite stext_markIdx = TFT_eSprite(&tft); // Sprite object stext1
+
 TFT_eSprite sBar1 = TFT_eSprite(&tft); // Sprite object stext1
 
 
@@ -96,6 +98,12 @@ bool updateSpinServoIdxBool = true;
 
 bool updateTipAngle = true;
 float tipAngle = 44.5;
+
+int markIdx = 0;
+int nMarks = 0;
+float markL = 0.00;
+float markR = 0.00;
+bool updateMarkPointsBool = true;
 
 
 bool updateZValue = true;
@@ -162,6 +170,8 @@ void loop() {
 
 
 void spriteTickHandler(){
+
+  Serial.println("tick");
 
 
   if (updateTipAngle){
@@ -243,6 +253,11 @@ void spriteTickHandler(){
   if (updateRPMsetValueBool){
     updateRPMSetValueSprite();
     updateRPMsetValueBool = false;
+  }
+
+  if (updateMarkPointsBool){
+    updateMarkPointsSprite();
+    updateMarkPointsBool = false;
   }
 
 
@@ -899,6 +914,14 @@ void drawMainScreen(bool initHere) {
     stext15.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
 
 
+    /*
+    stext_markIdx.setColorDepth(8);
+    stext_markIdx.createSprite(100, 30);
+    stext_markIdx.loadFont(ERRORTEXT);
+    stext_markIdx.setTextColor(0x07FE); // White text, no background
+    stext_markIdx.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
+    */
+
 
   }
   else{
@@ -908,6 +931,8 @@ void drawMainScreen(bool initHere) {
 
   }
 }
+
+
       
 void updateAllSprites(){
   updateTiltSprite();
@@ -923,6 +948,14 @@ void updateAllSprites(){
   updateRPMDirSprite();
   updateFlowDirSprite();
   updateStepServoSprite();
+  //updateMarkPointsSprite();
+}
+
+
+void updateMarkPointsSprite(){
+  //stext_markIdx.fillSprite(SPRITE_FILL); // Fill sprite with blue
+  //stext_markIdx.drawFloat(markL, 2, 205, 75); // plot value in font 2
+  //stext_markIdx.pushSprite(20, 60);
 }
 
 void updateTiltSprite(){
