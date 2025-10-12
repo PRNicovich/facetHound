@@ -1,17 +1,10 @@
-// SPDX-FileCopyrightText: 2025 Tim Cocks for Adafruit Industries
-//
-// SPDX-License-Identifier: MIT
+// display module code for facetHound
+// REQUIRES TFT library setup in user setup file
+// Change reference in User_Setup_select.h to point to ../tftSetup/userSetup_tft.h
+// Line in User_Setup_Select.h : 
+// #include <../facetHoundSetup/userSetup_tft.h>
+// pointing to .../Arduino/libraries/facetHoundSetup/...
 
-/*********************************************************************
- Adafruit invests time and resources providing this open source code,
- please support Adafruit and open-source hardware by purchasing
- products from Adafruit!
-
- MIT license, check LICENSE for more information
- Copyright (c) 2019 Ha Thach for Adafruit Industries
- All text above, and the splash screen below must be included in
- any redistribution
-*********************************************************************/
 
 #include <SPI.h>
 #include <TFT_eSPI.h> // Hardware-specific library
@@ -61,6 +54,7 @@ TFT_eSprite stext15 = TFT_eSprite(&tft); // Sprite object stext1
 
 TFT_eSprite sBar1 = TFT_eSprite(&tft); // Sprite object stext1
 
+TFT_eSprite markSprite = TFT_eSprite(&tft);
 
 TFT_eSprite axisLabels = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite unitLabels = TFT_eSprite(&tft); // Sprite object stext1
@@ -90,6 +84,12 @@ bool updateTiltStepIndexBool = true;
 int tiltStepIndex = 2;
 int cheatModeIdx = 0;
 bool updateCheatModeBool = false;
+
+float markL = -1.00;
+float markR = -1.00;
+int markIdx = 0;
+int nMarkIdx = 0;
+bool updateMarkPointsBool = true;
 
 int spinServoIdx =  0;
 bool updateSpinServoIdxBool = true;
@@ -142,6 +142,7 @@ void setup() {
 
 void loop() {
 
+
   while (baseSerial.available()){
 
     String val = baseSerial.readStringUntil('\n');
@@ -162,7 +163,6 @@ void loop() {
 
 
 void spriteTickHandler(){
-
 
   if (updateTipAngle){
     updateTipSprite();
@@ -245,6 +245,11 @@ void spriteTickHandler(){
     updateRPMsetValueBool = false;
   }
 
+
+  if (updateMarkPointsBool){
+    updateMarkPointsSprite();
+    updateMarkPointsBool = false;
+  }
 
 
 
@@ -345,6 +350,11 @@ void inputHandler(String val){
 
       updateZ(val.substring(2));
 
+      break;
+
+    case ('M'):
+      Serial.println(val.substring(2));
+      updateMarkPointsValues(val.substring(2));
       break;
 
     case ('N'):
@@ -451,6 +461,36 @@ bool stringIsNumeric(char *str, bool skipLastOne) {
 
 boolean digitIsNumeric(char c) {
   return (isDigit(c) || ( '.' == c));
+}
+
+void updateMarkPointsValues(String subVal){
+  // Format "M IDX N L R\n"
+  // M is character 
+  // IDX is index num (int)
+  // N is num of indexes (int)
+  // L is next left (float)
+  // R is next right (float)
+
+  int onIdx = 0;
+  // split string
+  int nextCut = subVal.substring(onIdx).indexOf(" ");
+  markIdx = subVal.substring(onIdx, nextCut).toInt();
+  onIdx = nextCut + 1 + onIdx;
+
+  nextCut = subVal.substring(onIdx).indexOf(" ");
+  nMarkIdx = subVal.substring(onIdx, onIdx + nextCut).toInt();
+  onIdx = nextCut + 1 + onIdx;
+
+  nextCut = subVal.substring(onIdx).indexOf(" ");
+  markL = subVal.substring(onIdx, onIdx + nextCut).toFloat();
+  onIdx = nextCut + 1 + onIdx;
+
+  markR = subVal.substring(onIdx).toFloat();
+  
+  // Parse
+
+  updateMarkPointsBool = true;
+
 }
 
 
@@ -696,14 +736,14 @@ void updateRPMSetValue(String subVal){
 void initConnections(){
 
   
-  //Serial.begin(115200);
-
-  encoder.begin();
-
+  Serial.begin(115200);
+  
   baseSerial.begin(38400);
-	while (!baseSerial){
+	/*
+  while (!baseSerial){
 		delay(10);
 	}
+  */
   uartFound = true;
 	baseSerial.flush();
 
@@ -718,10 +758,12 @@ void initConnections(){
 
   drawMainScreen(true);
 
+  Serial.println("initDone");
 
 }
 
 void drawSplashScreen(){
+
 
   tft.fillScreen(0x0000);
   
@@ -898,6 +940,12 @@ void drawMainScreen(bool initHere) {
     stext15.setTextColor(0xC618); // White text, no background
     stext15.setTextDatum(BR_DATUM);  // Bottom right coordinate datum
 
+    markSprite.setColorDepth(8);
+    markSprite.createSprite(300, 30);
+    markSprite.loadFont(LABELS);
+    markSprite.setTextColor(0x07FE);
+    markSprite.setTextDatum(BR_DATUM);
+
 
 
   }
@@ -923,6 +971,7 @@ void updateAllSprites(){
   updateRPMDirSprite();
   updateFlowDirSprite();
   updateStepServoSprite();
+  updateMarkPointsSprite();
 }
 
 void updateTiltSprite(){
@@ -1112,4 +1161,24 @@ void updateRPMSetValueSprite(){
   stext15.pushSprite(110, 445);
 }
 
+
+void updateMarkPointsSprite(){
+
+  markSprite.fillSprite(SPRITE_FILL);
+  markSprite.drawFloat(markL, 2, 80, 30);
+  markSprite.drawFloat(markR, 2, 300, 30);
+
+  markSprite.drawNumber(markIdx, 145, 30);
+  markSprite.drawNumber(nMarkIdx, 190, 30);
+  
+  markSprite.drawString("/", 158, 30);
+  markSprite.drawString("-", 105, 30);
+  markSprite.drawString("-", 210, 30);
+
+  markSprite.pushSprite(10, 130);
+
+  baseSerial.print(ACK);
+  baseSerial.println(" M");
+
+}
 

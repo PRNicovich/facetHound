@@ -2,7 +2,7 @@
 #include "FreqCountRP2.h"
 #include "buttonFunctions.h"
 #include <AccelStepper.h>
-//#include "FastAccelStepper.h"
+#include <LinkedList.h>
 
 #define KEYS_TX_PIN 7
 #define KEYS_RX_PIN 6
@@ -115,8 +115,8 @@ uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
 float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
 uint8_t indexIndex = 10;
+uint8_t nIndexes = 27;
 
-float wheelIndexSet = supportedIndexes[indexIndex];
 float wheelIndex = 64.0;
 float indexEncoderSteps = 65535.0;
 bool updateTiltAngle = true;
@@ -145,6 +145,10 @@ int nLocks = 0;
 // float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
 // float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96}; // 104 wheel
 float tiltAngleMemory[] = {0, 16, 32, 48, 64}; // 80 wheel
+LinkedList<float> markPoints = LinkedList<float>();
+
+
+
 int8_t tiltMemIdx = 1;
 uint8_t tiltMemNPts = sizeof(tiltAngleMemory) / sizeof(tiltAngleMemory[0]);
 
@@ -219,12 +223,15 @@ bool updateSpinServoBool = true;
 bool updateZedStepIdxBool = true;
 bool updateTwistIdxBool = true;
 bool updateRPMsetValueBool = true;
+bool updateMarkPointsBool = true;
 
-bool transmitAccessories = false;
+bool transmitAccessories = true;
 long clickTimer_ESC = millis();
 bool inClickTimer_ESC = false;
 long clickTimer_pump = millis();
 bool inClickTimer_pump = false;
+
+bool firstLoop = true;
 
 int reason = -1;
 
@@ -282,8 +289,6 @@ delay(500);
 		delay(10);
 	}
 
-
-
 	mastSerial.begin(115200);
 
 	while (!mastSerial) {
@@ -291,10 +296,6 @@ delay(500);
 	}
 
 	mastSerial.flush();
-
-
-
-
 	dispSerial.flush();	
 	Serial.flush();
 
@@ -310,16 +311,19 @@ delay(500);
 	pinMode(ZED_STEP_PIN, OUTPUT);
   pinMode(ZED_DIR_PIN, OUTPUT);
 
-
-	updateWheelIndex(wheelIndexSet);
+	updateWheelIndex(supportedIndexes[indexIndex]);
 
 }
-
 
 
 void loop() {
 
 	//Serial.println(lastQueryTime);
+
+  if (firstLoop){
+    homeMarkPoint();
+    firstLoop = false;
+  }
 
 
 	if ((millis() - lastQueryTime) > frameCycleTime) {
@@ -344,7 +348,7 @@ void loop() {
       if (abs(degreesAndDirection) > positionErrorTolerance) {
 
         nLocks = 0;
-        Serial.println(abs(degreesAndDirection), 4);
+        //Serial.println(abs(degreesAndDirection), 4);
 
         if (twistDirStep.distanceToGo() == 0){
           
@@ -676,6 +680,10 @@ void handleIncomingUART(int inputStream) {
 				case ('z'):
 					updateZedStepIdxBool = false;
 					break;
+
+        case ('M'):
+          updateMarkPointsBool = false;
+          break;
 			}
 
 			
@@ -894,12 +902,12 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 5:
 				//Serial.print(" 5 ");
-				zeroTilt();
+				incrementWheelIndex();
 				break;
 
 			case 6:
 				//Serial.print(" 6 ");
-				undeclaredFunction();
+				toggleCheatMode();
 				break;
 
 			case 7:
@@ -909,17 +917,18 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 8:
 				//Serial.print(" 8 ");
-				addPositionToList();
+				addPositionToList(targetTilt_float);
 				break;
 
 			case 9:
 				//Serial.print(" 9 ");
-				undeclaredFunction();
+				updatePositionInList(tiltMemIdx, targetTilt_float);
 				break;
 
 			case 10:
 				//Serial.print(" 10 ");
-				undeclaredFunction();
+				deletePositionInList(tiltMemIdx);
+        
 				break;
 
 			case 11:
@@ -939,7 +948,7 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 14:
 				//Serial.print(" 14 ");
-				toggleCheatMode();
+				homeMarkPoint();
 				break;
 
 			case 15:
@@ -978,7 +987,7 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 
 			case 33:
-				flowRate = flowRate + 1;
+				flowRate = flowRate - 1;
 				changeFlowRate();
 				//updateFlowRateOnScreen();
 				break;
@@ -1001,14 +1010,14 @@ void keyboardRouter(uint8_t keyString[]) {
 				break;
 
 			case 35:
-				flowRate = flowRate - 1;
+				flowRate = flowRate + 1;
 				changeFlowRate();
 				//updateFlowRateOnScreen();
 				break;
 
 			case 30:
 				
-				RPMValue = RPMValue + 1;
+				RPMValue = RPMValue - 1;
 				changeMotorSpeed();
 				break;
 
@@ -1029,7 +1038,7 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 32:
 			
-				RPMValue = RPMValue - 1;
+				RPMValue = RPMValue + 1;
 				changeMotorSpeed();
 				
 				break;
@@ -1116,6 +1125,7 @@ void checkServoStatus(){
 				//twistDirStep.moveTo(int(targetTilt_float*tiltStepsPerIndexUnit));// - (tiltEncRaw*51200)/65535);
 
 				firstCrossServoThreshold = true;
+        nLocks = 0;
 
 			}
 			//Serial.println(tiltEncRaw*51200/65535);
@@ -1416,7 +1426,8 @@ void updateAccessories(){
 			 updateZedStepIdxBool ||
 			 updateTwistIdxBool || 
 			 updateRPMsetValueBool ||
-			 updateForceBar)){
+			 updateForceBar ||
+       updateMarkPointsBool)){
 
 			
 			//Serial.println("X");
@@ -1481,6 +1492,10 @@ void updateAccessories(){
 	if (updateForceBar){
 		updateForceValueOnScreen();
 	}
+
+  if (updateMarkPointsBool){
+    updateMarkPointInfoOnScreen();
+  }
 
 
 }
@@ -1561,10 +1576,34 @@ void updateCheatModeOnOffOnScreen() {
 }
 
 void updateMarkPointInfoOnScreen() {
-	char stringOut[8];
-	sprintf(stringOut, "M %d", tiltMemIdx);
+	char stringOut[64];
+
+
+
+  int leftIdx = tiltMemIdx - 1;
+  if (leftIdx < 0){
+    leftIdx = markPoints.size()-1;
+  }
+
+  int rightIdx = tiltMemIdx + 1;
+  if (rightIdx >= tiltMemNPts){
+    rightIdx = 0;
+  }
+
+  if (tiltMemNPts > 1){
+    sprintf(stringOut, "M %d %d %.2f %.2f", tiltMemIdx + 1, tiltMemNPts, markPoints.get(leftIdx), markPoints.get(rightIdx));
+  }
+
+  else if (tiltMemNPts == 0){
+    sprintf(stringOut, "M %d %d %.2f %.2f", 0, 0, 0, 0);
+  }
+
+  else if (tiltMemNPts == 1){
+    sprintf(stringOut, "M %d %d %.2f %.2f", tiltMemIdx + 1, tiltMemNPts, markPoints.get(leftIdx), markPoints.get(leftIdx));
+  };
 	// Send info to display about which mark point info to show
-	//Serial.println(stringOut);
+	// Serial.println(stringOut);
+  sendToDisplayUART(stringOut);
 }
 
 
@@ -1572,10 +1611,17 @@ void settingsMode() {
 	//Serial.println("Settings Mode!");
 }
 
-void zeroTilt() {
-	// Zero tilt angle
-	tiltAngle = 0;
-	updateTiltAngleOnScreen();
+void incrementWheelIndex() {
+	// Next wheel index
+
+  indexIndex = indexIndex + 1;
+
+  if (indexIndex == nIndexes){
+    indexIndex = 0; // Roll over
+  }
+
+  updateWheelIndex(supportedIndexes[indexIndex]);
+
 }
 
 void toggleZLock() {
@@ -1599,10 +1645,33 @@ void undeclaredFunction() {
 	//Serial.println("Key unassigned");
 }
 
-void addPositionToList() {
+void addPositionToList(float newValue) {
 	//Serial.println("Add position");
-	tiltMemNPts = tiltMemNPts + 1;
-	updateMarkPointInfoOnScreen();
+  markPoints.add(newValue);
+	tiltMemNPts = markPoints.size();
+
+	updateMarkPointsBool = true;
+  transmitAccessories = true;
+
+}
+
+void updatePositionInList(int listIdx, float newValue){
+  markPoints.set(listIdx, newValue);
+  updateMarkPointsBool = true;
+  transmitAccessories = true;
+
+}
+
+void deletePositionInList(int listIdx){
+  markPoints.remove(listIdx);
+  tiltMemNPts = markPoints.size();
+
+  tiltMemIdx = tiltMemIdx - 1;
+  if (tiltMemIdx < 0){
+    tiltMemIdx = 0;
+  }
+
+  homeMarkPoint();  
 }
 
 void spinServoModeToggle() {
@@ -1646,17 +1715,29 @@ void changeMarkPointIndex(bool dir) {
 		} else {
 			tiltMemIdx = (tiltMemNPts - 1);
 		}
-	} else if (tiltMemIdx == tiltMemNPts) {
+	} else if (tiltMemIdx >= tiltMemNPts) {
 		tiltMemIdx = 0;
 
 	}
 	
-	targetTilt_float = tiltAngleMemory[tiltMemIdx];
+  homeMarkPoint();
+
+}
+
+
+void homeMarkPoint(){
+	targetTilt_float = markPoints.get(tiltMemIdx);
+
+  if (targetTilt_float > wheelIndex){
+    targetTilt_float = wheelIndex;
+  }
+
 
 	changeTiltAngle(true);
-
-	updateMarkPointInfoOnScreen();
+	updateMarkPointsBool = true;
+  transmitAccessories = true;
 }
+
 
 void toggleTiltLock() {
 	tiltLock = not(tiltLock);
@@ -1685,11 +1766,29 @@ void updateWheelIndex(float newWheelValue){
 	tiltConversion = (wheelIndex) / indexEncoderSteps;
 	tiltStepsPerIndexUnit = TILT_STEPS_PER_ROT/(wheelIndex);
 
-	updateWheelIndexBool = true;
+  copyArrayIntoMarkPointsList(tiltAngleMemory, tiltMemNPts);
+  updateMarkPointsBool = true;
+  updateWheelIndexBool = true;
 	transmitAccessories = true;
+
+  homeMarkPoint();
+
 }
 
 void updateWheelIndexOnScreen(){
 	sendCharAndInt("W", int(wheelIndex));
 	transmitAccessories = true;
+}
+
+
+void copyArrayIntoMarkPointsList(float arrayIn[], int arrLen) {
+
+  markPoints.clear();
+
+  for (int i = 0; i < (arrLen); i++){
+
+    markPoints.add(arrayIn[i]);
+
+  }
+
 }
