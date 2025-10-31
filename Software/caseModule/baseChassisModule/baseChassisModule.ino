@@ -58,7 +58,7 @@
 #define DISP_IN 0
 #define MAST_IN 1
 
-#define doubleClickTime  250 // milliseconds
+#define doubleClickTime  100 // milliseconds
 
 #define indexDirection true // True for + to CW (ULTRATECH), false for + to CCW (FACETRON)
 
@@ -115,7 +115,7 @@ bool lastValWasSep = true;
 uint8_t lastVal = 0;
 
 long lastQueryTime = 0;
-long frameCycleTime = 30;  // milliseconds
+long frameCycleTime = 20;  // milliseconds
 
 uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
@@ -644,7 +644,7 @@ void handleIncomingUART(int inputStream) {
 	switch (switchChar) {
 		case ('w'):
 			updateZEncoderSteps(val.substring(2));
-      Serial.println(val);
+      //Serial.println(val);
 			updateZbool = true;
 			break;
 
@@ -858,7 +858,7 @@ void updateTipEncoderSteps(String subVal) {
 
 void tipEncStepsToTipValue() {
 	if (tipEncRaw > 0){
-		tipAngle = float(tipEncRaw - tipZero) * tipConversion;
+		tipAngle = (float(tipEncRaw) - tipZero) * tipConversion;
 	}
 
   //Serial.println(tipAngle);

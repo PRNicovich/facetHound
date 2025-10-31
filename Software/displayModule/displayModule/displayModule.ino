@@ -607,7 +607,12 @@ void updateP(String subVal){
 
   //Serial.println(subVal);
 
-  if (stringIsNumeric(chars, false)){
+  // Trust the checksum to get this right
+  tipAngle =  atof(chars);
+  updateTipAngle = true;
+
+/*
+  if (stringIsNumeric(chars, true)){
     if (int(chars[subVal.length()-1]) == 46){ // Last character is  "."
       updateTipAngle = false;
     }
@@ -619,7 +624,7 @@ void updateP(String subVal){
   else{
     updateTiltAngle = false;
   }
-  
+  */
   
 }
 
