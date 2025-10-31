@@ -4,6 +4,13 @@
 #include <AccelStepper.h>
 #include <LinkedList.h>
 
+#include "CRC16.h"
+#include "CRC.h"
+
+#include <LittleFS.h>
+#include <VFS.h>
+
+
 #define KEYS_TX_PIN 7
 #define KEYS_RX_PIN 6
 
@@ -53,7 +60,7 @@
 
 #define doubleClickTime  250 // milliseconds
 
-
+#define indexDirection true // True for + to CW (ULTRATECH), false for + to CCW (FACETRON)
 
 SerialPIO keysSerial(KEYS_TX_PIN, KEYS_RX_PIN);
 SerialPIO dispSerial(DISP_TX_PIN, DISP_RX_PIN);
@@ -114,7 +121,7 @@ uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
 float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
-uint8_t indexIndex = 10;
+uint8_t indexIndex = 14;
 uint8_t nIndexes = 27;
 
 float wheelIndex = 64.0;
@@ -143,8 +150,9 @@ float positionErrorTolerance = 0.013;
 int nLocks = 0;
 
 // float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
+float tiltAngleMemory[] = {0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90}; // 96 wheel, porto
 // float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96}; // 104 wheel
-float tiltAngleMemory[] = {0, 16, 32, 48, 64}; // 80 wheel
+// float tiltAngleMemory[] = {0, 16, 32, 48, 64}; // 80 wheel
 LinkedList<float> markPoints = LinkedList<float>();
 
 
@@ -156,7 +164,7 @@ bool updateTipAngle = true;
 float tipAngle = 0;
 uint32_t tipEncRaw = 0;
 float tipConversion = 360.0 / 131072.0;
-long tipZero = 48230;
+long tipZero = 47850;
 
 bool updateZValue = true;
 
@@ -235,6 +243,10 @@ bool firstLoop = true;
 
 int reason = -1;
 
+bool saveToFlash = true;
+bool writeToFlashNow = false;
+char filePath[] = "/data.txt";
+
 void setup() {
 
 
@@ -312,8 +324,39 @@ delay(500);
   pinMode(ZED_DIR_PIN, OUTPUT);
 
 	updateWheelIndex(supportedIndexes[indexIndex]);
+ 
+ 
+  LittleFS.begin();
+  VFS.root(LittleFS);
+
+  
+  FILE *fID = fopen(filePath, "w");
+  //fprintf(fID, "Hello!\n");
+
+  fclose(fID);
+
+
+  fID = fopen(filePath, "r+");
+  //readSavedConfig(fID);
+  //Serial.println(fID);
+  fclose(fID);
 
 }
+
+void readSavedConfig(FILE *fID){
+
+  int buff[8];
+  int read;
+  read = fread(buff, sizeof(buff), 8, fID);
+
+  Serial.println(read);
+  for (int i; i++; i < 8){
+    Serial.println(buff[i]);
+  }
+  
+
+}
+
 
 
 void loop() {
@@ -420,7 +463,10 @@ void loop() {
 
 float shortestArcPath(float target, float current){
 
-	float degAndDir = target - current;
+  float degAndDir = target - current;
+  if (not(indexDirection)){
+    degAndDir = wheelIndex - degAndDir;
+  }
 
 
 	if (degAndDir > 0){
@@ -549,7 +595,6 @@ void initESCMotor(){
 
 	pinMode(motorALMpin, true);
 
-
 	pinMode(motorPGpin, INPUT);
 	pinMode(motorSVpin, OUTPUT);
 	pinMode(motorBKpin, OUTPUT);
@@ -599,6 +644,7 @@ void handleIncomingUART(int inputStream) {
 	switch (switchChar) {
 		case ('w'):
 			updateZEncoderSteps(val.substring(2));
+      Serial.println(val);
 			updateZbool = true;
 			break;
 
@@ -753,7 +799,19 @@ void updateTiltEncoderSteps(String subVal) {
 }
 
 void tEncStepsToTiltValue() {
-	tiltAngle = (float(tiltEncRaw) - tiltZero) * tiltConversion;
+  if (indexDirection){
+    tiltAngle = (float(tiltEncRaw) - tiltZero) * tiltConversion;
+  }
+  else{
+    tiltAngle = wheelIndex - ((float(tiltEncRaw) - tiltZero) * tiltConversion);
+    if ((tiltAngle) < (-wheelIndex / 2)){
+      tiltAngle = wheelIndex + tiltAngle;
+    }
+    else if ((tiltAngle) > (wheelIndex / 2)){
+      tiltAngle = tiltAngle - wheelIndex;
+    }
+  }
+	
 }
 
 void updateForceRead(String subVal) {
@@ -802,6 +860,8 @@ void tipEncStepsToTipValue() {
 	if (tipEncRaw > 0){
 		tipAngle = float(tipEncRaw - tipZero) * tipConversion;
 	}
+
+  //Serial.println(tipAngle);
 	
 }
 
@@ -960,7 +1020,8 @@ void keyboardRouter(uint8_t keyString[]) {
 
 			case 16:
 				//tiltAngle = tiltAngle + tiltMult[tiltIdx];
-				tiltDir = true;
+        tiltDir = indexDirection;
+
 				//twistDirStep.move(-100);
 				changeTiltAngle(false);
 				//updateTiltAngleOnScreen();
@@ -981,7 +1042,7 @@ void keyboardRouter(uint8_t keyString[]) {
 				//tiltAngle = tiltAngle - tiltMult[tiltIdx];
 
 				//twistDirStep.move(100);
-				tiltDir = false;
+				tiltDir = not(indexDirection);
 				changeTiltAngle(false);
 				//updateTiltAngleOnScreen();
 				break;
@@ -1080,21 +1141,47 @@ void keyboardRouter(uint8_t keyString[]) {
 }
 
 
-
-
 void sendCharAndFloat(const char* s, float f, int decimals) {
 	char buff[12];
 	char stringFloat[12];
+  uint8_t strCheck[12];
 
 	dtostrf(f, 1, decimals, buff);
-	sprintf(stringFloat, "%s %s", s, buff);
+
+//  Serial.println(buff);
+
+  uint8_t strChecksum = 0;
+  for (int i = 0; buff[i] != '\0'; i++){
+    //strCheck[i] = uint8_t(buff[i]);
+    strChecksum = strChecksum + (uint8_t)buff[i];
+    //Serial.println(strChecksum);
+  }
+
+	sprintf(stringFloat, "%s %d %s", s, strChecksum, buff);
+
+  //Serial.println(stringFloat);
 
 	sendToDisplayUART(stringFloat);
 }
 
 void sendCharAndInt(const char* s, int i) {
-	char stringOut[8];
-	sprintf(stringOut, "%s %d", s, i);
+	
+  char stringOut[8];
+  char strInt[8];
+  uint8_t strCheck[8];
+
+  sprintf(strInt, "%d", i);
+
+  uint8_t strChecksum = 0;
+  for (int i = 0; strInt[i] != '\0'; i++){
+    //strCheck[i] = uint8_t(strInt[i]);
+    strChecksum += uint8_t(strInt[i]);
+  }
+
+  //uint16_t crc = CRC16.xmodem(strCheck, 8);
+
+	sprintf(stringOut, "%s %d %s", s, strChecksum, strInt);
+
 	sendToDisplayUART(stringOut);
 }
 
@@ -1576,34 +1663,46 @@ void updateCheatModeOnOffOnScreen() {
 }
 
 void updateMarkPointInfoOnScreen() {
-	char stringOut[64];
-
-
+	
+  char payload[64];
+  char stringOut[80];  // a bit bigger to hold checksum and spacing
 
   int leftIdx = tiltMemIdx - 1;
-  if (leftIdx < 0){
-    leftIdx = markPoints.size()-1;
+  if (leftIdx < 0) {
+    leftIdx = markPoints.size() - 1;
   }
 
   int rightIdx = tiltMemIdx + 1;
-  if (rightIdx >= tiltMemNPts){
+  if (rightIdx >= tiltMemNPts) {
     rightIdx = 0;
   }
 
-  if (tiltMemNPts > 1){
-    sprintf(stringOut, "M %d %d %.2f %.2f", tiltMemIdx + 1, tiltMemNPts, markPoints.get(leftIdx), markPoints.get(rightIdx));
+  // Build the payload (everything AFTER checksum)
+  if (tiltMemNPts > 1) {
+    sprintf(payload, "%d %d %.2f %.2f", 
+            tiltMemIdx + 1, tiltMemNPts, 
+            markPoints.get(leftIdx), markPoints.get(rightIdx));
+  } 
+  else if (tiltMemNPts == 0) {
+    sprintf(payload, "%d %d %.2f %.2f", 0, 0, 0.0, 0.0);
+  } 
+  else if (tiltMemNPts == 1) {
+    sprintf(payload, "%d %d %.2f %.2f", 
+            tiltMemIdx + 1, tiltMemNPts, 
+            markPoints.get(leftIdx), markPoints.get(leftIdx));
   }
 
-  else if (tiltMemNPts == 0){
-    sprintf(stringOut, "M %d %d %.2f %.2f", 0, 0, 0, 0);
+  // Compute checksum of payload
+  uint8_t checksum = 0;
+  for (int i = 0; payload[i] != '\0'; i++) {
+    checksum += (uint8_t)payload[i];
   }
 
-  else if (tiltMemNPts == 1){
-    sprintf(stringOut, "M %d %d %.2f %.2f", tiltMemIdx + 1, tiltMemNPts, markPoints.get(leftIdx), markPoints.get(leftIdx));
-  };
-	// Send info to display about which mark point info to show
-	// Serial.println(stringOut);
+  // Build full output string with same format: "M <checksum> <payload>"
+  sprintf(stringOut, "M %u %s", checksum, payload);
+
   sendToDisplayUART(stringOut);
+
 }
 
 
@@ -1755,9 +1854,23 @@ void toggleTiltLock() {
 }
 
 void toggleCheatMode() {
-	cheatMode = not(cheatMode);
-	updateCheatModeOnOffOnScreen();
+
+  float setPoint = markPoints.get(tiltMemIdx);
+  float delta = targetTilt_float - setPoint;
+
+  //Serial.println(delta);
+
+  // Add delta to each point in markPoints
+  for (int i = 0; i < markPoints.size(); i++){
+
+    markPoints.set(i, markPoints.get(i) + delta);
+  }
+
+  updateMarkPointsBool = true;
+  updateWheelIndexBool = true;
 	transmitAccessories = true;
+
+  homeMarkPoint();
 }
 
 void updateWheelIndex(float newWheelValue){

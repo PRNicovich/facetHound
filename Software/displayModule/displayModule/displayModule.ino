@@ -15,6 +15,8 @@
 #include "dcTerminal_60.h"
 #include "dcTerminal_40.h"
 
+#include <FastCRC.h>
+
 #define GEM_ICON diamonds
 #define NUMBERS dcTerminal_80
 #define LOGO dcTerminal_60
@@ -31,7 +33,7 @@
 
 SerialPIO baseSerial(TXPin,RXPin);
 
-PioEncoder encoder(10); // encoder is connected to GPI11 and GPI12
+PioEncoder encoder(10); // encoder is connected to GPI10 and GPI11
 
 TFT_eSPI tft = TFT_eSPI();       // Invoke custom library
 
@@ -131,6 +133,8 @@ bool updateWheelIndexBool = true;
 volatile long screenTick = 0;
 volatile long mainTick = 0;
 
+FastCRC16 CRC16;
+
 void setup() {
 
   initConnections();
@@ -149,8 +153,6 @@ void loop() {
     
     inputHandler(val);
   } 
-
-
 
   if ((millis() - screenTick) > 50){
     requestFrame();
@@ -268,9 +270,53 @@ void sendCharAndInt(const char* s, int i){
 	baseSerial.println(stringOut);
 }
 
+
+
+
 void inputHandler(String val){
 
   char switchChar = val.charAt(0);
+  String inputPayload;
+  
+  if (switchChar == '?'){
+    // Keep going
+    
+  }
+  else{
+    // Deal with checksum
+
+    int firstSpace = val.indexOf(' ');
+    int secondSpace = val.indexOf(' ', firstSpace + 1);
+
+    if (firstSpace == -1 || secondSpace == -1) {
+      return;
+    }
+
+    int receivedChecksum = val.substring(firstSpace + 1, secondSpace).toInt();
+    inputPayload = val.substring(secondSpace + 1);
+
+    inputPayload.trim();
+
+    uint8_t calculatedChecksum = 0;
+    for (int i = 0; i < inputPayload.length(); i++) {
+      calculatedChecksum += (uint8_t)inputPayload.charAt(i);
+    }
+
+
+    if (receivedChecksum != calculatedChecksum){
+    // If checksums don't match then ignore message
+      return;
+      
+    }
+  }
+
+/*
+      Serial.print(val);
+      Serial.print(" - ");
+      Serial.print(receivedChecksum, DEC);
+      Serial.print(" - ");
+      Serial.println(calculatedChecksum, DEC);
+*/
 
   //Serial.println(val);
   //Serial.println(int(switchChar));
@@ -279,91 +325,94 @@ void inputHandler(String val){
   {
     case ('a'):
 
-      updateZLock(val.substring(2));
+      updateZLock(inputPayload);
       break;
 
     case ('b'):
 
-      updateTiltLock(val.substring(2));
+      updateTiltLock(inputPayload);
       //Serial.println(val);
       break;
 
     case ('c'):
-      updateTiltErrorIncoming(val.substring(2));
+      updateTiltErrorIncoming(inputPayload);
       break;
 
 
     case ('f'):
-      updateFlowDirValue(val.substring(2));
+      updateFlowDirValue(inputPayload);
       break;
 
     case ('g'):
 
-      updateCheatMode(val.substring(2));
+      //updateCheatMode(val.substring(2));
       break;
 
     case ('h'):
 
-      updateRPMSetValue(val.substring(2));
+      updateRPMSetValue(inputPayload);
       break;
 
     case ('r'):
       // rpm index
 
-      updateRPMDirIdx(val.substring(2));
+      updateRPMDirIdx(inputPayload);
       break;
 
     case ('s'):
 
-      updateSpinServoIdx(val.substring(2));
+      updateSpinServoIdx(inputPayload);
       break;
 
     case ('t'):
       // tilt Index
 
-      updateTiltStepIndex(val.substring(2));
+      updateTiltStepIndex(inputPayload);
       break;
 
     case ('z'):
 
-      updateZedStepIndex(val.substring(2));
+      updateZedStepIndex(inputPayload);
 
     case ('R'):
 
-      updateR(val.substring(2));
+      updateR(inputPayload);
 
       break;
 
     case ('F'):
 
-      updateF(val.substring(2));
+      updateF(inputPayload);
 
       break;
 
     case ('T'):
 
-      updateT(val.substring(2));
+      updateT(inputPayload);
 
       break;
 
     case ('Z'):
 
-      updateZ(val.substring(2));
+      //Serial.println(val);
+
+      updateZ(inputPayload);
 
       break;
 
     case ('M'):
-      Serial.println(val.substring(2));
-      updateMarkPointsValues(val.substring(2));
+      //Serial.println(val.substring(2));
+      updateMarkPointsValues(inputPayload);
+
       break;
 
     case ('N'):
-      updateForceBar(val.substring(2));
+      updateForceBar(inputPayload);
       break;
 
     case ('P'):
       // tip
-      updateP(val.substring(2));
+      updateP(inputPayload);
 
       break;
 
@@ -373,7 +422,7 @@ void inputHandler(String val){
 
     case ('W'):
       //wheel Index
-      updateIndex(val.substring(2));
+      updateIndex(inputPayload);
 
     case ('?') :
       encoderHandler();
@@ -383,7 +432,7 @@ void inputHandler(String val){
     default:
       baseSerial.println(NAK);
       //Serial.println(NAK);
-      Serial.println(val);
+      //Serial.println(val);
       break;
   }
 
@@ -431,19 +480,20 @@ bool stringIsNumeric(char *str, bool skipLastOne) {
               //Serial.print("!");
               //Serial.println(int(str[i]));
 
-            if (str[i] == 13){
+            if (str[i] == 13){ // terminated w/ carrage return
               if (i == 0){
                 // String is blank.  Just \r.
                 return false;
-              }
+                }
 
-              else if (str[i-1] == 46){
+            else if (str[i-1] == 46){
                 // Truncated at decimal
-                 return false;
+                return false;
               }
 
-              else{
-                continue;
+            else{
+              continue;
+              //Serial.println(int(str[i]));
               }
               
             }
@@ -455,7 +505,8 @@ bool stringIsNumeric(char *str, bool skipLastOne) {
         }
       }
   }
-    return true;
+    
+  return true;
   
 }
 
@@ -463,33 +514,89 @@ boolean digitIsNumeric(char c) {
   return (isDigit(c) || ( '.' == c));
 }
 
+boolean shortStringIsANumber(String subVal){
+    char chars[8]; // This is enough for a 64-bit number
+    subVal.toCharArray(chars, subVal.length()+1);
+    if (stringIsNumeric(chars, true)){
+      
+      //forceBar =  atoi(chars);
+      return true;
+    }
+    else{
+      return true;
+    }
+
+}
+
 void updateMarkPointsValues(String subVal){
   // Format "M IDX N L R\n"
   // M is character 
   // IDX is index num (int)
   // N is num of indexes (int)
-  // L is next left (float)
-  // R is next right (float)
+  // L is next point to left (float)
+  // R is next point to right (float)
+
+  // Filter string
+  // Ack w/ "M" if all OK
+  // If no, base will resend
+
+  //Serial.println(subVal);
 
   int onIdx = 0;
+  bool markReadOK = true;
   // split string
   int nextCut = subVal.substring(onIdx).indexOf(" ");
-  markIdx = subVal.substring(onIdx, nextCut).toInt();
+
+  if (shortStringIsANumber(subVal.substring(onIdx, nextCut))) {
+    markIdx = subVal.substring(onIdx, onIdx + nextCut).toInt();
+    //Serial.println(markIdx);
+  }
+  else{
+    markReadOK = false;
+  }
+  
+  onIdx = nextCut + 1 + onIdx;
+  nextCut = subVal.substring(onIdx).indexOf(" ");
+
+  if (shortStringIsANumber(subVal.substring(onIdx, nextCut))) {
+    nMarkIdx = subVal.substring(onIdx, onIdx + nextCut).toInt();
+    //Serial.println(onIdx);
+    //Serial.println(nextCut);
+  }
+  else{
+    markReadOK = false;
+  }
+
   onIdx = nextCut + 1 + onIdx;
 
   nextCut = subVal.substring(onIdx).indexOf(" ");
-  nMarkIdx = subVal.substring(onIdx, onIdx + nextCut).toInt();
-  onIdx = nextCut + 1 + onIdx;
 
-  nextCut = subVal.substring(onIdx).indexOf(" ");
-  markL = subVal.substring(onIdx, onIdx + nextCut).toFloat();
-  onIdx = nextCut + 1 + onIdx;
+  if (shortStringIsANumber(subVal.substring(onIdx, nextCut))) {
+    markL = subVal.substring(onIdx, onIdx + nextCut).toFloat();
+    //Serial.println(markL);
+  }
+  else{
+    markReadOK = false;
+  }
 
-  markR = subVal.substring(onIdx).toFloat();
+  onIdx = nextCut + 1 + onIdx;
+  if (shortStringIsANumber(subVal.substring(onIdx, nextCut))) {
+    markR = subVal.substring(onIdx).toFloat();
+    //Serial.println(markR);
+  }
+  else{
+    markReadOK = false;
+  }
   
   // Parse
-
-  updateMarkPointsBool = true;
+  if (markReadOK){
+    baseSerial.print(ACK);
+    baseSerial.println(" M");
+    updateMarkPointsBool = true;
+  }
+  else{
+    updateMarkPointsBool = false;
+  }
 
 }
 
@@ -498,14 +605,13 @@ void updateP(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
 
+  //Serial.println(subVal);
+
   if (stringIsNumeric(chars, false)){
-    if (int(chars[subVal.length()-1]) == 46){
-      //Serial.print("X : ");
-      //Serial.println(chars);
+    if (int(chars[subVal.length()-1]) == 46){ // Last character is  "."
       updateTipAngle = false;
     }
     else {
-      //Serial.println(chars);
       tipAngle =  atof(chars);
       updateTipAngle = true;
     }
@@ -521,9 +627,14 @@ void updateP(String subVal){
 void updateR(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
-  RPMValue =  atof(chars);
-  //Serial.println(RPMValue);
-  updateRPMValue = true;
+  if (shortStringIsANumber(chars)){
+    RPMValue =  atof(chars);
+    updateRPMValue = true;
+  }
+  else{
+    updateRPMValue = false;
+  }
+  
 }
 
 void updateF(String subVal){
@@ -690,12 +801,14 @@ void updateFlowDirValue(String subVal){
   
 }
 
+/*
 void updateCheatMode(String subVal){
   char chars[8];
   subVal.toCharArray(chars, subVal.length()+1);
   cheatModeIdx =  atoi(chars);
   updateCheatModeBool = true;
 }
+*/
 
 void updateSpinServoIdx(String subVal){
   char chars[8];
@@ -747,6 +860,8 @@ void initConnections(){
   uartFound = true;
 	baseSerial.flush();
 
+  encoder.begin();
+
   tft.init();
   tft.setRotation(2);
 
@@ -758,7 +873,7 @@ void initConnections(){
 
   drawMainScreen(true);
 
-  Serial.println("initDone");
+  //Serial.println("initDone");
 
 }
 
