@@ -120,9 +120,9 @@ long frameCycleTime = 20;  // milliseconds
 uint32_t TILT_MOTOR_STEPS_PER_ROT = 200;
 uint32_t TILT_STEPS_PER_ROT = TILT_MOTOR_STEPS_PER_ROT*TWIST_MICROSTEPS;
 
-float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 120, 128, 144, 192, 256, 360, 400};
+float supportedIndexes[] = {1.0, 2.0, 2*PI, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91, 96, 98, 99, 100, 102, 104, 110, 120, 128, 144, 192, 256, 360, 400};
 uint8_t indexIndex = 14;
-uint8_t nIndexes = 27;
+uint8_t nIndexes = 28;
 
 float wheelIndex = 64.0;
 float indexEncoderSteps = 65535.0;
@@ -152,6 +152,7 @@ int nLocks = 0;
 // float tiltAngleMemory[] = {0, 12, 24, 36, 48, 60, 72, 84}; // 96 wheel
 float tiltAngleMemory[] = {0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90}; // 96 wheel, porto
 // float tiltAngleMemory[] = {0, 8, 16, 24, 32, 40, 48, 64, 72, 80, 88, 96}; // 104 wheel
+//float tiltAngleMemory[] = {3, 18, 25, 41, 47, 63, 69, 85, 91, 107}; // 110 wheel, Astro
 // float tiltAngleMemory[] = {0, 16, 32, 48, 64}; // 80 wheel
 LinkedList<float> markPoints = LinkedList<float>();
 
@@ -1863,7 +1864,17 @@ void toggleCheatMode() {
   // Add delta to each point in markPoints
   for (int i = 0; i < markPoints.size(); i++){
 
-    markPoints.set(i, markPoints.get(i) + delta);
+    float newMark = markPoints.get(i) + delta;
+
+    if (newMark > wheelIndex){
+      newMark = newMark - wheelIndex;
+    }
+
+    if (newMark < 0){
+      newMark = newMark + wheelIndex;
+    }
+
+    markPoints.set(i, newMark);
   }
 
   updateMarkPointsBool = true;
