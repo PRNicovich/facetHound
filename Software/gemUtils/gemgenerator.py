@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Wed Jul  1 18:07:01 2026
+
+@author: rusty
+"""
+
+# -*- coding: utf-8 -*-
 
 import numpy as np
 import pathlib
