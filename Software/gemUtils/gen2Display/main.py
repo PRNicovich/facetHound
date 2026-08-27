@@ -22,12 +22,14 @@ from gem_display_style import apply_futuristic_style_patch
 from gem_machine_status import apply_machine_status_patch
 
 
-display_mode = "dynamic"   # "dynamic" or "static"
+display_mode = "static"   # "dynamic" or "static"
 
 if display_mode == "static":
     from gem_display_static import Viewer
-else:
+elif display_mode == "dynamic":
     from gem_display import Viewer
+else:
+    from uiDisplay import Viewer
 
 apply_futuristic_style_patch(Viewer)
 apply_machine_status_patch(Viewer)
@@ -36,7 +38,7 @@ apply_machine_status_patch(Viewer)
 if __name__ == "__main__":
 
     interactive = True
-    path = pathlib.Path("./data/pc01391.asc")
+    path = pathlib.Path("../data/pc01236.asc")
     force_rebuild_cache = False
 
     (
