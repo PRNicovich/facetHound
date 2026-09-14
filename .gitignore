@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Arduino build output
+build/
+build-*/
+*.elf
+*.map
+
+# IDE and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

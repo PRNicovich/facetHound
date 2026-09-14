@@ -1,6 +1,6 @@
 # Base settings and mark points
 
-This staged base firmware implements the display settings contract documented
+This base firmware implements the display settings contract documented
 in the display project's `SETTINGS_PROTOCOL.md`.
 
 Notable behavior:
