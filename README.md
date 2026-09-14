@@ -7,4 +7,12 @@ Complete design is included in ./Hardware/FaceHoundv7.step.  Sub-folders of ./Ha
 
 Sub-folders of ./Software/ are the sketch files for each of the four sub-modules.  The main module is a Raspberry Pi Pico 2 and peripherals are RP2040 Zero clones.  All are programmed in C using the Arduino IDE.  All necessary dependencies are straightforward to install through the IDE. 
 
+## Current SD-loader firmware
+
+The paired Pico 2 base and RP2040 display release is in
+[`Software/FacetHound_SD_Loader`](Software/FacetHound_SD_Loader). It loads
+GemCad `.asc` and Facet Hound `.fct` files from microSD, generates the convex
+gem mesh on the Pico 2, streams it to the display, and includes ready-to-flash
+UF2 files. SD wiring and build/verification details are in the package README.
+
 These are preliminary designs that may be incomplete or include errors.  Feel free to contribute your own modifications or bug fixes as pull requests. 
