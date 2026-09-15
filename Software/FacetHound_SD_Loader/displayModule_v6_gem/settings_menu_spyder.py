@@ -199,17 +199,17 @@ class SettingsMenuSimulator:
                 machine_index = (raw_index + (48.0 if pavilion else 0.0)) % 96.0
                 tier_poses.append((machine_tip, machine_index, tier, facet,
                                    raw_tip, raw_index, name))
-            poses.extend(sorted(tier_poses, key=lambda pose: pose[1]))
+            poses.extend(tier_poses)
         # Selection and targets change at the boundary. Actual pose moves for
-        # one second, then holds still for one second.
-        cycle = 2.0
+        # two seconds, then holds still for one second.
+        cycle = 3.0
         segment = int(t / cycle) % len(poses)
         phase = (t % cycle) / cycle
         target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
         previous_tip = poses[(segment - 1) % len(poses)][0]
         previous_index = poses[(segment - 1) % len(poses)][1]
-        if phase < 0.50:
-            move = phase / 0.50
+        if phase < (2.0 / 3.0):
+            move = phase / (2.0 / 3.0)
             ease = move * move * (3.0 - 2.0 * move)
             delta = ((target - previous_index + 48.0) % 96.0) - 48.0
             actual_index = (previous_index + delta * ease) % 96.0
