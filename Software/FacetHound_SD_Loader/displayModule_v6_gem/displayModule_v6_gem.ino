@@ -1398,10 +1398,10 @@ void setup()
 
   tft.init();
   tft.setRotation(2);
+  drawSplashScreen();
 
   if (displayMode == DisplayMode::CLASSIC)
   {
-    drawSplashScreen();
     drawMainScreen(true);
   }
   else

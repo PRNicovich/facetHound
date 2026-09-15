@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include "dcTerminal_30.h"
 #include "gem_data.h"
 
 namespace
@@ -20,17 +21,24 @@ constexpr uint16_t C_AMBER = 0xFCE0;
 uint16_t gray565(float depth, float radius)
 {
     const float normalized = constrain(0.5f + 0.5f * depth / max(radius, 1.0e-6f), 0.0f, 1.0f);
-    const uint8_t level = uint8_t(70.0f + normalized * 155.0f);
+    const float contrast = normalized * normalized;
+    const uint8_t level = uint8_t(28.0f + contrast * 227.0f);
     return uint16_t((level >> 3) << 11) | uint16_t((level >> 2) << 5) | uint16_t(level >> 3);
 }
 
-void drawAxisSymbol(TFT_eSprite& canvas, int x, int y, bool theta, uint16_t color)
+void drawDepthLine(TFT_eSprite& canvas, int x1, int y1, int x2, int y2,
+                   uint16_t color, float depth, float radius, bool selected)
 {
-    canvas.drawCircle(x, y, 10, color);
-    if (theta)
-        canvas.drawFastHLine(x - 9, y, 19, color);
-    else
-        canvas.drawFastVLine(x, y - 13, 27, color);
+    const float normalized = constrain(0.5f + 0.5f * depth / max(radius, 1.0e-6f), 0.0f, 1.0f);
+    const uint8_t width = selected ? 2 : normalized > 0.82f ? 3 : normalized > 0.55f ? 2 : 1;
+    canvas.drawLine(x1, y1, x2, y2, color);
+    if (width < 2) return;
+    const bool mostlyHorizontal = abs(x2 - x1) >= abs(y2 - y1);
+    canvas.drawLine(x1 + (mostlyHorizontal ? 0 : 1), y1 + (mostlyHorizontal ? 1 : 0),
+                    x2 + (mostlyHorizontal ? 0 : 1), y2 + (mostlyHorizontal ? 1 : 0), color);
+    if (width < 3) return;
+    canvas.drawLine(x1 - (mostlyHorizontal ? 0 : 1), y1 - (mostlyHorizontal ? 1 : 0),
+                    x2 - (mostlyHorizontal ? 0 : 1), y2 - (mostlyHorizontal ? 1 : 0), color);
 }
 
 void drawStepIndicator(TFT_eSprite& canvas, int x, int y, int selected, uint16_t color)
@@ -192,32 +200,42 @@ bool GemUi::edgeSelected(uint16_t edgeIndex, uint16_t plane) const
     return (edge.planeMask[plane >> 5] & (uint32_t(1) << (plane & 31))) != 0;
 }
 
-float GemUi::selectedPlaneHeight(uint16_t plane) const
+void GemUi::inferredTierName(uint16_t plane, char* text, size_t size) const
 {
-    float sum = 0.0f;
-    uint32_t count = 0;
     const RuntimeGemMesh& runtime = runtimeGemMesh();
-    if (runtime.active())
-    {
-        for (uint16_t i = 0; i < runtime.edges().size(); ++i)
-        {
-            if (!edgeSelected(i, plane)) continue;
-            const RuntimeMeshEdge& edge = runtime.edges()[i];
-            sum += runtime.vertices()[edge.a].z + runtime.vertices()[edge.b].z;
-            count += 2;
+    const uint16_t count = runtime.active() ? uint16_t(runtime.planes().size())
+                                             : GemData::kPlaneCount;
+    if (plane >= count) { snprintf(text, size, "T?"); return; }
+    auto angleAt = [&](uint16_t i) {
+        return runtime.active() ? runtime.planes()[i].tipDegrees
+                                : GemData::kPlanes[i].tipDegrees;
+    };
+    auto tierAt = [&](uint16_t i) {
+        return runtime.active() ? runtime.planes()[i].tier : GemData::kPlanes[i].tier;
+    };
+    auto kindAt = [&](uint16_t i) {
+        const float a = angleAt(i);
+        if (runtime.active()) {
+            if (fabsf(a) <= 0.05f) return 'T';
+            if (fabsf(fabsf(a) - 90.0f) <= 0.05f) return 'G';
+            return a < 0.0f ? 'P' : 'C';
+        }
+        if (fabsf(a - 90.0f) <= 0.05f) return 'G';
+        if (a <= 0.05f || a >= 179.95f) return 'T';
+        return a > 90.0f ? 'P' : 'C';
+    };
+    const char kind = kindAt(plane);
+    if (kind == 'T' || kind == 'G') { snprintf(text, size, "%c", kind); return; }
+    uint16_t ordinal = 1;
+    const uint16_t tier = tierAt(plane);
+    uint16_t previousTier = UINT16_MAX;
+    for (uint16_t i = 0; i < plane && tierAt(i) < tier; ++i) {
+        if (kindAt(i) == kind && tierAt(i) != previousTier) {
+            ++ordinal;
+            previousTier = tierAt(i);
         }
     }
-    else
-    {
-        for (uint16_t i = 0; i < GemData::kEdgeCount; ++i)
-        {
-            if (!edgeSelected(i, plane)) continue;
-            const auto& edge = GemData::kEdges[i];
-            sum += GemData::kVertices[edge.a].z + GemData::kVertices[edge.b].z;
-            count += 2;
-        }
-    }
-    return count ? sum / float(count) : NAN;
+    snprintf(text, size, "%c%u", kind, ordinal);
 }
 
 float GemUi::selectedTargetTip(const GemTelemetry& state) const
@@ -229,6 +247,17 @@ float GemUi::selectedTargetTip(const GemTelemetry& state) const
     if (selectedPlane_ < GemData::kPlaneCount)
         return GemData::kPlanes[selectedPlane_].tipDegrees;
     return state.tipDegrees;
+}
+
+float GemUi::selectedTargetTwist(const GemTelemetry& state) const
+{
+    if (state.jobActive && isfinite(state.jobIndex)) return state.jobIndex;
+    const RuntimeGemMesh& runtime = runtimeGemMesh();
+    if (runtime.active() && selectedPlane_ < runtime.planes().size())
+        return runtime.planes()[selectedPlane_].twistTicks;
+    if (selectedPlane_ < GemData::kPlaneCount)
+        return GemData::kPlanes[selectedPlane_].twistTicks;
+    return state.targetTwist;
 }
 
 void GemUi::formatTierFacet(const GemTelemetry& state, char* text, size_t size,
@@ -270,20 +299,10 @@ void GemUi::formatTierFacet(const GemTelemetry& state, char* text, size_t size,
         return;
     }
 
-    const float height = selectedPlaneHeight(selectedPlane_);
-    const float radius = runtime.active() ? runtime.radius() : GemData::kRadius;
-    const char* inferred = nullptr;
-    if (fabsf(angle) >= 89.995f) inferred = "TABLE";
-    else if (isfinite(height) && fabsf(height) <= radius * 0.07f) inferred = "GIRDLE";
-    else if (isfinite(height)) inferred = height > 0.0f ? "CROWN" : "PAVILION";
-
-    if (inferred)
-    {
-        if (compact) snprintf(text, size, "%s  F%u", inferred, facet);
-        else snprintf(text, size, "%s   FACET %u", inferred, facet);
-    }
-    else if (compact) snprintf(text, size, "T%u  F%u", tier, facet);
-    else snprintf(text, size, "TIER %u   FACET %u", tier, facet);
+    char inferred[8];
+    inferredTierName(selectedPlane_, inferred, sizeof(inferred));
+    if (compact) snprintf(text, size, "%s  F%u", inferred, facet);
+    else snprintf(text, size, "%s   FACET %u", inferred, facet);
 }
 
 void GemUi::updatePose(const GemTelemetry& state)
@@ -304,10 +323,10 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
     else
     {
-        displayedTip_ += (targetTip - displayedTip_) * 0.28f;
+        displayedTip_ += (targetTip - displayedTip_) * 0.20f;
         displayedTwist_ += wrappedDelta(
             targetTwist, displayedTwist_, meshResolution
-        ) * 0.28f;
+        ) * 0.20f;
         displayedTwist_ = normalizedTwist(displayedTwist_, meshResolution);
     }
 
@@ -382,10 +401,11 @@ void GemUi::drawDynamic(const GemTelemetry& state)
                                        ? C_GREEN
                                        : gray565(0.5f * (screenDepth_[a] + screenDepth_[b]),
                                                  runtime.active() ? runtime.radius() : GemData::kRadius);
-            gemCanvas_.drawLine(
-                screenX_[a], screenY_[a], screenX_[b], screenY_[b],
-                color
-            );
+            drawDepthLine(gemCanvas_, screenX_[a], screenY_[a], screenX_[b],
+                          screenY_[b], color,
+                          0.5f * (screenDepth_[a] + screenDepth_[b]),
+                          runtime.active() ? runtime.radius() : GemData::kRadius,
+                          selected);
         }
     }
 
@@ -398,7 +418,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
     drawHeader(state, false);
     const RuntimeGemMesh& runtime = runtimeGemMesh();
 
-    static const char* labels[] = {"TOP", "BOTTOM", "FRONT", "SIDE"};
+    static const char* labels[] = {"T", "B", "F", "S"};
     static const int16_t boxes[][4] = {
         {18, 46, 138, 130}, {165, 46, 138, 130},
         {18, 190, 138, 130}, {165, 190, 138, 130},
@@ -485,9 +505,9 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     else depth = 0.5f * (a.x + b.x);
                     const uint16_t color = selected ? C_GREEN
                                                     : gray565(depth, runtime.radius());
-                    gemCanvas_.drawLine(screenX_[edge.a], screenY_[edge.a],
-                                        screenX_[edge.b], screenY_[edge.b],
-                                        color);
+                    drawDepthLine(gemCanvas_, screenX_[edge.a], screenY_[edge.a],
+                                  screenX_[edge.b], screenY_[edge.b], color,
+                                  depth, runtime.radius(), selected);
                 }
             }
         }
@@ -512,7 +532,8 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     else depth = 0.5f * (a3.x + b3.x);
                     const uint16_t color = selected ? C_GREEN
                                                     : gray565(depth, GemData::kRadius);
-                    gemCanvas_.drawLine(a.x, a.y, b.x, b.y, color);
+                    drawDepthLine(gemCanvas_, a.x, a.y, b.x, b.y, color,
+                                  depth, GemData::kRadius, selected);
                 }
             }
         }
@@ -525,7 +546,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
         const int labelY = panel < 2
                                ? boxes[panel][1] + 4
                                : boxes[panel][1] + boxes[panel][3] - 4;
-        textAt(gemCanvas_, labels[panel], labelX, labelY, C_TEXT, 2, datum);
+        textAt(gemCanvas_, labels[panel], labelX, labelY, C_DIM, 2, datum);
     }
 
     char centerLabel[28];
@@ -542,49 +563,59 @@ void GemUi::drawHud(const GemTelemetry& state)
     hudCanvas_.drawFastHLine(8, 0, 304, C_PANEL);
 
     char line[64];
-    const bool hasTierTarget = state.jobActive || runtimeGemMesh().active();
-    const float targetTip = hasTierTarget ? selectedTargetTip(state) : state.tipDegrees;
+    const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
-    drawAxisSymbol(hudCanvas_, 20, 28, true, C_YELLOW);
-    textAt(hudCanvas_, hasTierTarget ? "TIP TARGET" : "TIP", 38, 7, C_YELLOW, 1, TL_DATUM);
     snprintf(line, sizeof(line), "%+.2f", targetTip);
     textAt(hudCanvas_, line, 252, 28, C_YELLOW, 6, MR_DATUM);
-    if (hasTierTarget)
-    {
-        snprintf(line, sizeof(line), "ERR %+.2f deg", tipError);
-        textAt(hudCanvas_, line, 312, 40, C_DIM, 1, TR_DATUM);
-    }
+    snprintf(line, sizeof(line), "%+.2f deg", tipError);
+    textAt(hudCanvas_, line, 312, 43, C_DIM, 1, TR_DATUM);
 
-    float actualTwist = state.targetTwist + state.twistError;
-    drawAxisSymbol(hudCanvas_, 20, 76, false, C_CYAN);
-    textAt(hudCanvas_, "INDEX", 38, 55, C_CYAN, 1, TL_DATUM);
-    snprintf(line, sizeof(line), "%+.2f", actualTwist);
+    const float resolution = runtimeGemMesh().active()
+                                 ? runtimeGemMesh().indexResolution()
+                                 : float(GemData::kIndexResolution);
+    const float targetTwist = selectedTargetTwist(state);
+    const float actualTwist = normalizedTwist(state.targetTwist + state.twistError,
+                                               state.wheelIndex);
+    const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
+    snprintf(line, sizeof(line), "%+.2f", targetTwist);
     textAt(hudCanvas_, line, 252, 76, C_CYAN, 6, MR_DATUM);
-    snprintf(line, sizeof(line), "ERR %+.2f", state.twistError);
-    textAt(hudCanvas_, line, 312, 88, C_DIM, 1, TR_DATUM);
+    snprintf(line, sizeof(line), "%+.2f", indexError);
+    textAt(hudCanvas_, line, 312, 91, C_DIM, 1, TR_DATUM);
     drawStepIndicator(hudCanvas_, 286, 68, state.indexStep, C_CYAN);
 
     int forceWidth = constrain(state.forceBar, 0, 20) * 14;
     hudCanvas_.drawRect(20, 102, 282, 5, C_DIM);
     hudCanvas_.fillRect(21, 103, forceWidth, 3, C_GREEN);
+    hudCanvas_.drawFastVLine(106, 112, 34, C_PANEL);
+    hudCanvas_.drawFastVLine(214, 112, 34, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 43, 111, C_MAGENTA, 1, MC_DATUM);
-    snprintf(line, sizeof(line), "%+.3f mm", state.zMillimeters);
-    textAt(hudCanvas_, line, 55, 132, C_MAGENTA, 2, MC_DATUM);
-    drawStepIndicator(hudCanvas_, 7, 108, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, "Z", 18, 123, C_MAGENTA, 2, MC_DATUM);
+    snprintf(line, sizeof(line), "%+.3f", state.zMillimeters);
+    textAt(hudCanvas_, line, 61, 124, C_MAGENTA, 2, MC_DATUM);
+    textAt(hudCanvas_, "mm", 61, 144, C_DIM, 1, MC_DATUM);
+    drawStepIndicator(hudCanvas_, 82, 112, state.zStep, C_MAGENTA);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
-    drawRotationArrow(hudCanvas_, 126, 128, clockwise, motorRunning, C_TEXT);
+    drawRotationArrow(hudCanvas_, 126, 126, clockwise, motorRunning, C_TEXT);
     snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 170, 128, C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, "rpm", 208, 129, C_DIM, 1, ML_DATUM);
+    textAt(hudCanvas_, line, 174, 123, C_TEXT, 2, MC_DATUM);
+    textAt(hudCanvas_, "rpm", 174, 144, C_DIM, 1, MC_DATUM);
 
-    drawWaterDrop(hudCanvas_, 236, 128,
+    drawWaterDrop(hudCanvas_, 232, 126,
                   (state.flowDirection & 1) ? C_DIM : C_CYAN);
     snprintf(line, sizeof(line), "%.1f", state.flow);
-    textAt(hudCanvas_, line, 272, 126, C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, "mL/min", 312, 142, C_DIM, 1, BR_DATUM);
+    textAt(hudCanvas_, line, 276, 123, C_TEXT, 2, MC_DATUM);
+    textAt(hudCanvas_, "mL/min", 276, 144, C_DIM, 1, MC_DATUM);
+
+    // Use the exact axis glyphs from the classic screen.
+    hudCanvas_.loadFont(dcTerminal_30);
+    hudCanvas_.setTextDatum(MC_DATUM);
+    hudCanvas_.setTextColor(C_YELLOW, C_BG);
+    hudCanvas_.drawString("Θ", 20, 28);
+    hudCanvas_.setTextColor(C_CYAN, C_BG);
+    hudCanvas_.drawString("Φ", 20, 76);
+    hudCanvas_.unloadFont();
 }
 
 void GemUi::pushGemCanvas()
@@ -630,7 +661,8 @@ void GemUi::tick(const GemTelemetry& state)
         lastStaticLinkAlive_ = state.linkAlive;
     }
 
-    if (stateChanged || now - lastHudMs_ >= 500)
+    if ((stateChanged && now - lastHudMs_ >= kHudPeriodMs) ||
+        now - lastHudMs_ >= 500)
     {
         lastHudMs_ = now;
         drawHud(state);

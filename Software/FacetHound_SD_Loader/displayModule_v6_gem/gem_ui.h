@@ -44,7 +44,8 @@ public:
 private:
     static constexpr int kGemHeight = 330;
     static constexpr int kHudHeight = 150;
-    static constexpr uint32_t kFramePeriodMs = 33;
+    static constexpr uint32_t kFramePeriodMs = 20;
+    static constexpr uint32_t kHudPeriodMs = 80;
 
     TFT_eSPI& tft_;
     TFT_eSprite gemCanvas_;
@@ -69,8 +70,9 @@ private:
     float wrappedDelta(float target, float current, float period) const;
     uint16_t nearestPlane(float tipDegrees, float twistTicks) const;
     bool edgeSelected(uint16_t edgeIndex, uint16_t plane) const;
-    float selectedPlaneHeight(uint16_t plane) const;
+    void inferredTierName(uint16_t plane, char* text, size_t size) const;
     float selectedTargetTip(const GemTelemetry& state) const;
+    float selectedTargetTwist(const GemTelemetry& state) const;
     void formatTierFacet(const GemTelemetry& state, char* text, size_t size,
                          bool compact = false) const;
     void updatePose(const GemTelemetry& state);

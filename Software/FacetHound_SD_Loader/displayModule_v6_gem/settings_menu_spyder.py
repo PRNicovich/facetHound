@@ -154,11 +154,24 @@ class SettingsMenuSimulator:
         if not self.demo_running:
             return
         t = time.monotonic() - self.demo_started
-        target = (3.0 + self.demo_frame * 0.18) % 96.0
-        error = 1.8 * math.sin(t * 1.7)
-        tip = 47.0 + 18.0 * math.sin(t * 0.65)
-        z_value = 1.25 * math.sin(t * 0.4)
-        values = (("T", target), ("E", error), ("TIP", tip), ("ZMM", z_value),
+        # Deliberately walk recognizable facets instead of free-running sine waves.
+        poses = ((65.0, 69.0), (65.0, 45.0), (65.0, 21.0), (65.0, 93.0),
+                 (47.0, 69.0), (47.0, 45.0), (47.0, 21.0), (47.0, 93.0),
+                 (132.0, 27.0), (132.0, 51.0), (132.0, 75.0), (132.0, 3.0))
+        dwell = 1.6
+        segment = int(t / dwell) % len(poses)
+        phase = (t % dwell) / dwell
+        ease = phase * phase * (3.0 - 2.0 * phase)
+        tip_a, index_a = poses[segment]
+        tip_b, index_b = poses[(segment + 1) % len(poses)]
+        index_delta = ((index_b - index_a + 48.0) % 96.0) - 48.0
+        target = (index_a + index_delta * ease) % 96.0
+        target_tip = tip_a + (tip_b - tip_a) * ease
+        index_error = 0.35 * math.sin(math.pi * phase)
+        tip_error = 0.45 * math.sin(2.0 * math.pi * phase)
+        tip = target_tip + tip_error
+        z_value = 0.6 * math.sin(t * 0.25)
+        values = (("T", target), ("E", index_error), ("TIP", tip), ("ZMM", z_value),
                   ("F", max(0, round(10.0 + 9.0 * math.sin(t * 0.9))) * 1280),
                   ("RPM", 1200), ("RPV", 1175 + 30 * math.sin(t)), ("DIR", 2),
                   ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)), ("FLD", 2),
@@ -167,7 +180,7 @@ class SettingsMenuSimulator:
         sender = getattr(self.link, "send_quiet", self.link.send)
         for key, value in values:
             sender(f"@{key},{value:.4f}")
-        self.demo_values = (tip, target + error, z_value)
+        self.demo_values = (tip, target + index_error, z_value)
         self.demo_frame += 1
         if self.demo_frame % 4 == 0:
             self.draw()
