@@ -85,6 +85,12 @@ void drawWaterDrop(TFT_eSprite& canvas, int x, int y, uint16_t color)
     canvas.fillCircle(x - 2, y, 2, C_BG);
 }
 
+void drawDegreeGlyph(TFT_eSprite& canvas, int x, int y, uint16_t color)
+{
+    canvas.drawCircle(x, y, 3, color);
+    canvas.drawCircle(x, y, 2, color);
+}
+
 void textAt(TFT_eSprite& canvas, const char* text, int x, int y, uint16_t color,
             uint8_t font = 2, uint8_t datum = TL_DATUM)
 {
@@ -595,15 +601,12 @@ void GemUi::drawHud(const GemTelemetry& state)
     char line[64];
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
-    snprintf(line, sizeof(line), "%+7.2f\xB0", targetTip);
-    textAt(hudCanvas_, line, 190, 32, C_YELLOW, 6, MR_DATUM);
-    snprintf(line, sizeof(line), "%+.2f\xB0", tipError);
-    textAt(hudCanvas_, line, 294, 32, C_YELLOW, 4, MR_DATUM);
-
-    // Contact/force belongs to the cutting-angle row.
-    const int forceWidth = constrain(state.forceBar, 0, 20) * 4;
-    hudCanvas_.drawRect(224, 48, 82, 4, C_YELLOW);
-    hudCanvas_.fillRect(225, 49, forceWidth, 2, C_YELLOW);
+    snprintf(line, sizeof(line), "%+7.2f", targetTip);
+    textAt(hudCanvas_, line, 170, 32, C_YELLOW, 4, MR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 178, 22, C_YELLOW);
+    snprintf(line, sizeof(line), "%+.2f", tipError);
+    textAt(hudCanvas_, line, 278, 32, C_YELLOW, 4, MR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 286, 22, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -613,22 +616,23 @@ void GemUi::drawHud(const GemTelemetry& state)
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
-    textAt(hudCanvas_, line, 190, 78, C_CYAN, 6, MR_DATUM);
+    textAt(hudCanvas_, line, 170, 78, C_CYAN, 4, MR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 294, 78, C_CYAN, 4, MR_DATUM);
+    textAt(hudCanvas_, line, 278, 78, C_CYAN, 4, MR_DATUM);
     static const char* stepText[] = {"1", "0.1", "0.01"};
     drawStepIndicator(hudCanvas_, 286, 88, state.indexStep, C_CYAN);
-    snprintf(line, sizeof(line), "step %s", stepText[constrain(state.indexStep, 0, 2)]);
+    snprintf(line, sizeof(line), "%s", stepText[constrain(state.indexStep, 0, 2)]);
     textAt(hudCanvas_, line, 278, 99, C_CYAN, 1, MR_DATUM);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
     textAt(hudCanvas_, "Z", 16, 130, C_MAGENTA, 4, MC_DATUM);
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 184, 130, C_MAGENTA, 6, MR_DATUM);
-    drawStepIndicator(hudCanvas_, 188, 109, state.zStep, C_MAGENTA);
-    snprintf(line, sizeof(line), "%s mm", stepText[constrain(state.zStep, 0, 2)]);
-    textAt(hudCanvas_, line, 198, 147, C_MAGENTA, 1, MC_DATUM);
+    textAt(hudCanvas_, line, 190, 132, C_MAGENTA, 4, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 194, 109, state.zStep, C_MAGENTA);
+    snprintf(line, sizeof(line), "%s", stepText[constrain(state.zStep, 0, 2)]);
+    textAt(hudCanvas_, line, 204, 137, C_MAGENTA, 1, MC_DATUM);
+    textAt(hudCanvas_, "mm", 204, 148, C_DIM, 1, MC_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;

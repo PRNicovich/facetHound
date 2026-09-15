@@ -201,23 +201,28 @@ class SettingsMenuSimulator:
                  (48.0, 3.0, 2, 5, 132.0, 51.0, "P1"),
                  (90.0, 27.0, 1, 1, 90.0, 27.0, "G"),
                  (90.0, 51.0, 1, 5, 90.0, 51.0, "G"))
-        cycle = 5.0
+        # Two seconds indexing, three seconds lowering, then five seconds fully
+        # settled before selecting the next facet.
+        cycle = 10.0
         segment = int(t / cycle) % len(poses)
         phase = (t % cycle) / cycle
         target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
         previous_index = poses[(segment - 1) % len(poses)][1]
         # First slew index at 90 degrees, then lower the mast until error is zero.
-        if phase < 0.40:
-            slew = phase / 0.40
+        if phase < 0.20:
+            slew = phase / 0.20
             ease = slew * slew * (3.0 - 2.0 * slew)
             delta = ((target - previous_index + 48.0) % 96.0) - 48.0
             actual_index = (previous_index + delta * ease) % 96.0
             tip = 90.0
-        else:
+        elif phase < 0.50:
             actual_index = target
-            lower = (phase - 0.40) / 0.60
+            lower = (phase - 0.20) / 0.30
             ease = lower * lower * (3.0 - 2.0 * lower)
             tip = 90.0 + (target_tip - 90.0) * ease
+        else:
+            actual_index = target
+            tip = target_tip
         index_error = ((actual_index - target + 48.0) % 96.0) - 48.0
         z_value = 0.6 * math.sin(t * 0.25)
         values = (("T", target), ("E", index_error), ("TIP", tip), ("ZMM", z_value),
