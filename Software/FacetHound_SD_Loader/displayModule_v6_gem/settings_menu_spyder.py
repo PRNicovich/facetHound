@@ -16,7 +16,7 @@ from matplotlib.widgets import Button
 
 SERIAL_PORT = "AUTO"  # Or an explicit port such as "COM5"; None is local-only.
 SERIAL_BAUD = 115200
-START_MODE = "CLASSIC"
+START_MODE = "DYNAMIC"
 
 
 class OptionalSerial:

@@ -70,9 +70,11 @@ private:
     uint16_t nearestPlane(float tipDegrees, float twistTicks) const;
     bool edgeSelected(uint16_t edgeIndex, uint16_t plane) const;
     float selectedPlaneHeight(uint16_t plane) const;
-    void formatTierFacet(const GemTelemetry& state, char* text, size_t size) const;
+    float selectedTargetTip(const GemTelemetry& state) const;
+    void formatTierFacet(const GemTelemetry& state, char* text, size_t size,
+                         bool compact = false) const;
     void updatePose(const GemTelemetry& state);
-    void drawHeader(const GemTelemetry& state);
+    void drawHeader(const GemTelemetry& state, bool showTier);
     void drawDynamic(const GemTelemetry& state);
     void drawStatic(const GemTelemetry& state);
     void drawHud(const GemTelemetry& state);

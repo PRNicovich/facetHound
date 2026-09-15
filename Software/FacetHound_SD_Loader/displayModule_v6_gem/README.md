@@ -157,8 +157,11 @@ is used as a plane equation term during geometry construction, but it remains
 unrelated to machine Z and is not shown as a Z target.
 
 GemCad `n` names are treated as tier labels: the first name found in a tier is
-shown for every facet in that tier beside the live tip angle (`C1`, `C2`, `P1`,
-`G2`, and so on). An unnamed table plane is shown as `T`.
+shown for every facet in that tier (`C1`, `C2`, `P1`, `G2`, and so on). With a
+runtime wireframe loaded, the large tip value is the tier target and the small
+value is live tip error. Unnamed tiers are inferred as table, crown, pavilion,
+or girdle from their geometry. Static view edges and the moving wireframe use
+depth cueing; the lower HUD uses direction, RPM-unit, and flow-unit icons.
 
 ## Protocol mapping used by gem modes
 
