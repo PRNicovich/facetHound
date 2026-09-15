@@ -119,8 +119,10 @@ class SettingsMenuSimulator:
         self.active_design = "NONE"
         self.demo_running = False
         self.demo_started = 0.0
+        self.demo_segment_started = 0.0
         self.demo_frame = 0
         self.demo_segment = -1
+        self.demo_job_segment = -1
         self.demo_values = (0.0, 0.0, 0.0)
         self.fig, self.ax = plt.subplots(figsize=(3.2, 4.8), dpi=100)
         self.fig.subplots_adjust(left=.04, right=.96, top=.98, bottom=.13)
@@ -162,8 +164,10 @@ class SettingsMenuSimulator:
             self.page, self.cursor = "root", 0
             self.link.send("@MENU,0")
             self.demo_started = time.monotonic()
+            self.demo_segment_started = self.demo_started
             self.demo_frame = 0
             self.demo_segment = -1
+            self.demo_job_segment = -1
             setup_lines = ("@RPM,1200", "@DIR,2", "@FLD,2", "@WIDX,96",
                            "@TIDX,1", "@ZIDX,1")
             sender = getattr(self.link, "send_quiet", self.link.send)
@@ -180,8 +184,9 @@ class SettingsMenuSimulator:
             service()
         if not self.demo_running:
             return
-        t = time.monotonic() - self.demo_started
-        # Every fallback facet, in the exact tier/facet order of gem_data.h.
+        now = time.monotonic()
+        t = now - self.demo_started
+        # Every fallback facet, numbered in ascending displayed machine index.
         tier_specs = ((90.0, 27.0, 6.0, "G"),
                       (132.0, 27.0, 6.0, "P1"),
                       (135.0, 24.0, 6.0, "P2"),
@@ -201,15 +206,28 @@ class SettingsMenuSimulator:
                 tier_poses.append((machine_tip, machine_index, tier, facet,
                                    raw_tip, raw_index, name))
             tier_poses.sort(key=lambda pose: pose[1])
+            tier_poses = [pose[:3] + (ordered_facet,) + pose[4:]
+                          for ordered_facet, pose in enumerate(tier_poses, 1)]
             poses.extend(tier_poses)
-        # Selection and targets change at the boundary. Actual pose moves for
-        # two seconds, then holds still for one second.
+        # This is deliberately stateful rather than derived from absolute time:
+        # a delayed GUI/serial tick can never skip one or more facets. Each old
+        # target gets two seconds of motion and a full one-second settled hold
+        # before the next facet is selected.
         cycle = 3.0
-        segment = int(t / cycle) % len(poses)
-        phase = (t % cycle) / cycle
+        if self.demo_segment < 0:
+            self.demo_segment = 0
+            self.demo_segment_started = now
+        elif now - self.demo_segment_started >= cycle:
+            self.demo_segment = (self.demo_segment + 1) % len(poses)
+            self.demo_segment_started = now
+        segment = self.demo_segment
+        phase = min((now - self.demo_segment_started) / cycle, 1.0)
         target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
-        previous_tip = poses[(segment - 1) % len(poses)][0]
-        previous_index = poses[(segment - 1) % len(poses)][1]
+        if segment == 0:
+            previous_tip, previous_index = 90.0, 0.0
+        else:
+            previous_tip = poses[segment - 1][0]
+            previous_index = poses[segment - 1][1]
         if phase < (2.0 / 3.0):
             move = phase / (2.0 / 3.0)
             ease = move * move * (3.0 - 2.0 * move)
@@ -229,9 +247,9 @@ class SettingsMenuSimulator:
                   ("ML", previous_index), ("MR", target),
                   ("MID", facet - 1), ("MCT", 16), ("MST", 2))
         lines = [f"@{key},{value:.4f}" for key, value in values]
-        if segment != self.demo_segment:
+        if segment != self.demo_job_segment:
             lines.insert(0, f"@JOB,{tier},{facet},{raw_tip},0,{raw_index},{name}")
-            self.demo_segment = segment
+            self.demo_job_segment = segment
         sender = getattr(self.link, "send_quiet", self.link.send)
         for line in lines:
             sender(line)

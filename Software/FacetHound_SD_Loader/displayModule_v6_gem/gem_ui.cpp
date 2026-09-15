@@ -38,6 +38,44 @@ bool oppositeApproach(float storedTip)
     return storedTip < 0.0f || storedTip > 90.0f;
 }
 
+int orderedPlaneForFacet(const RuntimeGemMesh& runtime, uint16_t tier,
+                         uint16_t facet)
+{
+    if (facet == 0) return -1;
+    const bool runtimeActive = runtime.active();
+    const uint16_t count = runtimeActive ? uint16_t(runtime.planes().size())
+                                         : GemData::kPlaneCount;
+    const float resolution = runtimeActive ? runtime.indexResolution()
+                                           : float(GemData::kIndexResolution);
+    auto planeTier = [&](uint16_t i) {
+        return runtimeActive ? runtime.planes()[i].tier : GemData::kPlanes[i].tier;
+    };
+    auto machineIndex = [&](uint16_t i) {
+        const float tip = runtimeActive ? runtime.planes()[i].tipDegrees
+                                        : GemData::kPlanes[i].tipDegrees;
+        float index = runtimeActive ? runtime.planes()[i].twistTicks
+                                    : GemData::kPlanes[i].twistTicks;
+        if (oppositeApproach(tip)) index += resolution * 0.5f;
+        index = fmodf(index, resolution);
+        return index < 0.0f ? index + resolution : index;
+    };
+
+    for (uint16_t i = 0; i < count; ++i) {
+        if (planeTier(i) != tier) continue;
+        const float index = machineIndex(i);
+        uint16_t rank = 1;
+        for (uint16_t j = 0; j < count; ++j) {
+            if (i == j || planeTier(j) != tier) continue;
+            const float other = machineIndex(j);
+            if (other < index - 1.0e-4f ||
+                (fabsf(other - index) <= 1.0e-4f && j < i))
+                ++rank;
+        }
+        if (rank == facet) return i;
+    }
+    return -1;
+}
+
 void drawDepthLine(TFT_eSprite& canvas, int x1, int y1, int x2, int y2,
                    uint16_t color, float depth, float radius, bool selected)
 {
@@ -456,19 +494,9 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
 
     int jobPlane = -1;
-    if (state.jobActive) {
-        if (runtimeGemMesh().active()) {
-            jobPlane = runtimeGemMesh().findPlane(state.jobTier, state.jobFacet);
-        } else {
-            for (uint16_t i = 0; i < GemData::kPlaneCount; ++i) {
-                if (GemData::kPlanes[i].tier == state.jobTier &&
-                    GemData::kPlanes[i].facet == state.jobFacet) {
-                    jobPlane = i;
-                    break;
-                }
-            }
-        }
-    }
+    if (state.jobActive)
+        jobPlane = orderedPlaneForFacet(runtimeGemMesh(), state.jobTier,
+                                        state.jobFacet);
     selectedPlane_ = jobPlane >= 0
                          ? uint16_t(jobPlane)
                          : nearestPlane(targetTip, normalizedTwist(
