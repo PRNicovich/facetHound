@@ -292,17 +292,21 @@ void GemUi::formatTierFacet(const GemTelemetry& state, char* text, size_t size,
         angle = plane.tipDegrees;
     }
 
-    if (name && name[0])
-    {
-        if (compact) snprintf(text, size, "%s  F%u", name, facet);
-        else snprintf(text, size, "%s   FACET %u", name, facet);
-        return;
-    }
-
     char inferred[8];
-    inferredTierName(selectedPlane_, inferred, sizeof(inferred));
-    if (compact) snprintf(text, size, "%s  F%u", inferred, facet);
-    else snprintf(text, size, "%s   FACET %u", inferred, facet);
+    if (name && name[0]) snprintf(inferred, sizeof(inferred), "%s", name);
+    else inferredTierName(selectedPlane_, inferred, sizeof(inferred));
+
+    uint16_t facetCount = 0;
+    if (runtime.active()) {
+        for (const RuntimeMeshPlane& plane : runtime.planes())
+            if (plane.tier == tier) ++facetCount;
+    } else {
+        for (uint16_t i = 0; i < GemData::kPlaneCount; ++i)
+            if (GemData::kPlanes[i].tier == tier) ++facetCount;
+    }
+    facetCount = max(facetCount, facet);
+    if (compact) snprintf(text, size, "%s - %u/%u", inferred, facet, facetCount);
+    else snprintf(text, size, "%s   %u/%u", inferred, facet, facetCount);
 }
 
 void GemUi::updatePose(const GemTelemetry& state)
@@ -350,7 +354,7 @@ void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
     {
         char facet[40];
         formatTierFacet(state, facet, sizeof(facet));
-        textAt(gemCanvas_, facet, 7, 19, C_AMBER, 2, TL_DATUM);
+        textAt(gemCanvas_, facet, 313, 7, C_AMBER, 2, TR_DATUM);
     }
 }
 
@@ -503,11 +507,9 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     else if (panel == 1) depth = -0.5f * (a.z + b.z);
                     else if (panel == 2) depth = -0.5f * (a.y + b.y);
                     else depth = 0.5f * (a.x + b.x);
-                    const uint16_t color = selected ? C_GREEN
-                                                    : gray565(depth, runtime.radius());
-                    drawDepthLine(gemCanvas_, screenX_[edge.a], screenY_[edge.a],
-                                  screenX_[edge.b], screenY_[edge.b], color,
-                                  depth, runtime.radius(), selected);
+                    const uint16_t color = selected ? C_GREEN : C_EDGE;
+                    gemCanvas_.drawLine(screenX_[edge.a], screenY_[edge.a],
+                                        screenX_[edge.b], screenY_[edge.b], color);
                 }
             }
         }
@@ -530,10 +532,8 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     else if (panel == 1) depth = -0.5f * (a3.z + b3.z);
                     else if (panel == 2) depth = -0.5f * (a3.y + b3.y);
                     else depth = 0.5f * (a3.x + b3.x);
-                    const uint16_t color = selected ? C_GREEN
-                                                    : gray565(depth, GemData::kRadius);
-                    drawDepthLine(gemCanvas_, a.x, a.y, b.x, b.y, color,
-                                  depth, GemData::kRadius, selected);
+                    const uint16_t color = selected ? C_GREEN : C_EDGE;
+                    gemCanvas_.drawLine(a.x, a.y, b.x, b.y, color);
                 }
             }
         }
@@ -566,9 +566,14 @@ void GemUi::drawHud(const GemTelemetry& state)
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
     snprintf(line, sizeof(line), "%+.2f", targetTip);
-    textAt(hudCanvas_, line, 252, 28, C_YELLOW, 6, MR_DATUM);
-    snprintf(line, sizeof(line), "%+.2f deg", tipError);
-    textAt(hudCanvas_, line, 312, 43, C_DIM, 1, TR_DATUM);
+    textAt(hudCanvas_, line, 42, 28, C_YELLOW, 6, ML_DATUM);
+    snprintf(line, sizeof(line), "%+.2f\xB0", tipError);
+    textAt(hudCanvas_, line, 312, 31, C_TEXT, 2, MR_DATUM);
+
+    // Contact/force belongs to the cutting-angle row.
+    const int forceWidth = constrain(state.forceBar, 0, 20) * 4;
+    hudCanvas_.drawRect(224, 7, 82, 5, C_DIM);
+    hudCanvas_.fillRect(225, 8, forceWidth, 3, C_GREEN);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -578,21 +583,19 @@ void GemUi::drawHud(const GemTelemetry& state)
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+.2f", targetTwist);
-    textAt(hudCanvas_, line, 252, 76, C_CYAN, 6, MR_DATUM);
+    textAt(hudCanvas_, line, 42, 76, C_CYAN, 6, ML_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 312, 91, C_DIM, 1, TR_DATUM);
+    textAt(hudCanvas_, line, 312, 79, C_TEXT, 2, MR_DATUM);
     drawStepIndicator(hudCanvas_, 286, 68, state.indexStep, C_CYAN);
 
-    int forceWidth = constrain(state.forceBar, 0, 20) * 14;
-    hudCanvas_.drawRect(20, 102, 282, 5, C_DIM);
-    hudCanvas_.fillRect(21, 103, forceWidth, 3, C_GREEN);
+    hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
     hudCanvas_.drawFastVLine(106, 112, 34, C_PANEL);
     hudCanvas_.drawFastVLine(214, 112, 34, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 18, 123, C_MAGENTA, 2, MC_DATUM);
+    textAt(hudCanvas_, "Z", 16, 126, C_MAGENTA, 4, MC_DATUM);
     snprintf(line, sizeof(line), "%+.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 61, 124, C_MAGENTA, 2, MC_DATUM);
-    textAt(hudCanvas_, "mm", 61, 144, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, line, 62, 124, C_MAGENTA, 4, MC_DATUM);
+    textAt(hudCanvas_, "mm", 62, 147, C_DIM, 1, MC_DATUM);
     drawStepIndicator(hudCanvas_, 82, 112, state.zStep, C_MAGENTA);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
@@ -612,9 +615,9 @@ void GemUi::drawHud(const GemTelemetry& state)
     hudCanvas_.loadFont(dcTerminal_30);
     hudCanvas_.setTextDatum(MC_DATUM);
     hudCanvas_.setTextColor(C_YELLOW, C_BG);
-    hudCanvas_.drawString("Θ", 20, 28);
+    hudCanvas_.drawString("Θ", 18, 27);
     hudCanvas_.setTextColor(C_CYAN, C_BG);
-    hudCanvas_.drawString("Φ", 20, 76);
+    hudCanvas_.drawString("Φ", 18, 75);
     hudCanvas_.unloadFont();
 }
 

@@ -22,12 +22,14 @@ START_MODE = "DYNAMIC"
 class OptionalSerial:
     def __init__(self, port_name):
         self.port = None
+        self.message = "Local-only mode"
         if port_name:
             try:
                 import serial
                 from serial.tools import list_ports
-            except ImportError as exc:
-                raise RuntimeError("Install pyserial or set SERIAL_PORT=None") from exc
+            except ImportError:
+                print("Serial disabled: install pyserial, or set SERIAL_PORT=None")
+                return
             if str(port_name).upper() == "AUTO":
                 candidates = list(list_ports.comports())
                 likely = [item for item in candidates if any(
@@ -39,11 +41,15 @@ class OptionalSerial:
                     port_name = candidates[0].device
                 else:
                     found = ", ".join(item.device for item in candidates) or "none"
-                    raise RuntimeError(
-                        f"AUTO could not choose a port ({found}); set SERIAL_PORT='COMx'"
-                    )
+                    print(f"Serial disabled: AUTO found {found}; set SERIAL_PORT='COMx'")
+                    return
                 print(f"Using RP2040 USB port {port_name}")
-            self.port = serial.Serial(port_name, SERIAL_BAUD, timeout=0.05)
+            try:
+                self.port = serial.Serial(port_name, SERIAL_BAUD, timeout=0.05,
+                                          write_timeout=0.10)
+                self.message = f"Connected to {port_name}"
+            except Exception as exc:
+                print(f"Serial disabled: could not open {port_name}: {exc}")
 
     def send(self, line):
         print(">", line)
@@ -113,7 +119,7 @@ class SettingsMenuSimulator:
         self.demo_button = Button(self.fig.add_axes((.54, .025, .38, .065)), "LIVE DEMO [D]")
         self.menu_button.on_clicked(lambda _event: self.toggle_menu())
         self.demo_button.on_clicked(lambda _event: self.toggle_demo())
-        self.timer = self.fig.canvas.new_timer(interval=50)
+        self.timer = self.fig.canvas.new_timer(interval=120)
         self.timer.add_callback(self.demo_tick)
         self.timer.start()
         self.link.send("@MENU,1")
@@ -158,7 +164,7 @@ class SettingsMenuSimulator:
         poses = ((65.0, 69.0), (65.0, 45.0), (65.0, 21.0), (65.0, 93.0),
                  (47.0, 69.0), (47.0, 45.0), (47.0, 21.0), (47.0, 93.0),
                  (132.0, 27.0), (132.0, 51.0), (132.0, 75.0), (132.0, 3.0))
-        dwell = 1.6
+        dwell = 3.5
         segment = int(t / dwell) % len(poses)
         phase = (t % dwell) / dwell
         ease = phase * phase * (3.0 - 2.0 * phase)
