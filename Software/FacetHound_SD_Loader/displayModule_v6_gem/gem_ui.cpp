@@ -442,12 +442,12 @@ void GemUi::updatePose(const GemTelemetry& state)
     else
     {
         const float tipDelta = targetTip - displayedTip_;
-        const float tipGain = 0.24f + 0.32f * constrain(
+        const float tipGain = 0.38f + 0.42f * constrain(
             fabsf(tipDelta) / 35.0f, 0.0f, 1.0f);
         displayedTip_ += tipDelta * tipGain;
         const float twistDelta = wrappedDelta(
             targetTwist, displayedTwist_, meshResolution);
-        const float twistGain = 0.24f + 0.32f * constrain(
+        const float twistGain = 0.38f + 0.42f * constrain(
             fabsf(twistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
         displayedTwist_ += twistDelta * twistGain;
         displayedTwist_ = normalizedTwist(displayedTwist_, meshResolution);
@@ -497,12 +497,12 @@ void GemUi::updatePose(const GemTelemetry& state)
         orientationInitialized_ = true;
     } else {
         float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
-        const float renderTipGain = 0.28f + 0.32f * constrain(
+        const float renderTipGain = 0.42f + 0.40f * constrain(
             fabsf(tipDelta) / 45.0f, 0.0f, 1.0f);
         displayedRenderTip_ += tipDelta * renderTipGain;
         const float renderTwistDelta = wrappedDelta(
             renderTwistTarget, displayedRenderTwist_, meshResolution);
-        const float renderTwistGain = 0.28f + 0.32f * constrain(
+        const float renderTwistGain = 0.42f + 0.40f * constrain(
             fabsf(renderTwistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
         displayedRenderTwist_ += renderTwistDelta * renderTwistGain;
         displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_, meshResolution);
@@ -798,8 +798,8 @@ void GemUi::drawHud(const GemTelemetry& state)
     textAt(hudCanvas_, line, 197, 58, C_YELLOW, 6, BR_DATUM);
     drawDegreeGlyph(hudCanvas_, 205, 19, C_YELLOW);
     snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 284, 55, C_YELLOW, 4, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 292, 29, C_YELLOW);
+    textAt(hudCanvas_, line, 284, 53, C_YELLOW, 4, BR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 292, 27, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -811,7 +811,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
     textAt(hudCanvas_, line, 197, 109, C_CYAN, 6, BR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 284, 106, C_CYAN, 4, BR_DATUM);
+    textAt(hudCanvas_, line, 284, 104, C_CYAN, 4, BR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 62, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
@@ -820,7 +820,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
     textAt(hudCanvas_, line, 197, 159, C_MAGENTA, 6, BR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 109, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 205, 139, C_MAGENTA, 2, ML_DATUM);
+    textAt(hudCanvas_, "mm", 205, 141, C_MAGENTA, 2, ML_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;

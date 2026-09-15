@@ -200,6 +200,7 @@ class SettingsMenuSimulator:
                 machine_index = (raw_index + (48.0 if pavilion else 0.0)) % 96.0
                 tier_poses.append((machine_tip, machine_index, tier, facet,
                                    raw_tip, raw_index, name))
+            tier_poses.sort(key=lambda pose: pose[1])
             poses.extend(tier_poses)
         # Selection and targets change at the boundary. Actual pose moves for
         # two seconds, then holds still for one second.

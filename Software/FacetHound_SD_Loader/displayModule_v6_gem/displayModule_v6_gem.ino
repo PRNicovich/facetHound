@@ -1307,11 +1307,17 @@ void updateMarkPointsSprite()
 {
   markSprite.fillSprite(SPRITE_FILL);
   markSprite.drawFloat(markL, 2, 80, 30);
-  markSprite.drawString("<", 105, 30);
+  markSprite.drawLine(105, 7, 99, 15, 0x07FE);
+  markSprite.drawLine(99, 15, 105, 23, 0x07FE);
+  markSprite.drawLine(106, 7, 100, 15, 0x07FE);
+  markSprite.drawLine(100, 15, 106, 23, 0x07FE);
   markSprite.drawNumber(markIdx, 145, 30);
   markSprite.drawString("/", 158, 30);
   markSprite.drawNumber(nMarkIdx, 190, 30);
-  markSprite.drawString(">", 210, 30);
+  markSprite.drawLine(210, 7, 216, 15, 0x07FE);
+  markSprite.drawLine(216, 15, 210, 23, 0x07FE);
+  markSprite.drawLine(211, 7, 217, 15, 0x07FE);
+  markSprite.drawLine(217, 15, 211, 23, 0x07FE);
   markSprite.drawFloat(markR, 2, 300, 30);
   markSprite.pushSprite(10, 130);
 }
