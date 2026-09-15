@@ -630,32 +630,32 @@ void GemUi::drawHud(const GemTelemetry& state)
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
-    textAt(hudCanvas_, line, 200, 70, C_CYAN, 6, MR_DATUM);
+    textAt(hudCanvas_, line, 200, 72, C_CYAN, 6, MR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 282, 70, C_CYAN, 4, MR_DATUM);
-    drawStepIndicator(hudCanvas_, 302, 61, state.indexStep, C_CYAN);
+    textAt(hudCanvas_, line, 282, 72, C_CYAN, 4, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 205, 49, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 13, 118, C_MAGENTA, 2, MC_DATUM);
+    textAt(hudCanvas_, "Z", 13, 122, C_MAGENTA, 2, MC_DATUM);
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 200, 118, C_MAGENTA, 6, MR_DATUM);
-    textAt(hudCanvas_, "mm", 208, 118, C_MAGENTA, 2, ML_DATUM);
-    drawStepIndicator(hudCanvas_, 232, 109, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, line, 200, 122, C_MAGENTA, 6, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 205, 99, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, "mm", 208, 144, C_MAGENTA, 2, BL_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
-    drawRotationArrow(hudCanvas_, 254, 108, clockwise, motorRunning, C_TEXT);
+    drawRotationArrow(hudCanvas_, 218, 108, clockwise, motorRunning, C_TEXT);
     snprintf(line, sizeof(line), "%lu rpm", static_cast<unsigned long>(state.rpmActual));
     textAt(hudCanvas_, line, 316, 108, C_TEXT, 2, MR_DATUM);
 
-    drawWaterDrop(hudCanvas_, 254, 137,
-                  (state.flowDirection & 1) ? C_DIM : C_CYAN);
+    drawWaterDrop(hudCanvas_, 218, 137,
+                  fabsf(state.flow) > 0.01f ? C_CYAN : C_DIM);
     snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
     textAt(hudCanvas_, line, 316, 137, C_TEXT, 2, MR_DATUM);
 
     drawSmallAxisSymbol(hudCanvas_, 14, 24, true, C_YELLOW);
-    drawSmallAxisSymbol(hudCanvas_, 14, 70, false, C_CYAN);
+    drawSmallAxisSymbol(hudCanvas_, 14, 72, false, C_CYAN);
 }
 
 void GemUi::pushGemCanvas()

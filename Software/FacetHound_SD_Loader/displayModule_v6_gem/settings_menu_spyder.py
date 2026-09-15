@@ -191,13 +191,15 @@ class SettingsMenuSimulator:
                       (12.0, 69.0, -6.0, "C4"))
         poses = []
         for tier, (raw_tip, start, increment, name) in enumerate(tier_specs, 1):
+            tier_poses = []
             for facet in range(1, 17):
                 raw_index = (start + increment * (facet - 1)) % 96.0
                 pavilion = raw_tip > 90.0
                 machine_tip = 180.0 - raw_tip if pavilion else raw_tip
                 machine_index = (raw_index + (48.0 if pavilion else 0.0)) % 96.0
-                poses.append((machine_tip, machine_index, tier, facet,
-                              raw_tip, raw_index, name))
+                tier_poses.append((machine_tip, machine_index, tier, facet,
+                                   raw_tip, raw_index, name))
+            poses.extend(sorted(tier_poses, key=lambda pose: pose[1]))
         # Selection and targets change at the boundary. Actual pose moves for
         # one second, then holds still for one second.
         cycle = 2.0
