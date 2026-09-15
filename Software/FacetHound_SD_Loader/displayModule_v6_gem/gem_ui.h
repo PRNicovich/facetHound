@@ -44,7 +44,7 @@ public:
 private:
     static constexpr int kGemHeight = 320;
     static constexpr int kHudHeight = 160;
-    static constexpr uint32_t kFramePeriodMs = 40;
+    static constexpr uint32_t kFramePeriodMs = 33;
     static constexpr uint32_t kHudPeriodMs = 80;
 
     TFT_eSPI& tft_;
@@ -58,7 +58,6 @@ private:
     float displayedTip_ = 0.0f;
     float displayedTwist_ = 0.0f;
     float displayedRenderTip_ = 0.0f;
-    float displayedViewFlip_ = 0.0f;
     uint16_t selectedPlane_ = 0;
     uint32_t lastFrameMs_ = 0;
     uint32_t lastHudMs_ = 0;
@@ -73,7 +72,7 @@ private:
     float wrappedDelta(float target, float current, float period) const;
     uint16_t nearestPlane(float tipDegrees, float twistTicks) const;
     bool edgeSelected(uint16_t edgeIndex, uint16_t plane) const;
-    void fillSelectedProjection(uint16_t edgeCount);
+    void fillSelectedProjection(uint16_t edgeCount, uint8_t panel);
     void inferredTierName(uint16_t plane, char* text, size_t size) const;
     float selectedTargetTip(const GemTelemetry& state) const;
     float selectedTargetTwist(const GemTelemetry& state) const;

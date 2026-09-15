@@ -232,15 +232,39 @@ bool GemUi::edgeSelected(uint16_t edgeIndex, uint16_t plane) const
     return (edge.planeMask[plane >> 5] & (uint32_t(1) << (plane & 31))) != 0;
 }
 
-void GemUi::fillSelectedProjection(uint16_t edgeCount)
+void GemUi::fillSelectedProjection(uint16_t edgeCount, uint8_t panel)
 {
     const RuntimeGemMesh& runtime = runtimeGemMesh();
+    float zTolerance = 0.0f;
+    if (runtime.active() && panel < 2) {
+        float zMin = INFINITY, zMax = -INFINITY;
+        for (const RuntimeMeshVertex& point : runtime.vertices()) {
+            zMin = min(zMin, point.z);
+            zMax = max(zMax, point.z);
+        }
+        zTolerance = max(1.0e-7f, 0.025f * (zMax - zMin));
+    }
     uint16_t vertices[64] = {};
     float angles[64] = {};
     uint8_t count = 0;
     float depth = 0.0f;
     for (uint16_t i = 0; i < edgeCount && count < 64; ++i) {
         if (!edgeSelected(i, selectedPlane_)) continue;
+        if (panel < 2) {
+            if (runtime.active()) {
+                const RuntimeMeshEdge& edge = runtime.edges()[i];
+                const RuntimeMeshVertex& a = runtime.vertices()[edge.a];
+                const RuntimeMeshVertex& b = runtime.vertices()[edge.b];
+                const float zMid = 0.5f * (a.z + b.z);
+                const bool girdle = fabsf(zMid) <= zTolerance ||
+                                    (a.z <= 0.0f && b.z >= 0.0f) ||
+                                    (b.z <= 0.0f && a.z >= 0.0f);
+                if (!girdle && !(panel == 0 ? zMid > 0.0f : zMid < 0.0f))
+                    continue;
+            } else if ((GemData::kEdges[i].viewMask & (1u << panel)) == 0) {
+                continue;
+            }
+        }
         const uint16_t ends[2] = {
             uint16_t(runtime.active() ? runtime.edges()[i].a : GemData::kEdges[i].a),
             uint16_t(runtime.active() ? runtime.edges()[i].b : GemData::kEdges[i].b)};
@@ -271,7 +295,8 @@ void GemUi::fillSelectedProjection(uint16_t edgeCount)
         }
         vertices[j + 1] = vertex; angles[j + 1] = angle;
     }
-    const uint16_t fill = depth / count < 0.0f ? 0x0102 : 0x0204;
+    const bool behind = panel >= 2 && depth / count < 0.0f;
+    const uint16_t fill = behind ? 0x0102 : 0x0204;
     for (uint8_t i = 0; i < count; ++i) {
         const uint16_t a = vertices[i], b = vertices[(i + 1) % count];
         gemCanvas_.fillTriangle(cx, cy, screenX_[a], screenY_[a],
@@ -416,10 +441,10 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
     else
     {
-        displayedTip_ += (targetTip - displayedTip_) * 0.20f;
+        displayedTip_ += (targetTip - displayedTip_) * 0.32f;
         displayedTwist_ += wrappedDelta(
             targetTwist, displayedTwist_, meshResolution
-        ) * 0.20f;
+        ) * 0.32f;
         displayedTwist_ = normalizedTwist(displayedTwist_, meshResolution);
     }
 
@@ -449,21 +474,14 @@ void GemUi::updatePose(const GemTelemetry& state)
         storedSelectedTip = runtime.planes()[selectedPlane_].tipDegrees;
     else if (selectedPlane_ < GemData::kPlaneCount)
         storedSelectedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
-    const bool flipTarget = oppositeApproach(storedSelectedTip) ||
-                            fabsf(fabsf(storedSelectedTip) - 90.0f) <= 0.05f;
     const float renderTipTarget = displayedTip_ *
                                   (oppositeApproach(storedSelectedTip) ? 1.0f : -1.0f);
-    const float viewFlipTarget = flipTarget ? PI : 0.0f;
     if (!orientationInitialized_) {
         displayedRenderTip_ = renderTipTarget;
-        displayedViewFlip_ = viewFlipTarget;
         orientationInitialized_ = true;
     } else {
         float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
-        displayedRenderTip_ += tipDelta * 0.14f;
-        float flipDelta = atan2f(sinf(viewFlipTarget - displayedViewFlip_),
-                                 cosf(viewFlipTarget - displayedViewFlip_));
-        displayedViewFlip_ += flipDelta * 0.14f;
+        displayedRenderTip_ += tipDelta * 0.28f;
     }
 }
 
@@ -493,7 +511,6 @@ void GemUi::drawDynamic(const GemTelemetry& state)
     const float twist = displayedTwist_ * TWO_PI / resolution;
     const float ct = cosf(tip), st = sinf(tip);
     const float cz = cosf(twist), sz = sinf(twist);
-    const float cf = cosf(displayedViewFlip_), sf = sinf(displayedViewFlip_);
     const float scale = 116.0f / (runtime.active() ? runtime.radius() : GemData::kRadius);
     constexpr float centerX = 160.0f;
     constexpr float centerY = 166.0f;
@@ -509,11 +526,9 @@ void GemUi::drawDynamic(const GemTelemetry& state)
         const float y1 = sz * px + cz * py;
         const float y2 = ct * y1 - st * pz;
         const float z2 = st * y1 + ct * pz;
-        const float viewX = cf * x1 + sf * z2;
-        const float viewDepth = -sf * x1 + cf * z2;
-        screenX_[i] = int16_t(lroundf(centerX + scale * viewX));
+        screenX_[i] = int16_t(lroundf(centerX + scale * x1));
         screenY_[i] = int16_t(lroundf(centerY - scale * y2));
-        screenDepth_[i] = viewDepth;
+        screenDepth_[i] = z2;
     }
 
     // A dark green convex fan reads as a translucent selected face on this
@@ -647,7 +662,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
                 else screenDepth_[i] = point.x;
             }
 
-            fillSelectedProjection(uint16_t(runtime.edges().size()));
+            fillSelectedProjection(uint16_t(runtime.edges().size()), panel);
 
             float zMin = INFINITY, zMax = -INFINITY;
             float viewSpan = 0.0f;
@@ -708,7 +723,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
                 else if (panel == 2) screenDepth_[i] = -point.y;
                 else screenDepth_[i] = point.x;
             }
-            fillSelectedProjection(GemData::kEdgeCount);
+            fillSelectedProjection(GemData::kEdgeCount, panel);
             for (uint8_t pass = 0; pass < 2; ++pass)
             {
                 for (uint16_t i = 0; i < GemData::kEdgeCount; ++i)
@@ -756,11 +771,11 @@ void GemUi::drawHud(const GemTelemetry& state)
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
     snprintf(line, sizeof(line), "%+7.2f", targetTip);
-    textAt(hudCanvas_, line, 197, 60, C_YELLOW, 6, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 205, 21, C_YELLOW);
+    textAt(hudCanvas_, line, 197, 58, C_YELLOW, 6, BR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 205, 19, C_YELLOW);
     snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 284, 60, C_YELLOW, 4, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 292, 34, C_YELLOW);
+    textAt(hudCanvas_, line, 284, 58, C_YELLOW, 4, BR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 292, 32, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -770,10 +785,10 @@ void GemUi::drawHud(const GemTelemetry& state)
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
-    textAt(hudCanvas_, line, 197, 110, C_CYAN, 6, BR_DATUM);
+    textAt(hudCanvas_, line, 197, 109, C_CYAN, 6, BR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 284, 110, C_CYAN, 4, BR_DATUM);
-    drawStepIndicator(hudCanvas_, 202, 63, state.indexStep, C_CYAN);
+    textAt(hudCanvas_, line, 284, 109, C_CYAN, 4, BR_DATUM);
+    drawStepIndicator(hudCanvas_, 202, 62, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
@@ -781,21 +796,21 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
     textAt(hudCanvas_, line, 197, 159, C_MAGENTA, 6, BR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 109, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 205, 137, C_MAGENTA, 2, ML_DATUM);
+    textAt(hudCanvas_, "mm", 205, 159, C_MAGENTA, 2, BL_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
-    drawRotationArrow(hudCanvas_, 234, 114, clockwise, motorRunning, C_TEXT);
+    drawRotationArrow(hudCanvas_, 234, 116, clockwise, motorRunning, C_TEXT);
     snprintf(line, sizeof(line), "%lu rpm", static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 313, 114, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 313, 116, C_TEXT, 2, MR_DATUM);
 
     drawWaterDrop(hudCanvas_, 234, 143,
                   fabsf(state.flow) > 0.01f ? C_CYAN : C_DIM);
     snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
     textAt(hudCanvas_, line, 313, 143, C_TEXT, 2, MR_DATUM);
 
-    drawSmallAxisSymbol(hudCanvas_, 14, 36, true, C_YELLOW);
-    drawSmallAxisSymbol(hudCanvas_, 14, 86, false, C_CYAN);
+    drawSmallAxisSymbol(hudCanvas_, 14, 34, true, C_YELLOW);
+    drawSmallAxisSymbol(hudCanvas_, 14, 85, false, C_CYAN);
 }
 
 void GemUi::pushGemCanvas()
