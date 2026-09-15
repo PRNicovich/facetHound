@@ -444,12 +444,14 @@ void GemUi::updatePose(const GemTelemetry& state)
         const float tipDelta = targetTip - displayedTip_;
         const float tipGain = 0.38f + 0.42f * constrain(
             fabsf(tipDelta) / 35.0f, 0.0f, 1.0f);
-        displayedTip_ += tipDelta * tipGain;
+        displayedTip_ += constrain(tipDelta * tipGain, -4.5f, 4.5f);
         const float twistDelta = wrappedDelta(
             targetTwist, displayedTwist_, meshResolution);
         const float twistGain = 0.38f + 0.42f * constrain(
             fabsf(twistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
-        displayedTwist_ += twistDelta * twistGain;
+        const float maxTwistStep = meshResolution * 0.035f;
+        displayedTwist_ += constrain(twistDelta * twistGain,
+                                     -maxTwistStep, maxTwistStep);
         displayedTwist_ = normalizedTwist(displayedTwist_, meshResolution);
     }
 
@@ -499,12 +501,16 @@ void GemUi::updatePose(const GemTelemetry& state)
         float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
         const float renderTipGain = 0.42f + 0.40f * constrain(
             fabsf(tipDelta) / 45.0f, 0.0f, 1.0f);
-        displayedRenderTip_ += tipDelta * renderTipGain;
+        displayedRenderTip_ += constrain(tipDelta * renderTipGain,
+                                         -5.0f, 5.0f);
         const float renderTwistDelta = wrappedDelta(
             renderTwistTarget, displayedRenderTwist_, meshResolution);
         const float renderTwistGain = 0.42f + 0.40f * constrain(
             fabsf(renderTwistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
-        displayedRenderTwist_ += renderTwistDelta * renderTwistGain;
+        const float maxRenderTwistStep = meshResolution * 0.03f;
+        displayedRenderTwist_ += constrain(
+            renderTwistDelta * renderTwistGain,
+            -maxRenderTwistStep, maxRenderTwistStep);
         displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_, meshResolution);
     }
 }
