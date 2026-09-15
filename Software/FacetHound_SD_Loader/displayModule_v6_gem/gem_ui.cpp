@@ -128,6 +128,7 @@ bool GemUi::begin(DisplayMode mode)
     hudCanvasReady_ = hudCanvas_.createSprite(320, kHudHeight) != nullptr;
 
     poseInitialized_ = false;
+    orientationInitialized_ = false;
     lastStateVersion_ = UINT32_MAX;
     lastStaticVersion_ = UINT32_MAX;
     lastStaticLinkAlive_ = false;
@@ -441,6 +442,29 @@ void GemUi::updatePose(const GemTelemetry& state)
                          : nearestPlane(targetTip, normalizedTwist(
                                                        state.targetTwist,
                                                        state.wheelIndex));
+
+    float storedSelectedTip = 0.0f;
+    const RuntimeGemMesh& runtime = runtimeGemMesh();
+    if (runtime.active() && selectedPlane_ < runtime.planes().size())
+        storedSelectedTip = runtime.planes()[selectedPlane_].tipDegrees;
+    else if (selectedPlane_ < GemData::kPlaneCount)
+        storedSelectedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
+    const bool flipTarget = oppositeApproach(storedSelectedTip) ||
+                            fabsf(fabsf(storedSelectedTip) - 90.0f) <= 0.05f;
+    const float renderTipTarget = displayedTip_ *
+                                  (oppositeApproach(storedSelectedTip) ? 1.0f : -1.0f);
+    const float viewFlipTarget = flipTarget ? PI : 0.0f;
+    if (!orientationInitialized_) {
+        displayedRenderTip_ = renderTipTarget;
+        displayedViewFlip_ = viewFlipTarget;
+        orientationInitialized_ = true;
+    } else {
+        float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
+        displayedRenderTip_ += tipDelta * 0.14f;
+        float flipDelta = atan2f(sinf(viewFlipTarget - displayedViewFlip_),
+                                 cosf(viewFlipTarget - displayedViewFlip_));
+        displayedViewFlip_ += flipDelta * 0.14f;
+    }
 }
 
 void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
@@ -465,20 +489,11 @@ void GemUi::drawDynamic(const GemTelemetry& state)
     const RuntimeGemMesh& runtime = runtimeGemMesh();
     const float resolution = runtime.active() ? runtime.indexResolution()
                                                : float(GemData::kIndexResolution);
-    float storedSelectedTip = 0.0f;
-    if (runtime.active() && selectedPlane_ < runtime.planes().size())
-        storedSelectedTip = runtime.planes()[selectedPlane_].tipDegrees;
-    else if (selectedPlane_ < GemData::kPlaneCount)
-        storedSelectedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
-    // Crown/table approach the lap from the opposite X rotation; pavilion uses
-    // the acute angle after the half-wheel approach correction.
-    const float tip = displayedTip_ * DEG_TO_RAD *
-                      (oppositeApproach(storedSelectedTip) ? 1.0f : -1.0f);
-    const bool reverseView = oppositeApproach(storedSelectedTip) ||
-                             fabsf(fabsf(storedSelectedTip) - 90.0f) <= 0.05f;
+    const float tip = displayedRenderTip_ * DEG_TO_RAD;
     const float twist = displayedTwist_ * TWO_PI / resolution;
     const float ct = cosf(tip), st = sinf(tip);
     const float cz = cosf(twist), sz = sinf(twist);
+    const float cf = cosf(displayedViewFlip_), sf = sinf(displayedViewFlip_);
     const float scale = 116.0f / (runtime.active() ? runtime.radius() : GemData::kRadius);
     constexpr float centerX = 160.0f;
     constexpr float centerY = 166.0f;
@@ -494,8 +509,8 @@ void GemUi::drawDynamic(const GemTelemetry& state)
         const float y1 = sz * px + cz * py;
         const float y2 = ct * y1 - st * pz;
         const float z2 = st * y1 + ct * pz;
-        const float viewX = reverseView ? -x1 : x1;
-        const float viewDepth = reverseView ? -z2 : z2;
+        const float viewX = cf * x1 + sf * z2;
+        const float viewDepth = -sf * x1 + cf * z2;
         screenX_[i] = int16_t(lroundf(centerX + scale * viewX));
         screenY_[i] = int16_t(lroundf(centerY - scale * y2));
         screenDepth_[i] = viewDepth;

@@ -54,8 +54,11 @@ private:
     bool gemCanvasReady_ = false;
     bool hudCanvasReady_ = false;
     bool poseInitialized_ = false;
+    bool orientationInitialized_ = false;
     float displayedTip_ = 0.0f;
     float displayedTwist_ = 0.0f;
+    float displayedRenderTip_ = 0.0f;
+    float displayedViewFlip_ = 0.0f;
     uint16_t selectedPlane_ = 0;
     uint32_t lastFrameMs_ = 0;
     uint32_t lastHudMs_ = 0;
