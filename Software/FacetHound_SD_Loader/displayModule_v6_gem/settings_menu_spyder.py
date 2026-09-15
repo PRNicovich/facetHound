@@ -199,15 +199,15 @@ class SettingsMenuSimulator:
                 poses.append((machine_tip, machine_index, tier, facet,
                               raw_tip, raw_index, name))
         # Selection and targets change at the boundary. Actual pose moves for
-        # three seconds, then holds still for the remaining two seconds.
-        cycle = 5.0
+        # one second, then holds still for one second.
+        cycle = 2.0
         segment = int(t / cycle) % len(poses)
         phase = (t % cycle) / cycle
         target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
         previous_tip = poses[(segment - 1) % len(poses)][0]
         previous_index = poses[(segment - 1) % len(poses)][1]
-        if phase < 0.60:
-            move = phase / 0.60
+        if phase < 0.50:
+            move = phase / 0.50
             ease = move * move * (3.0 - 2.0 * move)
             delta = ((target - previous_index + 48.0) % 96.0) - 48.0
             actual_index = (previous_index + delta * ease) % 96.0
