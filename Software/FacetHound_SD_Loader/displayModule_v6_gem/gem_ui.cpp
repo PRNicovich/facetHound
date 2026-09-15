@@ -10,6 +10,7 @@ namespace
 constexpr uint16_t C_BG = TFT_BLACK;
 constexpr uint16_t C_TEXT = 0xE71C;
 constexpr uint16_t C_DIM = 0x632C;
+constexpr uint16_t C_NAME = 0x9CF3;
 constexpr uint16_t C_EDGE = 0x94B2;
 constexpr uint16_t C_PANEL = 0x10C3;
 constexpr uint16_t C_GREEN = 0x27E8;
@@ -348,7 +349,7 @@ void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
 {
     const char* title = state.jobActive && state.jobTitle && state.jobTitle[0]
                             ? state.jobTitle : GemData::kTitle;
-    textAt(gemCanvas_, title, 7, 5, C_DIM, 1, TL_DATUM);
+    textAt(gemCanvas_, title, 7, 5, C_NAME, 1, TL_DATUM);
 
     if (showTier)
     {
@@ -419,7 +420,7 @@ void GemUi::drawDynamic(const GemTelemetry& state)
 void GemUi::drawStatic(const GemTelemetry& state)
 {
     gemCanvas_.fillSprite(C_BG);
-    drawHeader(state, false);
+    drawHeader(state, true);
     const RuntimeGemMesh& runtime = runtimeGemMesh();
 
     static const char* labels[] = {"T", "B", "F", "S"};
@@ -549,12 +550,6 @@ void GemUi::drawStatic(const GemTelemetry& state)
         textAt(gemCanvas_, labels[panel], labelX, labelY, C_DIM, 2, datum);
     }
 
-    char centerLabel[28];
-    formatTierFacet(state, centerLabel, sizeof(centerLabel), true);
-    const uint8_t centerFont = strlen(centerLabel) <= 9 ? 4 : 2;
-    gemCanvas_.fillRoundRect(75, 164, 170, 40, 7, C_BG);
-    gemCanvas_.drawRoundRect(75, 164, 170, 40, 7, C_PANEL);
-    textAt(gemCanvas_, centerLabel, 160, 184, C_AMBER, centerFont, MC_DATUM);
 }
 
 void GemUi::drawHud(const GemTelemetry& state)
@@ -568,12 +563,12 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+.2f", targetTip);
     textAt(hudCanvas_, line, 42, 28, C_YELLOW, 6, ML_DATUM);
     snprintf(line, sizeof(line), "%+.2f\xB0", tipError);
-    textAt(hudCanvas_, line, 312, 31, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 312, 28, C_YELLOW, 4, MR_DATUM);
 
     // Contact/force belongs to the cutting-angle row.
     const int forceWidth = constrain(state.forceBar, 0, 20) * 4;
-    hudCanvas_.drawRect(224, 7, 82, 5, C_DIM);
-    hudCanvas_.fillRect(225, 8, forceWidth, 3, C_GREEN);
+    hudCanvas_.drawRect(224, 48, 82, 4, C_DIM);
+    hudCanvas_.fillRect(225, 49, forceWidth, 2, C_GREEN);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -585,31 +580,29 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+.2f", targetTwist);
     textAt(hudCanvas_, line, 42, 76, C_CYAN, 6, ML_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 312, 79, C_TEXT, 2, MR_DATUM);
-    drawStepIndicator(hudCanvas_, 286, 68, state.indexStep, C_CYAN);
+    textAt(hudCanvas_, line, 312, 76, C_CYAN, 4, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 286, 89, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
-    hudCanvas_.drawFastVLine(106, 112, 34, C_PANEL);
-    hudCanvas_.drawFastVLine(214, 112, 34, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 16, 126, C_MAGENTA, 4, MC_DATUM);
+    textAt(hudCanvas_, "Z", 16, 124, C_MAGENTA, 4, MC_DATUM);
     snprintf(line, sizeof(line), "%+.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 62, 124, C_MAGENTA, 4, MC_DATUM);
-    textAt(hudCanvas_, "mm", 62, 147, C_DIM, 1, MC_DATUM);
-    drawStepIndicator(hudCanvas_, 82, 112, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, line, 42, 124, C_MAGENTA, 6, ML_DATUM);
+    drawStepIndicator(hudCanvas_, 184, 108, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, "mm", 194, 146, C_DIM, 1, MC_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
-    drawRotationArrow(hudCanvas_, 126, 126, clockwise, motorRunning, C_TEXT);
+    drawRotationArrow(hudCanvas_, 224, 124, clockwise, motorRunning, C_TEXT);
     snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 174, 123, C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, "rpm", 174, 144, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, line, 252, 119, C_TEXT, 2, MC_DATUM);
+    textAt(hudCanvas_, "rpm", 252, 143, C_DIM, 1, MC_DATUM);
 
-    drawWaterDrop(hudCanvas_, 232, 126,
+    drawWaterDrop(hudCanvas_, 278, 124,
                   (state.flowDirection & 1) ? C_DIM : C_CYAN);
     snprintf(line, sizeof(line), "%.1f", state.flow);
-    textAt(hudCanvas_, line, 276, 123, C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, "mL/min", 276, 144, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, line, 303, 119, C_TEXT, 2, MC_DATUM);
+    textAt(hudCanvas_, "mL/m", 303, 143, C_DIM, 1, MC_DATUM);
 
     // Use the exact axis glyphs from the classic screen.
     hudCanvas_.loadFont(dcTerminal_30);

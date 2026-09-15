@@ -63,6 +63,27 @@ class OptionalSerial:
                 print(f"serial write failed: {exc}")
                 self.close()
 
+    def send_frame(self, lines):
+        """Send one atomic telemetry frame instead of many tiny USB writes."""
+        if self.port:
+            try:
+                payload = "".join(line + "\n" for line in lines).encode("ascii")
+                self.port.write(payload)
+            except Exception as exc:
+                print(f"serial write failed: {exc}")
+                self.close()
+
+    def service(self):
+        """Drain display replies so its USB transmit side never backs up."""
+        if self.port:
+            try:
+                waiting = self.port.in_waiting
+                if waiting:
+                    self.port.read(min(waiting, 4096))
+            except Exception as exc:
+                print(f"serial read failed: {exc}")
+                self.close()
+
     def close(self):
         port, self.port = self.port, None
         if port:
@@ -157,6 +178,9 @@ class SettingsMenuSimulator:
         self.draw()
 
     def demo_tick(self):
+        service = getattr(self.link, "service", None)
+        if service:
+            service()
         if not self.demo_running:
             return
         t = time.monotonic() - self.demo_started
@@ -183,9 +207,14 @@ class SettingsMenuSimulator:
                   ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)), ("FLD", 2),
                   ("WIDX", 96), ("TIDX", (self.demo_frame // 80) % 3),
                   ("ZIDX", (self.demo_frame // 120) % 3))
-        sender = getattr(self.link, "send_quiet", self.link.send)
-        for key, value in values:
-            sender(f"@{key},{value:.4f}")
+        lines = [f"@{key},{value:.4f}" for key, value in values]
+        frame_sender = getattr(self.link, "send_frame", None)
+        if frame_sender:
+            frame_sender(lines)
+        else:
+            sender = getattr(self.link, "send_quiet", self.link.send)
+            for line in lines:
+                sender(line)
         self.demo_values = (tip, target + index_error, z_value)
         self.demo_frame += 1
         if self.demo_frame % 4 == 0:
