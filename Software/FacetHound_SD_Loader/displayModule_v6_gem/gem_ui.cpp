@@ -614,8 +614,8 @@ void GemUi::drawHud(const GemTelemetry& state)
     textAt(hudCanvas_, line, 194, 32, C_YELLOW, 6, MR_DATUM);
     drawDegreeGlyph(hudCanvas_, 202, 17, C_YELLOW);
     snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 304, 32, C_YELLOW, 4, MR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 312, 22, C_YELLOW);
+    textAt(hudCanvas_, line, 276, 32, C_YELLOW, 4, MR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 284, 22, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -627,8 +627,8 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
     textAt(hudCanvas_, line, 194, 78, C_CYAN, 6, MR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 304, 78, C_CYAN, 4, MR_DATUM);
-    drawStepIndicator(hudCanvas_, 202, 91, state.indexStep, C_CYAN);
+    textAt(hudCanvas_, line, 276, 78, C_CYAN, 4, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 302, 69, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
@@ -636,18 +636,18 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
     textAt(hudCanvas_, line, 205, 132, C_MAGENTA, 6, MR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 112, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 207, 148, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, "mm", 207, 148, C_MAGENTA, 1, MC_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
-    drawRotationArrow(hudCanvas_, 224, 117, clockwise, motorRunning, C_TEXT);
+    drawRotationArrow(hudCanvas_, 230, 115, clockwise, motorRunning, C_TEXT);
     snprintf(line, sizeof(line), "%lu rpm", static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 316, 117, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 316, 115, C_TEXT, 2, MR_DATUM);
 
-    drawWaterDrop(hudCanvas_, 224, 140,
+    drawWaterDrop(hudCanvas_, 230, 142,
                   (state.flowDirection & 1) ? C_DIM : C_CYAN);
     snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
-    textAt(hudCanvas_, line, 316, 140, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 316, 142, C_TEXT, 2, MR_DATUM);
 
     drawSmallAxisSymbol(hudCanvas_, 14, 32, true, C_YELLOW);
     drawSmallAxisSymbol(hudCanvas_, 14, 78, false, C_CYAN);
