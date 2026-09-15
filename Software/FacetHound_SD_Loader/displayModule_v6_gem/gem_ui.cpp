@@ -17,6 +17,33 @@ constexpr uint16_t C_CYAN = 0x3E7F;
 constexpr uint16_t C_MAGENTA = 0xF95B;
 constexpr uint16_t C_AMBER = 0xFCE0;
 
+uint16_t gray565(float depth, float radius)
+{
+    const float normalized = constrain(0.5f + 0.5f * depth / max(radius, 1.0e-6f), 0.0f, 1.0f);
+    const uint8_t level = uint8_t(70.0f + normalized * 155.0f);
+    return uint16_t((level >> 3) << 11) | uint16_t((level >> 2) << 5) | uint16_t(level >> 3);
+}
+
+void drawAxisSymbol(TFT_eSprite& canvas, int x, int y, bool theta, uint16_t color)
+{
+    canvas.drawCircle(x, y, 10, color);
+    if (theta)
+        canvas.drawFastHLine(x - 9, y, 19, color);
+    else
+        canvas.drawFastVLine(x, y - 13, 27, color);
+}
+
+void drawStepIndicator(TFT_eSprite& canvas, int x, int y, int selected, uint16_t color)
+{
+    selected = constrain(selected, 0, 2);
+    for (int i = 0; i < 3; ++i)
+    {
+        const int height = 5 + i * 4;
+        canvas.drawRect(x + i * 7, y + 13 - height, 5, height, i == selected ? color : C_DIM);
+        if (i == selected) canvas.fillRect(x + i * 7 + 1, y + 14 - height, 3, height - 2, color);
+    }
+}
+
 void textAt(TFT_eSprite& canvas, const char* text, int x, int y, uint16_t color,
             uint8_t font = 2, uint8_t datum = TL_DATUM)
 {
@@ -145,6 +172,82 @@ bool GemUi::edgeSelected(uint16_t edgeIndex, uint16_t plane) const
     return (edge.planeMask[plane >> 5] & (uint32_t(1) << (plane & 31))) != 0;
 }
 
+float GemUi::selectedPlaneHeight(uint16_t plane) const
+{
+    float sum = 0.0f;
+    uint32_t count = 0;
+    const RuntimeGemMesh& runtime = runtimeGemMesh();
+    if (runtime.active())
+    {
+        for (uint16_t i = 0; i < runtime.edges().size(); ++i)
+        {
+            if (!edgeSelected(i, plane)) continue;
+            const RuntimeMeshEdge& edge = runtime.edges()[i];
+            sum += runtime.vertices()[edge.a].z + runtime.vertices()[edge.b].z;
+            count += 2;
+        }
+    }
+    else
+    {
+        for (uint16_t i = 0; i < GemData::kEdgeCount; ++i)
+        {
+            if (!edgeSelected(i, plane)) continue;
+            const auto& edge = GemData::kEdges[i];
+            sum += GemData::kVertices[edge.a].z + GemData::kVertices[edge.b].z;
+            count += 2;
+        }
+    }
+    return count ? sum / float(count) : NAN;
+}
+
+void GemUi::formatTierFacet(const GemTelemetry& state, char* text, size_t size) const
+{
+    const RuntimeGemMesh& runtime = runtimeGemMesh();
+    const char* name = nullptr;
+    uint16_t tier = 0;
+    uint16_t facet = 0;
+    float angle = 0.0f;
+
+    if (state.jobActive)
+    {
+        name = state.jobFacetName;
+        tier = state.jobTier;
+        facet = state.jobFacet;
+        angle = state.jobAngle;
+    }
+    else if (runtime.active() && selectedPlane_ < runtime.planes().size())
+    {
+        const RuntimeMeshPlane& plane = runtime.planes()[selectedPlane_];
+        name = plane.name;
+        tier = plane.tier;
+        facet = plane.facet;
+        angle = plane.tipDegrees;
+    }
+    else if (selectedPlane_ < GemData::kPlaneCount)
+    {
+        const auto& plane = GemData::kPlanes[selectedPlane_];
+        tier = plane.tier;
+        facet = plane.facet;
+        angle = plane.tipDegrees;
+    }
+
+    if (name && name[0])
+    {
+        snprintf(text, size, "%s   FACET %u", name, facet);
+        return;
+    }
+
+    const float height = selectedPlaneHeight(selectedPlane_);
+    const float radius = runtime.active() ? runtime.radius() : GemData::kRadius;
+    const char* inferred = nullptr;
+    if (fabsf(angle) >= 89.995f) inferred = "TABLE";
+    else if (isfinite(height) && fabsf(height) <= radius * 0.07f) inferred = "GIRDLE";
+    else if (isfinite(height)) inferred = height > 0.0f ? "CROWN" : "PAVILION";
+
+    if (inferred) snprintf(text, size, "%s   FACET %u", inferred, facet);
+    else snprintf(text, size, "TIER %u   FACET %u", tier, facet);
+}
+
 void GemUi::updatePose(const GemTelemetry& state)
 {
     const float meshResolution = runtimeGemMesh().active()
@@ -182,33 +285,13 @@ void GemUi::updatePose(const GemTelemetry& state)
 
 void GemUi::drawHeader(const GemTelemetry& state)
 {
-    char right[32];
-    snprintf(right, sizeof(right), "%s  W%.0f",
-             state.linkAlive ? "LINK" : "WAIT", state.wheelIndex);
-
     const char* title = state.jobActive && state.jobTitle && state.jobTitle[0]
                             ? state.jobTitle : GemData::kTitle;
     textAt(gemCanvas_, title, 7, 6, C_TEXT, 2, TL_DATUM);
-    textAt(gemCanvas_, right, 313, 6, state.linkAlive ? C_GREEN : C_DIM, 2, TR_DATUM);
 
-    char facet[30];
-    if (state.jobActive)
-        snprintf(facet, sizeof(facet), "TIER %u  FACET %u",
-                 state.jobTier, state.jobFacet);
-    else
-    {
-        if (runtimeGemMesh().active() && selectedPlane_ < runtimeGemMesh().planes().size())
-        {
-            const auto& plane = runtimeGemMesh().planes()[selectedPlane_];
-            snprintf(facet, sizeof(facet), "TIER %u  FACET %u", plane.tier, plane.facet);
-        }
-        else
-        {
-            const auto& plane = GemData::kPlanes[selectedPlane_];
-            snprintf(facet, sizeof(facet), "TIER %u  FACET %u", plane.tier, plane.facet);
-        }
-    }
-    textAt(gemCanvas_, facet, 313, 25, C_AMBER, 1, TR_DATUM);
+    char facet[40];
+    formatTierFacet(state, facet, sizeof(facet));
+    textAt(gemCanvas_, facet, 7, 26, C_AMBER, 2, TL_DATUM);
 }
 
 void GemUi::drawDynamic(const GemTelemetry& state)
@@ -237,8 +320,10 @@ void GemUi::drawDynamic(const GemTelemetry& state)
         const float x1 = cz * px - sz * py;
         const float y1 = sz * px + cz * py;
         const float y2 = ct * y1 - st * pz;
+        const float z2 = st * y1 + ct * pz;
         screenX_[i] = int16_t(lroundf(centerX + scale * x1));
         screenY_[i] = int16_t(lroundf(centerY - scale * y2));
+        screenDepth_[i] = z2;
     }
 
     // Base wireframe first, selected-facet edges last so the highlight stays crisp.
@@ -252,9 +337,13 @@ void GemUi::drawDynamic(const GemTelemetry& state)
             if (selected != (pass == 1)) continue;
             uint16_t a = runtime.active() ? runtime.edges()[i].a : GemData::kEdges[i].a;
             uint16_t b = runtime.active() ? runtime.edges()[i].b : GemData::kEdges[i].b;
+            const uint16_t color = selected
+                                       ? C_GREEN
+                                       : gray565(0.5f * (screenDepth_[a] + screenDepth_[b]),
+                                                 runtime.active() ? runtime.radius() : GemData::kRadius);
             gemCanvas_.drawLine(
                 screenX_[a], screenY_[a], screenX_[b], screenY_[b],
-                selected ? C_GREEN : C_EDGE
+                color
             );
         }
     }
@@ -380,56 +469,37 @@ void GemUi::drawHud(const GemTelemetry& state)
     hudCanvas_.drawFastHLine(8, 0, 304, C_PANEL);
 
     char line[64];
-    snprintf(line, sizeof(line), "TIP %7.2f deg", state.tipDegrees);
-    textAt(hudCanvas_, line, 12, 9, C_YELLOW, 4, TL_DATUM);
-
-    const char* facetLabel = nullptr;
-    bool tableCut = false;
-    if (state.jobActive)
-    {
-        facetLabel = state.jobFacetName;
-        tableCut = fabsf(state.jobAngle) >= 89.995f;
-    }
-    else if (runtimeGemMesh().active() &&
-             selectedPlane_ < runtimeGemMesh().planes().size())
-    {
-        const RuntimeMeshPlane& plane = runtimeGemMesh().planes()[selectedPlane_];
-        facetLabel = plane.name;
-        tableCut = fabsf(plane.tipDegrees) >= 89.995f;
-    }
-    if ((!facetLabel || !facetLabel[0]) && tableCut) facetLabel = "T";
-    if (facetLabel && facetLabel[0])
-    {
-        const uint8_t font = strlen(facetLabel) <= 4 ? 4 : 2;
-        textAt(hudCanvas_, facetLabel, 312, font == 4 ? 9 : 17,
-               C_AMBER, font, TR_DATUM);
-    }
+    drawAxisSymbol(hudCanvas_, 20, 28, true, C_YELLOW);
+    textAt(hudCanvas_, "TIP", 38, 7, C_YELLOW, 1, TL_DATUM);
+    snprintf(line, sizeof(line), "%+.2f", state.tipDegrees);
+    textAt(hudCanvas_, line, 307, 28, C_YELLOW, 6, MR_DATUM);
 
     float actualTwist = state.targetTwist + state.twistError;
-    snprintf(line, sizeof(line), "IDX %6.2f  ERR %+5.2f", actualTwist, state.twistError);
-    textAt(hudCanvas_, line, 12, 39, C_CYAN, 2, TL_DATUM);
+    drawAxisSymbol(hudCanvas_, 20, 76, false, C_CYAN);
+    textAt(hudCanvas_, "INDEX", 38, 55, C_CYAN, 1, TL_DATUM);
+    snprintf(line, sizeof(line), "%+.2f", actualTwist);
+    textAt(hudCanvas_, line, 252, 76, C_CYAN, 6, MR_DATUM);
+    snprintf(line, sizeof(line), "ERR %+.2f", state.twistError);
+    textAt(hudCanvas_, line, 312, 88, C_DIM, 1, TR_DATUM);
+    drawStepIndicator(hudCanvas_, 286, 68, state.indexStep, C_CYAN);
 
     int forceWidth = constrain(state.forceBar, 0, 20) * 14;
-    hudCanvas_.drawRect(20, 62, 282, 7, C_DIM);
-    hudCanvas_.fillRect(21, 63, forceWidth, 5, C_GREEN);
+    hudCanvas_.drawRect(20, 102, 282, 5, C_DIM);
+    hudCanvas_.fillRect(21, 103, forceWidth, 3, C_GREEN);
 
-    snprintf(line, sizeof(line), "Z %+0.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 8, 81, C_MAGENTA, 2, TL_DATUM);
+    textAt(hudCanvas_, "Z", 43, 111, C_MAGENTA, 1, MC_DATUM);
+    snprintf(line, sizeof(line), "%+.3f mm", state.zMillimeters);
+    textAt(hudCanvas_, line, 55, 132, C_MAGENTA, 2, MC_DATUM);
+    drawStepIndicator(hudCanvas_, 7, 108, state.zStep, C_MAGENTA);
 
-    snprintf(line, sizeof(line), "RPM %ld/%lu", state.rpmSet,
+    textAt(hudCanvas_, "RPM", 160, 111, C_TEXT, 1, MC_DATUM);
+    snprintf(line, sizeof(line), "%ld/%lu", state.rpmSet,
              static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 160, 81, C_TEXT, 2, MC_DATUM);
+    textAt(hudCanvas_, line, 160, 132, C_TEXT, 2, MC_DATUM);
 
-    snprintf(line, sizeof(line), "FLOW %.1f", state.flow);
-    textAt(hudCanvas_, line, 312, 81, C_TEXT, 2, TR_DATUM);
-
-    if (state.jobActive)
-        snprintf(line, sizeof(line), "TARGET %+.2f deg  IDX %.2f",
-                 state.jobAngle, state.jobIndex);
-    else
-        snprintf(line, sizeof(line), "%s   motor:%d  pump:%d",
-                 displayModeName(mode_), state.rpmDirection, state.flowDirection);
-    textAt(hudCanvas_, line, 160, 121, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, "FLOW", 268, 111, C_TEXT, 1, MC_DATUM);
+    snprintf(line, sizeof(line), "%.1f", state.flow);
+    textAt(hudCanvas_, line, 268, 132, C_TEXT, 2, MC_DATUM);
 }
 
 void GemUi::pushGemCanvas()

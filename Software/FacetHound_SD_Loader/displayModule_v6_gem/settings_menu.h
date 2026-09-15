@@ -109,6 +109,13 @@ private:
     void drawRow(int y, const char* label, const char* value, bool selected,
                  bool active = false);
     void drawFooter(const char* text);
+    void drawRootRow(uint16_t index, uint8_t row);
+    void drawChoiceRow(uint16_t index, uint8_t row);
+    void drawPositionRow(uint32_t index, uint8_t row);
+    void drawSdRow(uint32_t index, uint8_t row);
+    void redrawAfterInput(Page oldPage, uint16_t oldRoot, uint16_t oldChoice,
+                          uint32_t oldPosition, uint32_t oldSd);
+    void refreshVisiblePage();
     void drawRoot();
     void drawChoices();
     void drawPositions();

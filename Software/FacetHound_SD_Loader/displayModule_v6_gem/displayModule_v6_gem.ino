@@ -1354,6 +1354,8 @@ static GemTelemetry currentGemTelemetry()
   state.forceBar = forceBar;
   state.rpmDirection = RPM_dir;
   state.flowDirection = Flow_dir;
+  state.indexStep = tiltStepIndex;
+  state.zStep = zedStepIndex;
   state.jobActive = jobActive;
   state.jobTitle = jobTitle;
   state.jobFacetName = jobFacetName;

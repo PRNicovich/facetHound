@@ -2,6 +2,7 @@
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from types import SimpleNamespace
 
@@ -37,7 +38,7 @@ def test_menu_transitions():
     assert "@CFGSET,TABLE_ADAPTER,ON" in link.lines
 
     # Variable position editor, tier keys, save, add, and delete.
-    menu.cursor = 7
+    menu.cursor = 11
     press(menu, "enter")
     assert menu.page == "positions"
     press(menu, "enter")
@@ -58,11 +59,25 @@ def test_menu_transitions():
     assert len(menu.positions) == old_count
 
     # Reset every four on a 96 wheel creates 24 points.
-    menu.page, menu.cursor = "root", 5
+    menu.page, menu.cursor = "root", 9
     press(menu, "enter")
     press(menu, "enter")
     assert len(menu.positions) == 24
     assert "@CFGACTION,RESET_POSITIONS,4" in link.lines
+
+    # Simulator menu tree and wheel choices stay identical to the firmware.
+    assert len(menu.ROOT) == 13
+    assert 4 in menu.WHEELS
+    assert all(float(value).is_integer() for value in menu.WHEELS)
+
+    # The same window can close Settings and stream motion telemetry.
+    menu.toggle_demo()
+    assert menu.demo_running and not menu.open
+    menu.demo_tick()
+    assert any(line.startswith("@TIP,") for line in link.lines)
+    assert any(line.startswith("@TIDX,") for line in link.lines)
+    menu.toggle_demo()
+    plt.close(menu.fig)
 
 
 if __name__ == "__main__":

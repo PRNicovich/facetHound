@@ -17,7 +17,7 @@ constexpr uint8_t kVisibleRows = 6;
 constexpr uint8_t kRootItems = 13;
 
 const float kWheelIndexes[] = {
-    1, 2, 6.2832f, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91,
+    1, 2, 4, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91,
     96, 98, 99, 100, 102, 104, 110, 120, 128, 144, 192, 256, 360, 400
 };
 constexpr uint8_t kWheelCount = sizeof(kWheelIndexes) / sizeof(kWheelIndexes[0]);
@@ -133,6 +133,12 @@ MenuResult SettingsMenu::handle(MenuKey key)
 {
     MenuResult result;
     if (!open_) return result;
+
+    const Page oldPage = page_;
+    const uint16_t oldRoot = rootCursor_;
+    const uint16_t oldChoice = choiceCursor_;
+    const uint32_t oldPosition = positionCursor_;
+    const uint32_t oldSd = sdCursor_;
 
     if (page_ == Page::ROOT)
     {
@@ -376,7 +382,7 @@ MenuResult SettingsMenu::handle(MenuKey key)
         }
     }
 
-    draw();
+    redrawAfterInput(oldPage, oldRoot, oldChoice, oldPosition, oldSd);
     return result;
 }
 
@@ -401,14 +407,14 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
         bool changed = !indexSpinRunning_ || fabsf(indexSpinRpm_ - rpm) > 0.001f;
         indexSpinRunning_ = true;
         indexSpinRpm_ = rpm;
-        if (changed && open_) draw();
+        if (changed && open_) refreshVisiblePage();
         return;
     }
     else if (!strcasecmp(id, "INDEX_SPIN_STOP"))
     {
         bool changed = indexSpinRunning_;
         indexSpinRunning_ = false;
-        if (changed && open_) draw();
+        if (changed && open_) refreshVisiblePage();
         return;
     }
     else if (!strcasecmp(id, "ZERO_ENCODER"))
@@ -463,7 +469,7 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
             positionValid_[slot] = true;
         }
     }
-    if (open_) draw();
+    if (open_) refreshVisiblePage();
 }
 
 void SettingsMenu::applyError(const char* id, const char* reason)
@@ -473,7 +479,7 @@ void SettingsMenu::applyError(const char* id, const char* reason)
         snprintf(status_, sizeof(status_), "Load failed: %.30s", reason);
     else
         snprintf(status_, sizeof(status_), "%.16s: %.24s", id, reason);
-    if (open_) draw();
+    if (open_) drawFooter(status_);
 }
 
 void SettingsMenu::drawTitle(const char* subtitle)
@@ -484,7 +490,7 @@ void SettingsMenu::drawTitle(const char* subtitle)
     tft_.drawString("SETTINGS", 18, 12);
     tft_.setTextFont(2);
     tft_.setTextColor(C_DIM, C_BG);
-    tft_.drawString(subtitle, 19, 47);
+    if (subtitle && subtitle[0]) tft_.drawString(subtitle, 19, 47);
     tft_.drawFastHLine(18, 72, 284, C_LINE);
 }
 
@@ -509,6 +515,7 @@ void SettingsMenu::drawRow(int y, const char* label, const char* value,
 
 void SettingsMenu::drawFooter(const char* text)
 {
+    tft_.fillRect(0, 452, 320, 28, C_BG);
     tft_.setTextDatum(BL_DATUM);
     tft_.setTextFont(1);
     tft_.setTextColor(C_DIM, C_BG);
@@ -517,28 +524,10 @@ void SettingsMenu::drawFooter(const char* text)
 
 void SettingsMenu::drawRoot()
 {
-    static const char* labels[kRootItems] = {
-        "Display mode", "Index direction", "Table adapter", "Servo control",
-        "Wheel index", "Z axis polarity", "Flow calibration", "Encoder zero",
-        "Special commands", "Reset positions", "Load SD design", "Edit positions",
-        "Close settings"
-    };
-    char values[kRootItems][18] = {};
-    snprintf(values[0], sizeof(values[0]), "%s", displayModeName(currentMode_));
-    snprintf(values[1], sizeof(values[1]), "%s", indexSign_ < 0 ? "CCW" : "CW");
-    snprintf(values[2], sizeof(values[2]), "%s", tableAdapter_ ? "ON" : "OFF");
-    snprintf(values[3], sizeof(values[3]), "%s", servoEnabled_ ? "ON" : "OFF");
-    snprintf(values[4], sizeof(values[4]), "%.3g", wheelIndex_);
-    snprintf(values[5], sizeof(values[5]), "%s", zSign_ < 0 ? "REVERSED" : "NORMAL");
-    snprintf(values[6], sizeof(values[6]), "%.5f", flowConversion_);
-    snprintf(values[10], sizeof(values[10]), "%.17s",
-             strcasecmp(activeDesign_, "NONE") ? activeDesign_ : sdStatus_);
-    snprintf(values[11], sizeof(values[11]), "%lu", static_cast<unsigned long>(positionCount_));
-
-    drawTitle("machine and display configuration");
-    uint16_t start = rootCursor_ >= kVisibleRows ? rootCursor_ - kVisibleRows + 1 : 0;
+    drawTitle("");
+    uint16_t start = (rootCursor_ / kVisibleRows) * kVisibleRows;
     for (uint8_t row = 0; row < kVisibleRows && start + row < kRootItems; ++row)
-        drawRow(82 + row * 56, labels[start + row], values[start + row], rootCursor_ == start + row, true);
+        drawRootRow(start + row, row);
     drawFooter("TWIST WHEEL scroll/click   TOP-LEFT back");
 }
 
@@ -557,32 +546,9 @@ void SettingsMenu::drawChoices()
     else if (page_ == Page::RESET_POSITIONS) { subtitle = "position spacing on wheel"; count = kResetCount; }
     drawTitle(subtitle);
 
-    uint16_t start = choiceCursor_ >= kVisibleRows ? choiceCursor_ - kVisibleRows + 1 : 0;
+    uint16_t start = (choiceCursor_ / kVisibleRows) * kVisibleRows;
     for (uint8_t row = 0; row < kVisibleRows && start + row < count; ++row)
-    {
-        uint16_t index = start + row;
-        char label[28] = {};
-        char value[22] = {};
-        if (page_ == Page::DISPLAY_MODE)
-        {
-            snprintf(label, sizeof(label), "%s", displayModeName(static_cast<DisplayMode>(index)));
-            const char* detail[] = {"machine status", "moving gem", "four views"};
-            snprintf(value, sizeof(value), "%s", detail[index]);
-        }
-        else if (page_ == Page::INDEX_DIRECTION) snprintf(label, sizeof(label), "%s", index ? "CCW" : "CW");
-        else if (page_ == Page::TABLE_ADAPTER || page_ == Page::SERVO_ENABLED)
-            snprintf(label, sizeof(label), "%s", index ? "ON" : "OFF");
-        else if (page_ == Page::WHEEL_INDEX) snprintf(label, sizeof(label), "%.4g", kWheelIndexes[index]);
-        else if (page_ == Page::Z_POLARITY) snprintf(label, sizeof(label), "%s", index ? "REVERSED" : "NORMAL");
-        else if (page_ == Page::ENCODER_ZERO)
-        {
-            const char* labels[] = {"Zero index encoder", "Zero tip encoder", "Zero Z encoder", "Zero all encoders"};
-            snprintf(label, sizeof(label), "%s", labels[index]);
-        }
-        else if (page_ == Page::SPECIAL_COMMANDS) snprintf(label, sizeof(label), "Index continuous spin");
-        else snprintf(label, sizeof(label), "Every %u", kResetSpacing[index]);
-        drawRow(82 + row * 56, label, value, choiceCursor_ == index);
-    }
+        drawChoiceRow(start + row, row);
     drawFooter("TWIST WHEEL choose/click   TOP-LEFT cancel");
 }
 
@@ -590,25 +556,9 @@ void SettingsMenu::drawPositions()
 {
     drawTitle("numeric mark-point list");
     uint32_t items = positionCount_ + 1;
-    uint32_t start = positionCursor_ >= kVisibleRows ? positionCursor_ - kVisibleRows + 1 : 0;
+    uint32_t start = (positionCursor_ / kVisibleRows) * kVisibleRows;
     for (uint8_t row = 0; row < kVisibleRows && start + row < items; ++row)
-    {
-        uint32_t index = start + row;
-        char label[26] = {};
-        char value[18] = {};
-        if (index == positionCount_)
-        {
-            snprintf(label, sizeof(label), "+ Add position");
-        }
-        else
-        {
-            snprintf(label, sizeof(label), "Position %lu", static_cast<unsigned long>(index + 1));
-            float position = 0.0f;
-            if (cachedPosition(index, &position)) snprintf(value, sizeof(value), "%.4f", position);
-            else snprintf(value, sizeof(value), "loading...");
-        }
-        drawRow(82 + row * 56, label, value, positionCursor_ == index, index < positionCount_);
-    }
+        drawPositionRow(start + row, row);
     drawFooter("CLICK edit/add   SERVO KEY delete   TOP-LEFT back");
 }
 
@@ -673,16 +623,141 @@ void SettingsMenu::drawSdFiles()
         for (uint8_t row = 0; row < kVisibleRows && start + row < sdFileCount_; ++row)
         {
             uint32_t index = start + row;
-            char label[48] = {};
-            if (index >= sdCacheStart_ && index < sdCacheStart_ + kSdCacheSize &&
-                sdFileValid_[index - sdCacheStart_])
-                snprintf(label, sizeof(label), "%.43s", sdFileNames_[index - sdCacheStart_]);
-            else
-                snprintf(label, sizeof(label), "loading...");
-            drawRow(82 + row * 56, label, "", sdCursor_ == index);
+            drawSdRow(index, row);
         }
     }
     drawFooter(status_[0] ? status_ : "WHEEL choose   CLICK load   TOP-LEFT back");
+}
+
+void SettingsMenu::drawRootRow(uint16_t index, uint8_t row)
+{
+    static const char* labels[kRootItems] = {
+        "Display mode", "Index direction", "Table adapter", "Servo control",
+        "Wheel index", "Z axis polarity", "Flow calibration", "Encoder zero",
+        "Special commands", "Reset positions", "Load SD design", "Edit positions",
+        "Close settings"
+    };
+    char value[20] = {};
+    if (index == 0) snprintf(value, sizeof(value), "%s", displayModeName(currentMode_));
+    else if (index == 1) snprintf(value, sizeof(value), "%s", indexSign_ < 0 ? "CCW" : "CW");
+    else if (index == 2) snprintf(value, sizeof(value), "%s", tableAdapter_ ? "ON" : "OFF");
+    else if (index == 3) snprintf(value, sizeof(value), "%s", servoEnabled_ ? "ON" : "OFF");
+    else if (index == 4) snprintf(value, sizeof(value), "%.3g", wheelIndex_);
+    else if (index == 5) snprintf(value, sizeof(value), "%s", zSign_ < 0 ? "REVERSED" : "NORMAL");
+    else if (index == 6) snprintf(value, sizeof(value), "%.5f", flowConversion_);
+    else if (index == 10) snprintf(value, sizeof(value), "%.17s",
+                                   strcasecmp(activeDesign_, "NONE") ? activeDesign_ : sdStatus_);
+    else if (index == 11) snprintf(value, sizeof(value), "%lu", static_cast<unsigned long>(positionCount_));
+    drawRow(82 + row * 56, labels[index], value, rootCursor_ == index, true);
+}
+
+void SettingsMenu::drawChoiceRow(uint16_t index, uint8_t row)
+{
+    char label[28] = {};
+    char value[22] = {};
+    if (page_ == Page::DISPLAY_MODE)
+    {
+        snprintf(label, sizeof(label), "%s", displayModeName(static_cast<DisplayMode>(index)));
+        const char* detail[] = {"machine status", "moving gem", "four views"};
+        snprintf(value, sizeof(value), "%s", detail[index]);
+    }
+    else if (page_ == Page::INDEX_DIRECTION) snprintf(label, sizeof(label), "%s", index ? "CCW" : "CW");
+    else if (page_ == Page::TABLE_ADAPTER || page_ == Page::SERVO_ENABLED)
+        snprintf(label, sizeof(label), "%s", index ? "ON" : "OFF");
+    else if (page_ == Page::WHEEL_INDEX) snprintf(label, sizeof(label), "%.4g", kWheelIndexes[index]);
+    else if (page_ == Page::Z_POLARITY) snprintf(label, sizeof(label), "%s", index ? "REVERSED" : "NORMAL");
+    else if (page_ == Page::ENCODER_ZERO)
+    {
+        const char* labels[] = {"Zero index encoder", "Zero tip encoder", "Zero Z encoder", "Zero all encoders"};
+        snprintf(label, sizeof(label), "%s", labels[index]);
+    }
+    else if (page_ == Page::SPECIAL_COMMANDS) snprintf(label, sizeof(label), "Index continuous spin");
+    else snprintf(label, sizeof(label), "Every %u", kResetSpacing[index]);
+    drawRow(82 + row * 56, label, value, choiceCursor_ == index);
+}
+
+void SettingsMenu::drawPositionRow(uint32_t index, uint8_t row)
+{
+    char label[26] = {};
+    char value[18] = {};
+    if (index == positionCount_) snprintf(label, sizeof(label), "+ Add position");
+    else
+    {
+        snprintf(label, sizeof(label), "Position %lu", static_cast<unsigned long>(index + 1));
+        float position = 0.0f;
+        if (cachedPosition(index, &position)) snprintf(value, sizeof(value), "%.4f", position);
+        else snprintf(value, sizeof(value), "loading...");
+    }
+    drawRow(82 + row * 56, label, value, positionCursor_ == index, index < positionCount_);
+}
+
+void SettingsMenu::drawSdRow(uint32_t index, uint8_t row)
+{
+    char label[48] = {};
+    if (index >= sdCacheStart_ && index < sdCacheStart_ + kSdCacheSize &&
+        sdFileValid_[index - sdCacheStart_])
+        snprintf(label, sizeof(label), "%.43s", sdFileNames_[index - sdCacheStart_]);
+    else
+        snprintf(label, sizeof(label), "loading...");
+    drawRow(82 + row * 56, label, "", sdCursor_ == index);
+}
+
+void SettingsMenu::redrawAfterInput(Page oldPage, uint16_t oldRoot, uint16_t oldChoice,
+                                    uint32_t oldPosition, uint32_t oldSd)
+{
+    if (!open_) return;
+    if (page_ != oldPage) { draw(); return; }
+
+    if (page_ == Page::ROOT && oldRoot != rootCursor_)
+    {
+        const uint16_t oldStart = (oldRoot / kVisibleRows) * kVisibleRows;
+        const uint16_t newStart = (rootCursor_ / kVisibleRows) * kVisibleRows;
+        if (oldStart != newStart) { draw(); return; }
+        drawRootRow(oldRoot, uint8_t(oldRoot - oldStart));
+        drawRootRow(rootCursor_, uint8_t(rootCursor_ - newStart));
+        return;
+    }
+    if (page_ == Page::POSITIONS && oldPosition != positionCursor_)
+    {
+        const uint32_t oldStart = (oldPosition / kVisibleRows) * kVisibleRows;
+        const uint32_t newStart = (positionCursor_ / kVisibleRows) * kVisibleRows;
+        if (oldStart != newStart) { draw(); return; }
+        drawPositionRow(oldPosition, uint8_t(oldPosition - oldStart));
+        drawPositionRow(positionCursor_, uint8_t(positionCursor_ - newStart));
+        return;
+    }
+    if (page_ == Page::SD_FILES && oldSd != sdCursor_)
+    {
+        const uint32_t oldStart = (oldSd / kVisibleRows) * kVisibleRows;
+        const uint32_t newStart = (sdCursor_ / kVisibleRows) * kVisibleRows;
+        if (oldStart != newStart) { draw(); return; }
+        drawSdRow(oldSd, uint8_t(oldSd - oldStart));
+        drawSdRow(sdCursor_, uint8_t(sdCursor_ - newStart));
+        return;
+    }
+    if (oldChoice != choiceCursor_ && page_ != Page::POSITION_EDITOR &&
+        page_ != Page::FLOW_CALIBRATION && page_ != Page::INDEX_SPIN)
+    {
+        const uint16_t oldStart = (oldChoice / kVisibleRows) * kVisibleRows;
+        const uint16_t newStart = (choiceCursor_ / kVisibleRows) * kVisibleRows;
+        if (oldStart != newStart) { draw(); return; }
+        drawChoiceRow(oldChoice, uint8_t(oldChoice - oldStart));
+        drawChoiceRow(choiceCursor_, uint8_t(choiceCursor_ - newStart));
+        return;
+    }
+    refreshVisiblePage();
+}
+
+void SettingsMenu::refreshVisiblePage()
+{
+    if (!open_) return;
+    if (page_ == Page::ROOT) drawRoot();
+    else if (page_ == Page::POSITIONS) drawPositions();
+    else if (page_ == Page::POSITION_EDITOR) drawPositionEditor();
+    else if (page_ == Page::FLOW_CALIBRATION) drawFlowCalibration();
+    else if (page_ == Page::INDEX_SPIN) drawIndexSpin();
+    else if (page_ == Page::SD_FILES) drawSdFiles();
+    else drawChoices();
 }
 
 void SettingsMenu::draw()
