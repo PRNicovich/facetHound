@@ -2,7 +2,6 @@
 
 #include <math.h>
 
-#include "dcTerminal_30.h"
 #include "gem_data.h"
 
 namespace
@@ -59,9 +58,11 @@ void drawStepIndicator(TFT_eSprite& canvas, int x, int y, int selected, uint16_t
     selected = constrain(selected, 0, 2);
     for (int i = 0; i < 3; ++i)
     {
-        const int height = 5 + i * 4;
-        canvas.drawRect(x + i * 7, y + 13 - height, 5, height, i == selected ? color : C_DIM);
-        if (i == selected) canvas.fillRect(x + i * 7 + 1, y + 14 - height, 3, height - 2, color);
+        const int height = 4 + i * 3;
+        canvas.drawRect(x + i * 4, y + 10 - height, 3, height,
+                        i == selected ? color : C_DIM);
+        if (i == selected)
+            canvas.fillRect(x + i * 4 + 1, y + 11 - height, 1, height - 2, color);
     }
 }
 
@@ -89,6 +90,14 @@ void drawDegreeGlyph(TFT_eSprite& canvas, int x, int y, uint16_t color)
 {
     canvas.drawCircle(x, y, 3, color);
     canvas.drawCircle(x, y, 2, color);
+}
+
+void drawSmallAxisSymbol(TFT_eSprite& canvas, int x, int y, bool theta,
+                         uint16_t color)
+{
+    canvas.drawCircle(x, y, 7, color);
+    if (theta) canvas.drawFastHLine(x - 8, y, 17, color);
+    else canvas.drawFastVLine(x, y - 10, 21, color);
 }
 
 void textAt(TFT_eSprite& canvas, const char* text, int x, int y, uint16_t color,
@@ -602,11 +611,11 @@ void GemUi::drawHud(const GemTelemetry& state)
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
     snprintf(line, sizeof(line), "%+7.2f", targetTip);
-    textAt(hudCanvas_, line, 170, 32, C_YELLOW, 4, MR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 178, 22, C_YELLOW);
+    textAt(hudCanvas_, line, 194, 32, C_YELLOW, 6, MR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 202, 17, C_YELLOW);
     snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 278, 32, C_YELLOW, 4, MR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 286, 22, C_YELLOW);
+    textAt(hudCanvas_, line, 304, 32, C_YELLOW, 4, MR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 312, 22, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -616,45 +625,32 @@ void GemUi::drawHud(const GemTelemetry& state)
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
-    textAt(hudCanvas_, line, 170, 78, C_CYAN, 4, MR_DATUM);
+    textAt(hudCanvas_, line, 194, 78, C_CYAN, 6, MR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 278, 78, C_CYAN, 4, MR_DATUM);
-    static const char* stepText[] = {"1", "0.1", "0.01"};
-    drawStepIndicator(hudCanvas_, 286, 88, state.indexStep, C_CYAN);
-    snprintf(line, sizeof(line), "%s", stepText[constrain(state.indexStep, 0, 2)]);
-    textAt(hudCanvas_, line, 278, 99, C_CYAN, 1, MR_DATUM);
+    textAt(hudCanvas_, line, 304, 78, C_CYAN, 4, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 202, 91, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 16, 130, C_MAGENTA, 4, MC_DATUM);
+    textAt(hudCanvas_, "Z", 13, 132, C_MAGENTA, 2, MC_DATUM);
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 190, 132, C_MAGENTA, 4, MR_DATUM);
-    drawStepIndicator(hudCanvas_, 194, 109, state.zStep, C_MAGENTA);
-    snprintf(line, sizeof(line), "%s", stepText[constrain(state.zStep, 0, 2)]);
-    textAt(hudCanvas_, line, 204, 137, C_MAGENTA, 1, MC_DATUM);
-    textAt(hudCanvas_, "mm", 204, 148, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, line, 205, 132, C_MAGENTA, 6, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 202, 112, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, "mm", 207, 148, C_DIM, 1, MC_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
-    drawRotationArrow(hudCanvas_, 224, 124, clockwise, motorRunning, C_TEXT);
-    snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 252, 119, C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, "rpm", 252, 143, C_DIM, 1, MC_DATUM);
+    drawRotationArrow(hudCanvas_, 224, 117, clockwise, motorRunning, C_TEXT);
+    snprintf(line, sizeof(line), "%lu rpm", static_cast<unsigned long>(state.rpmActual));
+    textAt(hudCanvas_, line, 316, 117, C_TEXT, 2, MR_DATUM);
 
-    drawWaterDrop(hudCanvas_, 278, 124,
+    drawWaterDrop(hudCanvas_, 224, 140,
                   (state.flowDirection & 1) ? C_DIM : C_CYAN);
-    snprintf(line, sizeof(line), "%.1f", state.flow);
-    textAt(hudCanvas_, line, 303, 119, C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, "mL/m", 303, 143, C_DIM, 1, MC_DATUM);
+    snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
+    textAt(hudCanvas_, line, 316, 140, C_TEXT, 2, MR_DATUM);
 
-    // Use the exact axis glyphs from the classic screen.
-    hudCanvas_.loadFont(dcTerminal_30);
-    hudCanvas_.setTextDatum(MC_DATUM);
-    hudCanvas_.setTextColor(C_YELLOW, C_BG);
-    hudCanvas_.drawString("Θ", 18, 31);
-    hudCanvas_.setTextColor(C_CYAN, C_BG);
-    hudCanvas_.drawString("Φ", 18, 77);
-    hudCanvas_.unloadFont();
+    drawSmallAxisSymbol(hudCanvas_, 14, 32, true, C_YELLOW);
+    drawSmallAxisSymbol(hudCanvas_, 14, 78, false, C_CYAN);
 }
 
 void GemUi::pushGemCanvas()

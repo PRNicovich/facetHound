@@ -45,8 +45,7 @@ class OptionalSerial:
                     return
                 print(f"Using RP2040 USB port {port_name}")
             try:
-                self.port = serial.Serial(port_name, SERIAL_BAUD, timeout=0.05,
-                                          write_timeout=0.10)
+                self.port = serial.Serial(port_name, SERIAL_BAUD, timeout=0.05)
                 self.message = f"Connected to {port_name}"
             except Exception as exc:
                 print(f"Serial disabled: could not open {port_name}: {exc}")
@@ -59,16 +58,6 @@ class OptionalSerial:
         if self.port:
             try:
                 self.port.write((line + "\n").encode("ascii"))
-            except Exception as exc:
-                print(f"serial write failed: {exc}")
-                self.close()
-
-    def send_frame(self, lines):
-        """Send one atomic telemetry frame instead of many tiny USB writes."""
-        if self.port:
-            try:
-                payload = "".join(line + "\n" for line in lines).encode("ascii")
-                self.port.write(payload)
             except Exception as exc:
                 print(f"serial write failed: {exc}")
                 self.close()
@@ -174,11 +163,11 @@ class SettingsMenuSimulator:
             self.demo_started = time.monotonic()
             self.demo_frame = 0
             self.demo_segment = -1
-            frame_sender = getattr(self.link, "send_frame", None)
             setup_lines = ("@RPM,1200", "@DIR,2", "@FLD,2", "@WIDX,96",
                            "@TIDX,1", "@ZIDX,1")
-            if frame_sender:
-                frame_sender(setup_lines)
+            sender = getattr(self.link, "send_quiet", self.link.send)
+            for line in setup_lines:
+                sender(line)
             self.status = "Live USB telemetry running"
         else:
             self.status = "Live USB telemetry stopped"
@@ -233,13 +222,9 @@ class SettingsMenuSimulator:
         if segment != self.demo_segment:
             lines.insert(0, f"@JOB,{tier},{facet},{raw_tip},0,{raw_index},{name}")
             self.demo_segment = segment
-        frame_sender = getattr(self.link, "send_frame", None)
-        if frame_sender:
-            frame_sender(lines)
-        else:
-            sender = getattr(self.link, "send_quiet", self.link.send)
-            for line in lines:
-                sender(line)
+        sender = getattr(self.link, "send_quiet", self.link.send)
+        for line in lines:
+            sender(line)
         self.demo_values = (tip, actual_index, z_value)
         self.demo_frame += 1
         if self.demo_frame % 4 == 0:
