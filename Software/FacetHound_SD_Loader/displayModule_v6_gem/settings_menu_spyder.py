@@ -190,23 +190,32 @@ class SettingsMenuSimulator:
                  (48.0, 3.0, 2, 5, 132.0, 51.0, "P1"),
                  (90.0, 27.0, 1, 1, 90.0, 27.0, "G"),
                  (90.0, 51.0, 1, 5, 90.0, 51.0, "G"))
-        # Two seconds indexing, three seconds lowering, then five seconds fully
-        # settled before selecting the next facet.
-        cycle = 10.0
+        # Select first while motion is frozen, retract to 90 degrees, index,
+        # lower onto that selected facet, then hold settled for one second.
+        cycle = 7.0
         segment = int(t / cycle) % len(poses)
         phase = (t % cycle) / cycle
         target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
+        previous_tip = poses[(segment - 1) % len(poses)][0]
         previous_index = poses[(segment - 1) % len(poses)][1]
-        # First slew index at 90 degrees, then lower the mast until error is zero.
-        if phase < 0.20:
-            slew = phase / 0.20
+        if phase < (1.0 / 7.0):
+            # Selection preview: JOB changes, actual position does not.
+            actual_index = previous_index
+            tip = previous_tip
+        elif phase < (2.0 / 7.0):
+            retract = phase * 7.0 - 1.0
+            ease = retract * retract * (3.0 - 2.0 * retract)
+            actual_index = previous_index
+            tip = previous_tip + (90.0 - previous_tip) * ease
+        elif phase < (4.0 / 7.0):
+            slew = (phase * 7.0 - 2.0) / 2.0
             ease = slew * slew * (3.0 - 2.0 * slew)
             delta = ((target - previous_index + 48.0) % 96.0) - 48.0
             actual_index = (previous_index + delta * ease) % 96.0
             tip = 90.0
-        elif phase < 0.50:
+        elif phase < (6.0 / 7.0):
             actual_index = target
-            lower = (phase - 0.20) / 0.30
+            lower = (phase * 7.0 - 4.0) / 2.0
             ease = lower * lower * (3.0 - 2.0 * lower)
             tip = 90.0 + (target_tip - 90.0) * ease
         else:
