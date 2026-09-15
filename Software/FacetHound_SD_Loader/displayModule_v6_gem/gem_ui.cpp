@@ -391,7 +391,15 @@ void GemUi::drawDynamic(const GemTelemetry& state)
     const RuntimeGemMesh& runtime = runtimeGemMesh();
     const float resolution = runtime.active() ? runtime.indexResolution()
                                                : float(GemData::kIndexResolution);
-    const float tip = displayedTip_ * DEG_TO_RAD;
+    float storedSelectedTip = 0.0f;
+    if (runtime.active() && selectedPlane_ < runtime.planes().size())
+        storedSelectedTip = runtime.planes()[selectedPlane_].tipDegrees;
+    else if (selectedPlane_ < GemData::kPlaneCount)
+        storedSelectedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
+    // Crown/table approach the lap from the opposite X rotation; pavilion uses
+    // the acute angle after the half-wheel approach correction.
+    const float tip = displayedTip_ * DEG_TO_RAD *
+                      (oppositeApproach(storedSelectedTip) ? 1.0f : -1.0f);
     const float twist = displayedTwist_ * TWO_PI / resolution;
     const float ct = cosf(tip), st = sinf(tip);
     const float cz = cosf(twist), sz = sinf(twist);
@@ -519,10 +527,9 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     }
                     else
                     {
-                        float midpoint = panel == 2 ? 0.5f * (a.y + b.y)
-                                                    : 0.5f * (a.x + b.x);
-                        float sign = panel == 2 ? -1.0f : 1.0f;
-                        visible = sign * midpoint >= -0.04f * (viewSpan + 1.0e-9f);
+                        // Front/side are complete projections; color below
+                        // distinguishes edges on the rear half of the stone.
+                        visible = true;
                     }
                     if (!visible) continue;
                     bool selected = edgeSelected(i, selectedPlane_);
@@ -532,7 +539,9 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     else if (panel == 1) depth = -0.5f * (a.z + b.z);
                     else if (panel == 2) depth = -0.5f * (a.y + b.y);
                     else depth = 0.5f * (a.x + b.x);
-                    const uint16_t color = selected ? C_GREEN : C_EDGE;
+                    const bool behind = panel >= 2 && depth < 0.0f;
+                    const uint16_t color = selected ? (behind ? 0x1384 : C_GREEN)
+                                                    : (behind ? C_DIM : C_EDGE);
                     gemCanvas_.drawLine(screenX_[edge.a], screenY_[edge.a],
                                         screenX_[edge.b], screenY_[edge.b], color);
                 }
@@ -545,7 +554,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
                 for (uint16_t i = 0; i < GemData::kEdgeCount; ++i)
                 {
                     const auto& edge = GemData::kEdges[i];
-                    if ((edge.viewMask & (1u << panel)) == 0) continue;
+                    if (panel < 2 && (edge.viewMask & (1u << panel)) == 0) continue;
                     bool selected = edgeSelected(i, selectedPlane_);
                     if (selected != (pass == 1)) continue;
                     const auto& a = GemData::kStaticPoints[panel][edge.a];
@@ -557,7 +566,9 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     else if (panel == 1) depth = -0.5f * (a3.z + b3.z);
                     else if (panel == 2) depth = -0.5f * (a3.y + b3.y);
                     else depth = 0.5f * (a3.x + b3.x);
-                    const uint16_t color = selected ? C_GREEN : C_EDGE;
+                    const bool behind = panel >= 2 && depth < 0.0f;
+                    const uint16_t color = selected ? (behind ? 0x1384 : C_GREEN)
+                                                    : (behind ? C_DIM : C_EDGE);
                     gemCanvas_.drawLine(a.x, a.y, b.x, b.y, color);
                 }
             }
@@ -584,10 +595,10 @@ void GemUi::drawHud(const GemTelemetry& state)
     char line[64];
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
-    snprintf(line, sizeof(line), "%+.2f\xB0", targetTip);
-    textAt(hudCanvas_, line, 42, 28, C_YELLOW, 6, ML_DATUM);
+    snprintf(line, sizeof(line), "%+7.2f\xB0", targetTip);
+    textAt(hudCanvas_, line, 190, 32, C_YELLOW, 6, MR_DATUM);
     snprintf(line, sizeof(line), "%+.2f\xB0", tipError);
-    textAt(hudCanvas_, line, 278, 28, C_YELLOW, 4, MR_DATUM);
+    textAt(hudCanvas_, line, 294, 32, C_YELLOW, 4, MR_DATUM);
 
     // Contact/force belongs to the cutting-angle row.
     const int forceWidth = constrain(state.forceBar, 0, 20) * 4;
@@ -601,19 +612,23 @@ void GemUi::drawHud(const GemTelemetry& state)
     const float actualTwist = normalizedTwist(state.targetTwist + state.twistError,
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
-    snprintf(line, sizeof(line), "%+.2f", targetTwist);
-    textAt(hudCanvas_, line, 42, 76, C_CYAN, 6, ML_DATUM);
+    snprintf(line, sizeof(line), "%+7.2f", targetTwist);
+    textAt(hudCanvas_, line, 190, 78, C_CYAN, 6, MR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 278, 76, C_CYAN, 4, MR_DATUM);
-    drawStepIndicator(hudCanvas_, 286, 89, state.indexStep, C_CYAN);
+    textAt(hudCanvas_, line, 294, 78, C_CYAN, 4, MR_DATUM);
+    static const char* stepText[] = {"1", "0.1", "0.01"};
+    drawStepIndicator(hudCanvas_, 286, 88, state.indexStep, C_CYAN);
+    snprintf(line, sizeof(line), "step %s", stepText[constrain(state.indexStep, 0, 2)]);
+    textAt(hudCanvas_, line, 278, 99, C_CYAN, 1, MR_DATUM);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 16, 124, C_MAGENTA, 4, MC_DATUM);
-    snprintf(line, sizeof(line), "%+.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 42, 124, C_MAGENTA, 6, ML_DATUM);
-    drawStepIndicator(hudCanvas_, 184, 108, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 194, 146, C_DIM, 1, MC_DATUM);
+    textAt(hudCanvas_, "Z", 16, 130, C_MAGENTA, 4, MC_DATUM);
+    snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
+    textAt(hudCanvas_, line, 184, 130, C_MAGENTA, 6, MR_DATUM);
+    drawStepIndicator(hudCanvas_, 188, 109, state.zStep, C_MAGENTA);
+    snprintf(line, sizeof(line), "%s mm", stepText[constrain(state.zStep, 0, 2)]);
+    textAt(hudCanvas_, line, 198, 147, C_MAGENTA, 1, MC_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
@@ -632,9 +647,9 @@ void GemUi::drawHud(const GemTelemetry& state)
     hudCanvas_.loadFont(dcTerminal_30);
     hudCanvas_.setTextDatum(MC_DATUM);
     hudCanvas_.setTextColor(C_YELLOW, C_BG);
-    hudCanvas_.drawString("Θ", 18, 27);
+    hudCanvas_.drawString("Θ", 18, 31);
     hudCanvas_.setTextColor(C_CYAN, C_BG);
-    hudCanvas_.drawString("Φ", 18, 75);
+    hudCanvas_.drawString("Φ", 18, 77);
     hudCanvas_.unloadFont();
 }
 

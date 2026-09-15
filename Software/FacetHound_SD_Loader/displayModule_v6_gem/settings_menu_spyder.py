@@ -130,6 +130,7 @@ class SettingsMenuSimulator:
         self.demo_running = False
         self.demo_started = 0.0
         self.demo_frame = 0
+        self.demo_segment = -1
         self.demo_values = (0.0, 0.0, 0.0)
         self.fig, self.ax = plt.subplots(figsize=(3.2, 4.8), dpi=100)
         self.fig.subplots_adjust(left=.04, right=.96, top=.98, bottom=.13)
@@ -172,6 +173,7 @@ class SettingsMenuSimulator:
             self.link.send("@MENU,0")
             self.demo_started = time.monotonic()
             self.demo_frame = 0
+            self.demo_segment = -1
             frame_sender = getattr(self.link, "send_frame", None)
             setup_lines = ("@RPM,1200", "@DIR,2", "@FLD,2", "@WIDX,96",
                            "@TIDX,1", "@ZIDX,1")
@@ -190,28 +192,42 @@ class SettingsMenuSimulator:
             return
         t = time.monotonic() - self.demo_started
         # Deliberately walk recognizable facets instead of free-running sine waves.
-        poses = ((65.0, 69.0), (65.0, 45.0), (65.0, 21.0), (65.0, 93.0),
-                 (47.0, 69.0), (47.0, 45.0), (47.0, 21.0), (47.0, 93.0),
-                 (48.0, 75.0), (48.0, 3.0), (48.0, 27.0), (48.0, 51.0),
-                 (90.0, 27.0), (90.0, 51.0))
-        dwell = 5.0
-        segment = int(t / dwell) % len(poses)
-        phase = (t % dwell) / dwell
-        ease = phase * phase * (3.0 - 2.0 * phase)
-        tip_a, index_a = poses[segment]
-        tip_b, index_b = poses[(segment + 1) % len(poses)]
-        index_delta = ((index_b - index_a + 48.0) % 96.0) - 48.0
-        target = (index_a + index_delta * ease) % 96.0
-        target_tip = tip_a + (tip_b - tip_a) * ease
-        index_error = 0.35 * math.sin(math.pi * phase)
-        tip_error = 0.45 * math.sin(2.0 * math.pi * phase)
-        tip = target_tip + tip_error
+        # machine tip/index, tier/facet, stored GemCad tip/index, display name
+        poses = ((65.0, 69.0, 5, 1, 65.0, 69.0, "C1"),
+                 (65.0, 45.0, 5, 5, 65.0, 45.0, "C1"),
+                 (47.0, 69.0, 6, 1, 47.0, 69.0, "C2"),
+                 (47.0, 45.0, 6, 5, 47.0, 45.0, "C2"),
+                 (48.0, 75.0, 2, 1, 132.0, 27.0, "P1"),
+                 (48.0, 3.0, 2, 5, 132.0, 51.0, "P1"),
+                 (90.0, 27.0, 1, 1, 90.0, 27.0, "G"),
+                 (90.0, 51.0, 1, 5, 90.0, 51.0, "G"))
+        cycle = 5.0
+        segment = int(t / cycle) % len(poses)
+        phase = (t % cycle) / cycle
+        target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
+        previous_index = poses[(segment - 1) % len(poses)][1]
+        # First slew index at 90 degrees, then lower the mast until error is zero.
+        if phase < 0.40:
+            slew = phase / 0.40
+            ease = slew * slew * (3.0 - 2.0 * slew)
+            delta = ((target - previous_index + 48.0) % 96.0) - 48.0
+            actual_index = (previous_index + delta * ease) % 96.0
+            tip = 90.0
+        else:
+            actual_index = target
+            lower = (phase - 0.40) / 0.60
+            ease = lower * lower * (3.0 - 2.0 * lower)
+            tip = 90.0 + (target_tip - 90.0) * ease
+        index_error = ((actual_index - target + 48.0) % 96.0) - 48.0
         z_value = 0.6 * math.sin(t * 0.25)
         values = (("T", target), ("E", index_error), ("TIP", tip), ("ZMM", z_value),
                   ("F", max(0, round(10.0 + 9.0 * math.sin(t * 0.9))) * 1280),
-                  ("RPV", 1175 + 30 * math.sin(t)),
+                  ("RPV", 1175 + 35 * math.sin(t * 4.3) + 9 * math.sin(t * 11.0)),
                   ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)))
         lines = [f"@{key},{value:.4f}" for key, value in values]
+        if segment != self.demo_segment:
+            lines.insert(0, f"@JOB,{tier},{facet},{raw_tip},0,{raw_index},{name}")
+            self.demo_segment = segment
         frame_sender = getattr(self.link, "send_frame", None)
         if frame_sender:
             frame_sender(lines)
@@ -219,7 +235,7 @@ class SettingsMenuSimulator:
             sender = getattr(self.link, "send_quiet", self.link.send)
             for line in lines:
                 sender(line)
-        self.demo_values = (tip, target + index_error, z_value)
+        self.demo_values = (tip, actual_index, z_value)
         self.demo_frame += 1
         if self.demo_frame % 4 == 0:
             self.draw()
