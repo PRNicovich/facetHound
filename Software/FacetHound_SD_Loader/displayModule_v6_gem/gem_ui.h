@@ -42,8 +42,8 @@ public:
     void invalidate();
 
 private:
-    static constexpr int kGemHeight = 330;
-    static constexpr int kHudHeight = 150;
+    static constexpr int kGemHeight = 324;
+    static constexpr int kHudHeight = 156;
     static constexpr uint32_t kFramePeriodMs = 40;
     static constexpr uint32_t kHudPeriodMs = 80;
 
@@ -70,6 +70,7 @@ private:
     float wrappedDelta(float target, float current, float period) const;
     uint16_t nearestPlane(float tipDegrees, float twistTicks) const;
     bool edgeSelected(uint16_t edgeIndex, uint16_t plane) const;
+    void fillSelectedProjection(uint16_t edgeCount);
     void inferredTierName(uint16_t plane, char* text, size_t size) const;
     float selectedTargetTip(const GemTelemetry& state) const;
     float selectedTargetTwist(const GemTelemetry& state) const;
