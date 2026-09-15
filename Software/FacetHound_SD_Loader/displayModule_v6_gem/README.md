@@ -126,11 +126,14 @@ py usb_proxy_test.py COM7
 The display sends encoder updates to both outputs as `@ZENC,count`.
 
 For a visual test that runs directly in Spyder, open and run
-`settings_menu_spyder.py`. It uses Matplotlib and needs no serial hardware by
-default. Set `SERIAL_PORT = "COM7"` near the top to drive the RP2040 while using
-the simulator. Arrow keys emulate twist-wheel rotation, Enter is wheel click,
-Backspace is the top-left/coarser key, `F` is finer, Delete removes a mark point,
-and `M` opens/closes the menu.
+`settings_menu_spyder.py`. It uses Matplotlib and can run with or without serial
+hardware. `SERIAL_PORT = "AUTO"` selects a lone RP2040/USB serial device; replace
+it with an explicit value such as `"COM5"` if several ports are connected, or
+use `None` for a local-only preview. It now mirrors every firmware settings page. Arrow keys emulate
+twist-wheel rotation, Enter is wheel click, Backspace is the top-left key,
+`F`/`C` change edit tier, Delete removes a mark point, and `M` opens/closes the
+menu. Press `D` or click **LIVE DEMO** to close Settings and stream moving
+tip/index/Z telemetry so Dynamic mode visibly animates.
 
 ## Replace the embedded gem
 
@@ -154,8 +157,11 @@ is used as a plane equation term during geometry construction, but it remains
 unrelated to machine Z and is not shown as a Z target.
 
 GemCad `n` names are treated as tier labels: the first name found in a tier is
-shown for every facet in that tier beside the live tip angle (`C1`, `C2`, `P1`,
-`G2`, and so on). An unnamed table plane is shown as `T`.
+shown for every facet in that tier (`C1`, `C2`, `P1`, `G2`, and so on). With a
+runtime wireframe loaded, the large tip value is the tier target and the small
+value is live tip error. Unnamed tiers are inferred as table, crown, pavilion,
+or girdle from their geometry. Static view edges and the moving wireframe use
+depth cueing; the lower HUD uses direction, RPM-unit, and flow-unit icons.
 
 ## Protocol mapping used by gem modes
 

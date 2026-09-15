@@ -41,6 +41,9 @@ def reader(port, stopped: threading.Event):
 
 
 def demo(port, seconds: float):
+    # A previously-open menu covers the gem UI, so make the animation visible.
+    send_line(port, "MENU,0")
+    time.sleep(0.05)
     start = time.monotonic()
     frame = 0
     while time.monotonic() - start < seconds:
@@ -61,6 +64,8 @@ def demo(port, seconds: float):
             ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)),
             ("FLD", 2),
             ("WIDX", 96),
+            ("TIDX", (frame // 80) % 3),
+            ("ZIDX", (frame // 120) % 3),
         )
         for key, value in values:
             send_line(port, f"{key},{value:.4f}")

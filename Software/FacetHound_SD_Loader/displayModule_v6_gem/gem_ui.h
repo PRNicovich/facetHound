@@ -19,6 +19,8 @@ struct GemTelemetry
     int forceBar = 0;
     int rpmDirection = 1;
     int flowDirection = 1;
+    int indexStep = 1;
+    int zStep = 0;
     bool jobActive = false;
     const char* jobTitle = nullptr;
     const char* jobFacetName = nullptr;
@@ -61,13 +63,18 @@ private:
     bool lastStaticLinkAlive_ = false;
     int16_t screenX_[RUNTIME_MESH_MAX_VERTICES] = {};
     int16_t screenY_[RUNTIME_MESH_MAX_VERTICES] = {};
+    float screenDepth_[RUNTIME_MESH_MAX_VERTICES] = {};
 
     float normalizedTwist(float ticks, float wheelIndex) const;
     float wrappedDelta(float target, float current, float period) const;
     uint16_t nearestPlane(float tipDegrees, float twistTicks) const;
     bool edgeSelected(uint16_t edgeIndex, uint16_t plane) const;
+    float selectedPlaneHeight(uint16_t plane) const;
+    float selectedTargetTip(const GemTelemetry& state) const;
+    void formatTierFacet(const GemTelemetry& state, char* text, size_t size,
+                         bool compact = false) const;
     void updatePose(const GemTelemetry& state);
-    void drawHeader(const GemTelemetry& state);
+    void drawHeader(const GemTelemetry& state, bool showTier);
     void drawDynamic(const GemTelemetry& state);
     void drawStatic(const GemTelemetry& state);
     void drawHud(const GemTelemetry& state);
