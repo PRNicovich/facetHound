@@ -477,8 +477,8 @@ void GemUi::drawStatic(const GemTelemetry& state)
 
     static const char* labels[] = {"T", "B", "F", "S"};
     static const int16_t boxes[][4] = {
-        {18, 46, 138, 130}, {165, 46, 138, 130},
-        {18, 190, 138, 130}, {165, 190, 138, 130},
+        {18, 36, 138, 130}, {165, 36, 138, 130},
+        {18, 180, 138, 130}, {165, 180, 138, 130},
     };
 
     for (uint8_t panel = 0; panel < 4; ++panel)
@@ -589,7 +589,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     const bool behind = panel >= 2 && depth < 0.0f;
                     const uint16_t color = selected ? (behind ? 0x1384 : C_GREEN)
                                                     : (behind ? C_DIM : C_EDGE);
-                    gemCanvas_.drawLine(a.x, a.y, b.x, b.y, color);
+                    gemCanvas_.drawLine(a.x, a.y - 10, b.x, b.y - 10, color);
                 }
             }
         }
