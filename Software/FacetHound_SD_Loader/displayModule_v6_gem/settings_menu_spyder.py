@@ -180,44 +180,38 @@ class SettingsMenuSimulator:
         if not self.demo_running:
             return
         t = time.monotonic() - self.demo_started
-        # Deliberately walk recognizable facets instead of free-running sine waves.
-        # machine tip/index, tier/facet, stored GemCad tip/index, display name
-        poses = ((65.0, 69.0, 5, 1, 65.0, 69.0, "C1"),
-                 (65.0, 45.0, 5, 5, 65.0, 45.0, "C1"),
-                 (47.0, 69.0, 6, 1, 47.0, 69.0, "C2"),
-                 (47.0, 45.0, 6, 5, 47.0, 45.0, "C2"),
-                 (48.0, 75.0, 2, 1, 132.0, 27.0, "P1"),
-                 (48.0, 3.0, 2, 5, 132.0, 51.0, "P1"),
-                 (90.0, 27.0, 1, 1, 90.0, 27.0, "G"),
-                 (90.0, 51.0, 1, 5, 90.0, 51.0, "G"))
-        # Select first while motion is frozen, retract to 90 degrees, index,
-        # lower onto that selected facet, then hold settled for one second.
-        cycle = 7.0
+        # Every fallback facet, in the exact tier/facet order of gem_data.h.
+        tier_specs = ((90.0, 27.0, 6.0, "G"),
+                      (132.0, 27.0, 6.0, "P1"),
+                      (135.0, 24.0, 6.0, "P2"),
+                      (138.0, 27.0, 6.0, "P3"),
+                      (65.0, 69.0, -6.0, "C1"),
+                      (47.0, 69.0, -6.0, "C2"),
+                      (29.0, 69.0, -6.0, "C3"),
+                      (12.0, 69.0, -6.0, "C4"))
+        poses = []
+        for tier, (raw_tip, start, increment, name) in enumerate(tier_specs, 1):
+            for facet in range(1, 17):
+                raw_index = (start + increment * (facet - 1)) % 96.0
+                pavilion = raw_tip > 90.0
+                machine_tip = 180.0 - raw_tip if pavilion else raw_tip
+                machine_index = (raw_index + (48.0 if pavilion else 0.0)) % 96.0
+                poses.append((machine_tip, machine_index, tier, facet,
+                              raw_tip, raw_index, name))
+        # Selection and targets change at the boundary. Actual pose moves for
+        # three seconds, then holds still for the remaining two seconds.
+        cycle = 5.0
         segment = int(t / cycle) % len(poses)
         phase = (t % cycle) / cycle
         target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
         previous_tip = poses[(segment - 1) % len(poses)][0]
         previous_index = poses[(segment - 1) % len(poses)][1]
-        if phase < (1.0 / 7.0):
-            # Selection preview: JOB changes, actual position does not.
-            actual_index = previous_index
-            tip = previous_tip
-        elif phase < (2.0 / 7.0):
-            retract = phase * 7.0 - 1.0
-            ease = retract * retract * (3.0 - 2.0 * retract)
-            actual_index = previous_index
-            tip = previous_tip + (90.0 - previous_tip) * ease
-        elif phase < (4.0 / 7.0):
-            slew = (phase * 7.0 - 2.0) / 2.0
-            ease = slew * slew * (3.0 - 2.0 * slew)
+        if phase < 0.60:
+            move = phase / 0.60
+            ease = move * move * (3.0 - 2.0 * move)
             delta = ((target - previous_index + 48.0) % 96.0) - 48.0
             actual_index = (previous_index + delta * ease) % 96.0
-            tip = 90.0
-        elif phase < (6.0 / 7.0):
-            actual_index = target
-            lower = (phase * 7.0 - 4.0) / 2.0
-            ease = lower * lower * (3.0 - 2.0 * lower)
-            tip = 90.0 + (target_tip - 90.0) * ease
+            tip = previous_tip + (target_tip - previous_tip) * ease
         else:
             actual_index = target
             tip = target_tip
