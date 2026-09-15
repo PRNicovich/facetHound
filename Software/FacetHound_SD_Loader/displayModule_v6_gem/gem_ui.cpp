@@ -38,13 +38,13 @@ bool oppositeApproach(float storedTip)
     return storedTip < 0.0f || storedTip > 90.0f;
 }
 
-int orderedPlaneForFacet(const RuntimeGemMesh& runtime, uint16_t tier,
-                         uint16_t facet)
+uint16_t orderedFacetForPlane(const RuntimeGemMesh& runtime,
+                              uint16_t planeIndex)
 {
-    if (facet == 0) return -1;
     const bool runtimeActive = runtime.active();
     const uint16_t count = runtimeActive ? uint16_t(runtime.planes().size())
                                          : GemData::kPlaneCount;
+    if (planeIndex >= count) return 0;
     const float resolution = runtimeActive ? runtime.indexResolution()
                                            : float(GemData::kIndexResolution);
     auto planeTier = [&](uint16_t i) {
@@ -60,20 +60,17 @@ int orderedPlaneForFacet(const RuntimeGemMesh& runtime, uint16_t tier,
         return index < 0.0f ? index + resolution : index;
     };
 
-    for (uint16_t i = 0; i < count; ++i) {
-        if (planeTier(i) != tier) continue;
-        const float index = machineIndex(i);
-        uint16_t rank = 1;
-        for (uint16_t j = 0; j < count; ++j) {
-            if (i == j || planeTier(j) != tier) continue;
-            const float other = machineIndex(j);
-            if (other < index - 1.0e-4f ||
-                (fabsf(other - index) <= 1.0e-4f && j < i))
-                ++rank;
-        }
-        if (rank == facet) return i;
+    const uint16_t tier = planeTier(planeIndex);
+    const float index = machineIndex(planeIndex);
+    uint16_t rank = 1;
+    for (uint16_t j = 0; j < count; ++j) {
+        if (j == planeIndex || planeTier(j) != tier) continue;
+        const float other = machineIndex(j);
+        if (other < index - 1.0e-4f ||
+            (fabsf(other - index) <= 1.0e-4f && j < planeIndex))
+            ++rank;
     }
-    return -1;
+    return rank;
 }
 
 void drawDepthLine(TFT_eSprite& canvas, int x1, int y1, int x2, int y2,
@@ -444,6 +441,12 @@ void GemUi::formatTierFacet(const GemTelemetry& state, char* text, size_t size,
         angle = plane.tipDegrees;
     }
 
+    // Facet numbers shown to the operator are always the ascending-index
+    // ordinal. The protocol's facet ID remains untouched so it still selects
+    // the exact plane supplied by the source design.
+    const uint16_t orderedFacet = orderedFacetForPlane(runtime, selectedPlane_);
+    if (orderedFacet) facet = orderedFacet;
+
     char inferred[8];
     if (name && name[0]) snprintf(inferred, sizeof(inferred), "%s", name);
     else inferredTierName(selectedPlane_, inferred, sizeof(inferred));
@@ -494,9 +497,19 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
 
     int jobPlane = -1;
-    if (state.jobActive)
-        jobPlane = orderedPlaneForFacet(runtimeGemMesh(), state.jobTier,
-                                        state.jobFacet);
+    if (state.jobActive) {
+        if (runtimeGemMesh().active()) {
+            jobPlane = runtimeGemMesh().findPlane(state.jobTier, state.jobFacet);
+        } else {
+            for (uint16_t i = 0; i < GemData::kPlaneCount; ++i) {
+                if (GemData::kPlanes[i].tier == state.jobTier &&
+                    GemData::kPlanes[i].facet == state.jobFacet) {
+                    jobPlane = i;
+                    break;
+                }
+            }
+        }
+    }
     selectedPlane_ = jobPlane >= 0
                          ? uint16_t(jobPlane)
                          : nearestPlane(targetTip, normalizedTwist(

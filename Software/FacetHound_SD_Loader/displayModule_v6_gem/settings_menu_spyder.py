@@ -206,7 +206,7 @@ class SettingsMenuSimulator:
                 tier_poses.append((machine_tip, machine_index, tier, facet,
                                    raw_tip, raw_index, name))
             tier_poses.sort(key=lambda pose: pose[1])
-            tier_poses = [pose[:3] + (ordered_facet,) + pose[4:]
+            tier_poses = [pose + (ordered_facet,)
                           for ordered_facet, pose in enumerate(tier_poses, 1)]
             poses.extend(tier_poses)
         # This is deliberately stateful rather than derived from absolute time:
@@ -222,7 +222,8 @@ class SettingsMenuSimulator:
             self.demo_segment_started = now
         segment = self.demo_segment
         phase = min((now - self.demo_segment_started) / cycle, 1.0)
-        target_tip, target, tier, facet, raw_tip, raw_index, name = poses[segment]
+        (target_tip, target, tier, source_facet, raw_tip, raw_index, name,
+         ordered_facet) = poses[segment]
         if segment == 0:
             previous_tip, previous_index = 90.0, 0.0
         else:
@@ -245,10 +246,10 @@ class SettingsMenuSimulator:
                   ("RPV", 1175 + 35 * math.sin(t * 4.3) + 9 * math.sin(t * 11.0)),
                   ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)),
                   ("ML", previous_index), ("MR", target),
-                  ("MID", facet - 1), ("MCT", 16), ("MST", 2))
+                  ("MID", ordered_facet - 1), ("MCT", 16), ("MST", 2))
         lines = [f"@{key},{value:.4f}" for key, value in values]
         if segment != self.demo_job_segment:
-            lines.insert(0, f"@JOB,{tier},{facet},{raw_tip},0,{raw_index},{name}")
+            lines.insert(0, f"@JOB,{tier},{source_facet},{raw_tip},0,{raw_index},{name}")
             self.demo_job_segment = segment
         sender = getattr(self.link, "send_quiet", self.link.send)
         for line in lines:
