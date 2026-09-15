@@ -756,11 +756,11 @@ void GemUi::drawHud(const GemTelemetry& state)
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
     snprintf(line, sizeof(line), "%+7.2f", targetTip);
-    textAt(hudCanvas_, line, 200, 56, C_YELLOW, 6, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 208, 17, C_YELLOW);
+    textAt(hudCanvas_, line, 197, 60, C_YELLOW, 6, BR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 205, 21, C_YELLOW);
     snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 287, 56, C_YELLOW, 4, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 295, 30, C_YELLOW);
+    textAt(hudCanvas_, line, 284, 60, C_YELLOW, 4, BR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 292, 34, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -770,32 +770,32 @@ void GemUi::drawHud(const GemTelemetry& state)
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
-    textAt(hudCanvas_, line, 200, 100, C_CYAN, 6, BR_DATUM);
+    textAt(hudCanvas_, line, 197, 110, C_CYAN, 6, BR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 287, 100, C_CYAN, 4, BR_DATUM);
-    drawStepIndicator(hudCanvas_, 205, 53, state.indexStep, C_CYAN);
+    textAt(hudCanvas_, line, 284, 110, C_CYAN, 4, BR_DATUM);
+    drawStepIndicator(hudCanvas_, 202, 63, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
 
-    textAt(hudCanvas_, "Z", 13, 131, C_MAGENTA, 2, MC_DATUM);
+    textAt(hudCanvas_, "Z", 13, 137, C_MAGENTA, 2, MC_DATUM);
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 200, 155, C_MAGENTA, 6, BR_DATUM);
-    drawStepIndicator(hudCanvas_, 205, 105, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 205, 155, C_MAGENTA, 2, BL_DATUM);
+    textAt(hudCanvas_, line, 197, 159, C_MAGENTA, 6, BR_DATUM);
+    drawStepIndicator(hudCanvas_, 202, 109, state.zStep, C_MAGENTA);
+    textAt(hudCanvas_, "mm", 205, 137, C_MAGENTA, 2, ML_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
     drawRotationArrow(hudCanvas_, 234, 114, clockwise, motorRunning, C_TEXT);
     snprintf(line, sizeof(line), "%lu rpm", static_cast<unsigned long>(state.rpmActual));
-    textAt(hudCanvas_, line, 316, 114, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 313, 114, C_TEXT, 2, MR_DATUM);
 
     drawWaterDrop(hudCanvas_, 234, 143,
                   fabsf(state.flow) > 0.01f ? C_CYAN : C_DIM);
     snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
-    textAt(hudCanvas_, line, 316, 143, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 313, 143, C_TEXT, 2, MR_DATUM);
 
-    drawSmallAxisSymbol(hudCanvas_, 14, 32, true, C_YELLOW);
-    drawSmallAxisSymbol(hudCanvas_, 14, 76, false, C_CYAN);
+    drawSmallAxisSymbol(hudCanvas_, 14, 36, true, C_YELLOW);
+    drawSmallAxisSymbol(hudCanvas_, 14, 86, false, C_CYAN);
 }
 
 void GemUi::pushGemCanvas()

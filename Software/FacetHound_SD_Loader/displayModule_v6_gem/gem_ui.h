@@ -42,8 +42,8 @@ public:
     void invalidate();
 
 private:
-    static constexpr int kGemHeight = 324;
-    static constexpr int kHudHeight = 156;
+    static constexpr int kGemHeight = 320;
+    static constexpr int kHudHeight = 160;
     static constexpr uint32_t kFramePeriodMs = 40;
     static constexpr uint32_t kHudPeriodMs = 80;
 
