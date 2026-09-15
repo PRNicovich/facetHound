@@ -172,6 +172,11 @@ class SettingsMenuSimulator:
             self.link.send("@MENU,0")
             self.demo_started = time.monotonic()
             self.demo_frame = 0
+            frame_sender = getattr(self.link, "send_frame", None)
+            setup_lines = ("@RPM,1200", "@DIR,2", "@FLD,2", "@WIDX,96",
+                           "@TIDX,1", "@ZIDX,1")
+            if frame_sender:
+                frame_sender(setup_lines)
             self.status = "Live USB telemetry running"
         else:
             self.status = "Live USB telemetry stopped"
@@ -187,8 +192,9 @@ class SettingsMenuSimulator:
         # Deliberately walk recognizable facets instead of free-running sine waves.
         poses = ((65.0, 69.0), (65.0, 45.0), (65.0, 21.0), (65.0, 93.0),
                  (47.0, 69.0), (47.0, 45.0), (47.0, 21.0), (47.0, 93.0),
-                 (132.0, 27.0), (132.0, 51.0), (132.0, 75.0), (132.0, 3.0))
-        dwell = 3.5
+                 (48.0, 75.0), (48.0, 3.0), (48.0, 27.0), (48.0, 51.0),
+                 (90.0, 27.0), (90.0, 51.0))
+        dwell = 5.0
         segment = int(t / dwell) % len(poses)
         phase = (t % dwell) / dwell
         ease = phase * phase * (3.0 - 2.0 * phase)
@@ -203,10 +209,8 @@ class SettingsMenuSimulator:
         z_value = 0.6 * math.sin(t * 0.25)
         values = (("T", target), ("E", index_error), ("TIP", tip), ("ZMM", z_value),
                   ("F", max(0, round(10.0 + 9.0 * math.sin(t * 0.9))) * 1280),
-                  ("RPM", 1200), ("RPV", 1175 + 30 * math.sin(t)), ("DIR", 2),
-                  ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)), ("FLD", 2),
-                  ("WIDX", 96), ("TIDX", (self.demo_frame // 80) % 3),
-                  ("ZIDX", (self.demo_frame // 120) % 3))
+                  ("RPV", 1175 + 30 * math.sin(t)),
+                  ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)))
         lines = [f"@{key},{value:.4f}" for key, value in values]
         frame_sender = getattr(self.link, "send_frame", None)
         if frame_sender:

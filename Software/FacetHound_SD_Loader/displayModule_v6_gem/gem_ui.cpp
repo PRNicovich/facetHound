@@ -27,6 +27,18 @@ uint16_t gray565(float depth, float radius)
     return uint16_t((level >> 3) << 11) | uint16_t((level >> 2) << 5) | uint16_t(level >> 3);
 }
 
+float machineTip(float storedTip)
+{
+    if (storedTip < 0.0f) return -storedTip;
+    if (storedTip > 90.0f) return 180.0f - storedTip;
+    return storedTip;
+}
+
+bool oppositeApproach(float storedTip)
+{
+    return storedTip < 0.0f || storedTip > 90.0f;
+}
+
 void drawDepthLine(TFT_eSprite& canvas, int x1, int y1, int x2, int y2,
                    uint16_t color, float depth, float radius, bool selected)
 {
@@ -170,6 +182,8 @@ uint16_t GemUi::nearestPlane(float tipDegrees, float twistTicks) const
                                            : GemData::kPlanes[i].tipDegrees;
         float planeTwist = runtime.active() ? runtime.planes()[i].twistTicks
                                              : GemData::kPlanes[i].twistTicks;
+        if (oppositeApproach(planeTip)) planeTwist += resolution * 0.5f;
+        planeTip = machineTip(planeTip);
         float dTip = planeTip - tipDegrees;
         float dTwist = wrappedDelta(
             planeTwist, twistTicks, resolution
@@ -241,24 +255,34 @@ void GemUi::inferredTierName(uint16_t plane, char* text, size_t size) const
 
 float GemUi::selectedTargetTip(const GemTelemetry& state) const
 {
-    if (state.jobActive && isfinite(state.jobAngle)) return state.jobAngle;
+    if (state.jobActive && isfinite(state.jobAngle)) return machineTip(state.jobAngle);
     const RuntimeGemMesh& runtime = runtimeGemMesh();
     if (runtime.active() && selectedPlane_ < runtime.planes().size())
-        return runtime.planes()[selectedPlane_].tipDegrees;
+        return machineTip(runtime.planes()[selectedPlane_].tipDegrees);
     if (selectedPlane_ < GemData::kPlaneCount)
-        return GemData::kPlanes[selectedPlane_].tipDegrees;
+        return machineTip(GemData::kPlanes[selectedPlane_].tipDegrees);
     return state.tipDegrees;
 }
 
 float GemUi::selectedTargetTwist(const GemTelemetry& state) const
 {
-    if (state.jobActive && isfinite(state.jobIndex)) return state.jobIndex;
     const RuntimeGemMesh& runtime = runtimeGemMesh();
-    if (runtime.active() && selectedPlane_ < runtime.planes().size())
-        return runtime.planes()[selectedPlane_].twistTicks;
-    if (selectedPlane_ < GemData::kPlaneCount)
-        return GemData::kPlanes[selectedPlane_].twistTicks;
-    return state.targetTwist;
+    const float resolution = runtime.active() ? runtime.indexResolution()
+                                               : float(GemData::kIndexResolution);
+    float twist = state.jobActive && isfinite(state.jobIndex) ? state.jobIndex
+                                                               : state.targetTwist;
+    float storedTip = state.jobAngle;
+    if (!state.jobActive && runtime.active() && selectedPlane_ < runtime.planes().size()) {
+        twist = runtime.planes()[selectedPlane_].twistTicks;
+        storedTip = runtime.planes()[selectedPlane_].tipDegrees;
+    } else if (!state.jobActive && selectedPlane_ < GemData::kPlaneCount) {
+        twist = GemData::kPlanes[selectedPlane_].twistTicks;
+        storedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
+    }
+    if (oppositeApproach(storedTip)) twist += resolution * 0.5f;
+    twist = fmodf(twist, resolution);
+    if (twist < 0.0f) twist += resolution;
+    return twist;
 }
 
 void GemUi::formatTierFacet(const GemTelemetry& state, char* text, size_t size,
@@ -560,15 +584,15 @@ void GemUi::drawHud(const GemTelemetry& state)
     char line[64];
     const float targetTip = selectedTargetTip(state);
     const float tipError = state.tipDegrees - targetTip;
-    snprintf(line, sizeof(line), "%+.2f", targetTip);
+    snprintf(line, sizeof(line), "%+.2f\xB0", targetTip);
     textAt(hudCanvas_, line, 42, 28, C_YELLOW, 6, ML_DATUM);
     snprintf(line, sizeof(line), "%+.2f\xB0", tipError);
-    textAt(hudCanvas_, line, 312, 28, C_YELLOW, 4, MR_DATUM);
+    textAt(hudCanvas_, line, 278, 28, C_YELLOW, 4, MR_DATUM);
 
     // Contact/force belongs to the cutting-angle row.
     const int forceWidth = constrain(state.forceBar, 0, 20) * 4;
-    hudCanvas_.drawRect(224, 48, 82, 4, C_DIM);
-    hudCanvas_.fillRect(225, 49, forceWidth, 2, C_GREEN);
+    hudCanvas_.drawRect(224, 48, 82, 4, C_YELLOW);
+    hudCanvas_.fillRect(225, 49, forceWidth, 2, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -580,7 +604,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+.2f", targetTwist);
     textAt(hudCanvas_, line, 42, 76, C_CYAN, 6, ML_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 312, 76, C_CYAN, 4, MR_DATUM);
+    textAt(hudCanvas_, line, 278, 76, C_CYAN, 4, MR_DATUM);
     drawStepIndicator(hudCanvas_, 286, 89, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);

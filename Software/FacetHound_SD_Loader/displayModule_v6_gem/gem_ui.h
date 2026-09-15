@@ -44,7 +44,7 @@ public:
 private:
     static constexpr int kGemHeight = 330;
     static constexpr int kHudHeight = 150;
-    static constexpr uint32_t kFramePeriodMs = 20;
+    static constexpr uint32_t kFramePeriodMs = 40;
     static constexpr uint32_t kHudPeriodMs = 80;
 
     TFT_eSPI& tft_;
