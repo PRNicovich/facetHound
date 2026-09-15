@@ -3,7 +3,8 @@
 Run directly in Spyder. Arrow keys emulate twist-wheel rotation; Enter emulates
 the wheel click. Backspace is the top-left key, F/C change edit tier, and Delete
 removes a selected mark point. Press D (or click LIVE DEMO) to close Settings
-and animate Dynamic mode over USB. Set SERIAL_PORT to the RP2040 COM port.
+and animate Classic, Dynamic, or Static mode over USB. Set SERIAL_PORT to the
+RP2040 COM port.
 """
 
 from __future__ import annotations
@@ -219,10 +220,13 @@ class SettingsMenuSimulator:
             tip = target_tip
         index_error = ((actual_index - target + 48.0) % 96.0) - 48.0
         z_value = 0.6 * math.sin(t * 0.25)
-        values = (("T", target), ("E", index_error), ("TIP", tip), ("ZMM", z_value),
+        values = (("T", target), ("E", index_error), ("A", actual_index),
+                  ("TIP", tip), ("ZMM", z_value),
                   ("F", max(0, round(10.0 + 9.0 * math.sin(t * 0.9))) * 1280),
                   ("RPV", 1175 + 35 * math.sin(t * 4.3) + 9 * math.sin(t * 11.0)),
-                  ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)))
+                  ("FLW", 3.5 + 0.4 * math.sin(t * 0.7)),
+                  ("ML", previous_index), ("MR", target),
+                  ("MID", facet - 1), ("MCT", 16), ("MST", 2))
         lines = [f"@{key},{value:.4f}" for key, value in values]
         if segment != self.demo_segment:
             lines.insert(0, f"@JOB,{tier},{facet},{raw_tip},0,{raw_index},{name}")

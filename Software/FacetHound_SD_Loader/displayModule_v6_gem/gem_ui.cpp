@@ -474,14 +474,28 @@ void GemUi::updatePose(const GemTelemetry& state)
         storedSelectedTip = runtime.planes()[selectedPlane_].tipDegrees;
     else if (selectedPlane_ < GemData::kPlaneCount)
         storedSelectedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
-    const float renderTipTarget = displayedTip_ *
-                                  (oppositeApproach(storedSelectedTip) ? 1.0f : -1.0f);
+    const bool reverseView = oppositeApproach(storedSelectedTip) ||
+                             fabsf(fabsf(storedSelectedTip) - 90.0f) <= 0.05f;
+    const float baseRenderTip = displayedTip_ *
+                                (oppositeApproach(storedSelectedTip) ? 1.0f : -1.0f);
+    // Ry(180) * Rx(tip) * Rz(index) has the equivalent two-axis form
+    // Rx(180-tip) * Rz(index+180). Folding the front-facing correction into
+    // the pose lets index interpolation retain its normal shortest-path rule.
+    const float renderTipTarget = reverseView ? 180.0f - baseRenderTip
+                                               : baseRenderTip;
+    const float renderTwistTarget = normalizedTwist(
+        displayedTwist_ + (reverseView ? meshResolution * 0.5f : 0.0f),
+        meshResolution);
     if (!orientationInitialized_) {
         displayedRenderTip_ = renderTipTarget;
+        displayedRenderTwist_ = renderTwistTarget;
         orientationInitialized_ = true;
     } else {
         float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
         displayedRenderTip_ += tipDelta * 0.28f;
+        displayedRenderTwist_ += wrappedDelta(
+            renderTwistTarget, displayedRenderTwist_, meshResolution) * 0.32f;
+        displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_, meshResolution);
     }
 }
 
@@ -508,7 +522,7 @@ void GemUi::drawDynamic(const GemTelemetry& state)
     const float resolution = runtime.active() ? runtime.indexResolution()
                                                : float(GemData::kIndexResolution);
     const float tip = displayedRenderTip_ * DEG_TO_RAD;
-    const float twist = displayedTwist_ * TWO_PI / resolution;
+    const float twist = displayedRenderTwist_ * TWO_PI / resolution;
     const float ct = cosf(tip), st = sinf(tip);
     const float cz = cosf(twist), sz = sinf(twist);
     const float scale = 116.0f / (runtime.active() ? runtime.radius() : GemData::kRadius);
@@ -774,8 +788,8 @@ void GemUi::drawHud(const GemTelemetry& state)
     textAt(hudCanvas_, line, 197, 58, C_YELLOW, 6, BR_DATUM);
     drawDegreeGlyph(hudCanvas_, 205, 19, C_YELLOW);
     snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 284, 58, C_YELLOW, 4, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 292, 32, C_YELLOW);
+    textAt(hudCanvas_, line, 284, 55, C_YELLOW, 4, BR_DATUM);
+    drawDegreeGlyph(hudCanvas_, 292, 29, C_YELLOW);
 
     const float resolution = runtimeGemMesh().active()
                                  ? runtimeGemMesh().indexResolution()
@@ -787,7 +801,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
     textAt(hudCanvas_, line, 197, 109, C_CYAN, 6, BR_DATUM);
     snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 284, 109, C_CYAN, 4, BR_DATUM);
+    textAt(hudCanvas_, line, 284, 106, C_CYAN, 4, BR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 62, state.indexStep, C_CYAN);
 
     hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
@@ -796,7 +810,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
     textAt(hudCanvas_, line, 197, 159, C_MAGENTA, 6, BR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 109, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 205, 159, C_MAGENTA, 2, BL_DATUM);
+    textAt(hudCanvas_, "mm", 205, 137, C_MAGENTA, 2, ML_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;

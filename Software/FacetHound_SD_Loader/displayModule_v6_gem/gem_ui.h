@@ -58,6 +58,7 @@ private:
     float displayedTip_ = 0.0f;
     float displayedTwist_ = 0.0f;
     float displayedRenderTip_ = 0.0f;
+    float displayedRenderTwist_ = 0.0f;
     uint16_t selectedPlane_ = 0;
     uint32_t lastFrameMs_ = 0;
     uint32_t lastHudMs_ = 0;
