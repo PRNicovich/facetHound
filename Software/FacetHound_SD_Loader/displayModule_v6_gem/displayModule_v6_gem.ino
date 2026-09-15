@@ -1306,28 +1306,13 @@ void updateRPMSetValueSprite()
 void updateMarkPointsSprite()
 {
   markSprite.fillSprite(SPRITE_FILL);
-  if (jobActive)
-  {
-    char tierFacet[20] = {};
-    char angle[20] = {};
-    char index[20] = {};
-    snprintf(tierFacet, sizeof(tierFacet), "T%u F%u", jobTier, jobFacet);
-    snprintf(angle, sizeof(angle), "A%+.2f", jobAngle);
-    snprintf(index, sizeof(index), "I%.2f", jobIndex);
-    markSprite.drawString(tierFacet, 75, 30);
-    markSprite.drawString(angle, 190, 30);
-    markSprite.drawString(index, 300, 30);
-  }
-  else
-  {
-    markSprite.drawFloat(markL, 2, 80, 30);
-    markSprite.drawFloat(markR, 2, 300, 30);
-    markSprite.drawNumber(markIdx, 145, 30);
-    markSprite.drawNumber(nMarkIdx, 190, 30);
-    markSprite.drawString("/", 158, 30);
-    markSprite.drawString("-", 105, 30);
-    markSprite.drawString("-", 210, 30);
-  }
+  markSprite.drawFloat(markL, 2, 80, 30);
+  markSprite.drawString("<", 105, 30);
+  markSprite.drawNumber(markIdx, 145, 30);
+  markSprite.drawString("/", 158, 30);
+  markSprite.drawNumber(nMarkIdx, 190, 30);
+  markSprite.drawString(">", 210, 30);
+  markSprite.drawFloat(markR, 2, 300, 30);
   markSprite.pushSprite(10, 130);
 }
 

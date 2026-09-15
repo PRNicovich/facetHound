@@ -441,10 +441,15 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
     else
     {
-        displayedTip_ += (targetTip - displayedTip_) * 0.32f;
-        displayedTwist_ += wrappedDelta(
-            targetTwist, displayedTwist_, meshResolution
-        ) * 0.32f;
+        const float tipDelta = targetTip - displayedTip_;
+        const float tipGain = 0.24f + 0.32f * constrain(
+            fabsf(tipDelta) / 35.0f, 0.0f, 1.0f);
+        displayedTip_ += tipDelta * tipGain;
+        const float twistDelta = wrappedDelta(
+            targetTwist, displayedTwist_, meshResolution);
+        const float twistGain = 0.24f + 0.32f * constrain(
+            fabsf(twistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
+        displayedTwist_ += twistDelta * twistGain;
         displayedTwist_ = normalizedTwist(displayedTwist_, meshResolution);
     }
 
@@ -492,9 +497,14 @@ void GemUi::updatePose(const GemTelemetry& state)
         orientationInitialized_ = true;
     } else {
         float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
-        displayedRenderTip_ += tipDelta * 0.28f;
-        displayedRenderTwist_ += wrappedDelta(
-            renderTwistTarget, displayedRenderTwist_, meshResolution) * 0.32f;
+        const float renderTipGain = 0.28f + 0.32f * constrain(
+            fabsf(tipDelta) / 45.0f, 0.0f, 1.0f);
+        displayedRenderTip_ += tipDelta * renderTipGain;
+        const float renderTwistDelta = wrappedDelta(
+            renderTwistTarget, displayedRenderTwist_, meshResolution);
+        const float renderTwistGain = 0.28f + 0.32f * constrain(
+            fabsf(renderTwistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
+        displayedRenderTwist_ += renderTwistDelta * renderTwistGain;
         displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_, meshResolution);
     }
 }
@@ -810,7 +820,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
     textAt(hudCanvas_, line, 197, 159, C_MAGENTA, 6, BR_DATUM);
     drawStepIndicator(hudCanvas_, 202, 109, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 205, 137, C_MAGENTA, 2, ML_DATUM);
+    textAt(hudCanvas_, "mm", 205, 139, C_MAGENTA, 2, ML_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
