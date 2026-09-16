@@ -885,7 +885,9 @@ void drawSplashScreen()
 
   TFT_eSprite splash = TFT_eSprite(&tft);
   splash.setColorDepth(8);
-  if (!splash.createSprite(320, 480))
+  // Keep the bottom 24 rows outside the animated framebuffer so the company
+  // credit can be pushed once and remain completely static without flicker.
+  if (!splash.createSprite(320, 456))
   {
     // A low-memory boot still gets a recognizable title instead of hanging.
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -937,6 +939,7 @@ void drawSplashScreen()
   constexpr uint32_t kGemOnlyMs = 900;
   constexpr uint32_t kTotalMs = 3300;
   constexpr uint32_t kFrameMs = 33;
+  bool footerShown = false;
 
   while (millis() - started < kTotalMs)
   {
@@ -1014,8 +1017,11 @@ void drawSplashScreen()
     }
 
     splash.pushSprite(0, 0);
-    if (elapsed >= kGemOnlyMs && footerReady)
+    if (elapsed >= kGemOnlyMs && footerReady && !footerShown)
+    {
       footer.pushSprite(0, 456);
+      footerShown = true;
+    }
   }
 
   if (footerReady) footer.deleteSprite();
