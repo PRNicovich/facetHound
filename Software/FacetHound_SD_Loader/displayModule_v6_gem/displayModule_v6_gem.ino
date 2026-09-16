@@ -893,11 +893,30 @@ void drawSplashScreen()
     tft.setTextFont(4);
     tft.setTextColor(0x3E7F, TFT_BLACK);
     tft.drawString("FACET HOUND", 160, 165);
+    tft.setTextFont(1);
+    tft.setTextColor(0x8410, TFT_BLACK);
+    tft.drawString("A product of Advanced Precision Technologies, LLC", 160, 466);
     delay(3000);
     return;
   }
   splash.setTextWrap(false, false);
   splash.loadFont(ERRORTEXT);
+  splash.setTextDatum(TL_DATUM);
+  const int16_t titleWidth = splash.textWidth("FACET HOUND");
+  const int16_t titleX = (320 - titleWidth) / 2;
+
+  TFT_eSprite footer = TFT_eSprite(&tft);
+  footer.setColorDepth(8);
+  const bool footerReady = footer.createSprite(320, 20) != nullptr;
+  if (footerReady)
+  {
+    footer.fillSprite(TFT_BLACK);
+    footer.setTextWrap(false, false);
+    footer.setTextDatum(MC_DATUM);
+    footer.setTextFont(1);
+    footer.setTextColor(0x8410, TFT_BLACK);
+    footer.drawString("A product of Advanced Precision Technologies, LLC", 160, 10);
+  }
 
   uint16_t selectedPlane = 0;
   for (uint16_t i = 0; i < GemData::kPlaneCount; ++i)
@@ -983,20 +1002,23 @@ void drawSplashScreen()
       // A black keyline and magenta offset keep the cyan title legible over
       // the wireframe without turning it into an opaque card.
       splash.setTextColor(TFT_BLACK);
-      splash.drawString("FACET HOUND", 162, 158);
-      splash.drawString("FACET HOUND", 158, 158);
+      splash.drawString("FACET HOUND", titleX + 2, 158);
+      splash.drawString("FACET HOUND", titleX - 2, 158);
       splash.setTextColor(accentColor);
-      splash.drawString("FACET HOUND", 161, 157);
+      splash.drawString("FACET HOUND", titleX + 1, 157);
       splash.setTextColor(titleColor);
-      splash.drawString("FACET HOUND", 160, 154);
-      splash.drawFastHLine(62, 184, 196, accentColor);
-      splash.fillCircle(56, 184, 2, titleColor);
-      splash.fillCircle(264, 184, 2, titleColor);
+      splash.drawString("FACET HOUND", titleX, 154);
+      splash.drawFastHLine(titleX, 184, titleWidth, accentColor);
+      splash.fillCircle(titleX - 6, 184, 2, titleColor);
+      splash.fillCircle(titleX + titleWidth + 6, 184, 2, titleColor);
     }
 
     splash.pushSprite(0, 0);
+    if (elapsed >= kGemOnlyMs && footerReady)
+      footer.pushSprite(0, 456);
   }
 
+  if (footerReady) footer.deleteSprite();
   splash.unloadFont();
   splash.deleteSprite();
 }

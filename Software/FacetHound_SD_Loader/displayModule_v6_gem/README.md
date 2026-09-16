@@ -15,8 +15,10 @@ Every restart begins with a roughly 3.3-second animated splash. The compiled
 fallback gem is shown as a neutral, depth-cued wireframe at the C1 mast angle
 and rotates at constant index speed. After about 0.9 seconds, the colored
 `FACET HOUND` title fades in over the gem and remains for about 2.4 seconds
-while rotation continues; the selected persisted UI then starts normally. The
-splash does not wait for geometry or telemetry from the base module.
+while rotation continues. A small centered
+`A product of Advanced Precision Technologies, LLC` credit accompanies the
+title at the bottom; the selected persisted UI then starts normally. The splash
+does not wait for geometry or telemetry from the base module.
 
 A transient settings menu overlays any of the three screens. It currently edits
 display mode and is structured for later base-module settings.
