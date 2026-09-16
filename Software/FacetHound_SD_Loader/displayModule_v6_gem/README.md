@@ -11,12 +11,12 @@ The firmware listens to the instrument UART and USB CDC simultaneously. Both
 use the existing newline-delimited `@KEY,value` protocol, so the USB connection
 is also the proxy/test input; no alternate firmware image is necessary.
 
-Every restart begins with a roughly two-second animated splash. The compiled
+Every restart begins with a roughly 3.3-second animated splash. The compiled
 fallback gem is shown as a neutral, depth-cued wireframe at the C1 mast angle
-and rotates at constant index speed. After the first second, `FACET HOUND`
-fades in over the gem while rotation continues; the selected persisted UI then
-starts normally. The splash does not wait for geometry or telemetry from the
-base module.
+and rotates at constant index speed. After about 0.9 seconds, the colored
+`FACET HOUND` title fades in over the gem and remains for about 2.4 seconds
+while rotation continues; the selected persisted UI then starts normally. The
+splash does not wait for geometry or telemetry from the base module.
 
 A transient settings menu overlays any of the three screens. It currently edits
 display mode and is structured for later base-module settings.

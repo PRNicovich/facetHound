@@ -891,11 +891,13 @@ void drawSplashScreen()
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
     tft.setTextFont(4);
-    tft.drawString("FACET HOUND", 160, 240);
-    delay(1800);
+    tft.setTextColor(0x3E7F, TFT_BLACK);
+    tft.drawString("FACET HOUND", 160, 165);
+    delay(3000);
     return;
   }
-  splash.loadFont(LOGO);
+  splash.setTextWrap(false, false);
+  splash.loadFont(ERRORTEXT);
 
   uint16_t selectedPlane = 0;
   for (uint16_t i = 0; i < GemData::kPlaneCount; ++i)
@@ -913,8 +915,8 @@ void drawSplashScreen()
 
   const uint32_t started = millis();
   uint32_t nextFrame = started;
-  constexpr uint32_t kGemOnlyMs = 1000;
-  constexpr uint32_t kTotalMs = 2100;
+  constexpr uint32_t kGemOnlyMs = 900;
+  constexpr uint32_t kTotalMs = 3300;
   constexpr uint32_t kFrameMs = 33;
 
   while (millis() - started < kTotalMs)
@@ -968,17 +970,28 @@ void drawSplashScreen()
 
     if (elapsed >= kGemOnlyMs)
     {
-      const float fade = constrain(float(elapsed - kGemOnlyMs) / 240.0f, 0.0f, 1.0f);
-      const uint8_t value = uint8_t(70.0f + 185.0f * fade);
-      const uint16_t titleColor = uint16_t((value >> 3) << 11) |
-                                  uint16_t((value >> 2) << 5) |
-                                  uint16_t(value >> 3);
-      // Offset shadow keeps the title readable without hiding the rotating gem.
+      const float fade = constrain(float(elapsed - kGemOnlyMs) / 320.0f, 0.0f, 1.0f);
+      const uint16_t titleColor = tft.color565(
+          uint8_t(30.0f + 30.0f * fade),
+          uint8_t(80.0f + 150.0f * fade),
+          uint8_t(105.0f + 150.0f * fade));
+      const uint16_t accentColor = tft.color565(
+          uint8_t(90.0f + 165.0f * fade),
+          uint8_t(20.0f + 45.0f * fade),
+          uint8_t(75.0f + 120.0f * fade));
+
+      // A black keyline and magenta offset keep the cyan title legible over
+      // the wireframe without turning it into an opaque card.
       splash.setTextColor(TFT_BLACK);
-      splash.drawString("FACET HOUND", 163, 242);
-      splash.drawString("FACET HOUND", 157, 242);
+      splash.drawString("FACET HOUND", 162, 158);
+      splash.drawString("FACET HOUND", 158, 158);
+      splash.setTextColor(accentColor);
+      splash.drawString("FACET HOUND", 161, 157);
       splash.setTextColor(titleColor);
-      splash.drawString("FACET HOUND", 160, 238);
+      splash.drawString("FACET HOUND", 160, 154);
+      splash.drawFastHLine(62, 184, 196, accentColor);
+      splash.fillCircle(56, 184, 2, titleColor);
+      splash.fillCircle(264, 184, 2, titleColor);
     }
 
     splash.pushSprite(0, 0);
