@@ -61,7 +61,9 @@ exit and times out if the display keepalive disappears.
 See `baseChassisModule/SD_GEM_LOADER.md` for the parser behavior, cache format,
 `.fct` coordinate format, limits, and serial protocol. See
 `baseChassisModule/BASE_WIRING_AND_TEST.md` for the full pin map, dedicated
-keyboard UART, and USB CDC bench console.
+keyboard UART, and USB CDC bench console. The underlying PC control protocol is
+documented in `baseChassisModule/PC_USB_API.md` so future software can drive the
+base directly without depending on the supplied console UI.
 
 ## Verification
 

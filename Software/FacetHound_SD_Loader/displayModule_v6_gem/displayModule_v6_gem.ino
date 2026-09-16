@@ -13,6 +13,7 @@
 #include "pio_encoder.h"
 
 #include "display_mode.h"
+#include "gem_data.h"
 #include "gem_ui.h"
 #include "runtime_gem_mesh.h"
 #include "settings_menu.h"
@@ -883,28 +884,108 @@ void drawSplashScreen()
   tft.fillScreen(TFT_BLACK);
 
   TFT_eSprite splash = TFT_eSprite(&tft);
-  splash.loadFont(GEM_ICON);
-  splash.createSprite(200, 200);
-  splash.fillSprite(TFT_BLACK);
-  splash.setTextColor(TFT_WHITE);
-  splash.setTextDatum(MC_DATUM);
-  splash.drawString("m", 100, 100);
-  splash.pushSprite(60, 200);
+  splash.setColorDepth(8);
+  if (!splash.createSprite(320, 480))
+  {
+    // A low-memory boot still gets a recognizable title instead of hanging.
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(4);
+    tft.drawString("FACET HOUND", 160, 240);
+    delay(1800);
+    return;
+  }
+  splash.loadFont(LOGO);
+
+  uint16_t selectedPlane = 0;
+  for (uint16_t i = 0; i < GemData::kPlaneCount; ++i)
+  {
+    if (GemData::kPlanes[i].tier == 5 && GemData::kPlanes[i].facet == 1)
+    {
+      selectedPlane = i; // First crown tier: C1, facet 1.
+      break;
+    }
+  }
+
+  int16_t sx[GemData::kVertexCount] = {};
+  int16_t sy[GemData::kVertexCount] = {};
+  float depth[GemData::kVertexCount] = {};
+
+  const uint32_t started = millis();
+  uint32_t nextFrame = started;
+  constexpr uint32_t kGemOnlyMs = 1000;
+  constexpr uint32_t kTotalMs = 2100;
+  constexpr uint32_t kFrameMs = 33;
+
+  while (millis() - started < kTotalMs)
+  {
+    const uint32_t elapsed = millis() - started;
+    if (int32_t(millis() - nextFrame) < 0)
+    {
+      delay(1);
+      yield();
+      continue;
+    }
+    nextFrame += kFrameMs;
+
+    splash.fillSprite(TFT_BLACK);
+
+    // Hold the C1 mast angle while index rotates at a constant half-turn/sec.
+    const float tip = -GemData::kPlanes[selectedPlane].tipDegrees * DEG_TO_RAD;
+    const float spinTicks = GemData::kPlanes[selectedPlane].twistTicks +
+                            float(elapsed) * float(GemData::kIndexResolution) / 2000.0f;
+    const float twist = spinTicks * TWO_PI / float(GemData::kIndexResolution);
+    const float ct = cosf(tip), st = sinf(tip);
+    const float cz = cosf(twist), sz = sinf(twist);
+    const float scale = 124.0f / GemData::kRadius;
+    constexpr float centerX = 160.0f;
+    constexpr float centerY = 238.0f;
+
+    for (uint16_t i = 0; i < GemData::kVertexCount; ++i)
+    {
+      const float x1 = cz * GemData::kVertices[i].x - sz * GemData::kVertices[i].y;
+      const float y1 = sz * GemData::kVertices[i].x + cz * GemData::kVertices[i].y;
+      const float y2 = ct * y1 - st * GemData::kVertices[i].z;
+      const float z2 = st * y1 + ct * GemData::kVertices[i].z;
+      sx[i] = int16_t(lroundf(centerX + scale * x1));
+      sy[i] = int16_t(lroundf(centerY - scale * y2));
+      depth[i] = z2;
+    }
+
+    // Neutral depth-cued wireframe. C1 sets only the viewing angle.
+    for (uint16_t i = 0; i < GemData::kEdgeCount; ++i)
+    {
+      const auto& edge = GemData::kEdges[i];
+      const float normalized = constrain(
+          0.5f + 0.5f * (depth[edge.a] + depth[edge.b]) /
+                     (2.0f * GemData::kRadius), 0.0f, 1.0f);
+      const uint8_t level = uint8_t(34.0f + normalized * 205.0f);
+      const uint16_t gray = uint16_t((level >> 3) << 11) |
+                            uint16_t((level >> 2) << 5) |
+                            uint16_t(level >> 3);
+      splash.drawLine(sx[edge.a], sy[edge.a], sx[edge.b], sy[edge.b], gray);
+    }
+
+    if (elapsed >= kGemOnlyMs)
+    {
+      const float fade = constrain(float(elapsed - kGemOnlyMs) / 240.0f, 0.0f, 1.0f);
+      const uint8_t value = uint8_t(70.0f + 185.0f * fade);
+      const uint16_t titleColor = uint16_t((value >> 3) << 11) |
+                                  uint16_t((value >> 2) << 5) |
+                                  uint16_t(value >> 3);
+      // Offset shadow keeps the title readable without hiding the rotating gem.
+      splash.setTextColor(TFT_BLACK);
+      splash.drawString("FACET HOUND", 163, 242);
+      splash.drawString("FACET HOUND", 157, 242);
+      splash.setTextColor(titleColor);
+      splash.drawString("FACET HOUND", 160, 238);
+    }
+
+    splash.pushSprite(0, 0);
+  }
+
   splash.unloadFont();
-
-  delay(1200);
-
-  TFT_eSprite logo = TFT_eSprite(&tft);
-  logo.loadFont(LOGO);
-  logo.createSprite(320, 50);
-  logo.fillSprite(TFT_BLACK);
-  logo.setTextColor(TFT_WHITE);
-  logo.setTextDatum(MC_DATUM);
-  logo.drawString("FACET HOUND", 160, 25);
-  logo.pushSprite(0, 100);
-  logo.unloadFont();
-
-  delay(1200);
+  splash.deleteSprite();
 }
 
 void updateTiltSprite();

@@ -49,6 +49,10 @@ The second field is the HID usage number configured in
 It displays raw traffic, decoded state, I/O counters, and supports controlled
 motor jogs. It does not intercept the keyboard UART.
 
+The console is a reference client for a documented PC-control interface. See
+[PC_USB_API.md](PC_USB_API.md) for framing, every command and response, state
+field definitions, safety guidance, and a minimal client example.
+
 For Spyder, open the script, set `SERIAL_PORT = "COM5"` near the top, and run
 the file. `AUTO` also works when exactly one likely Pico serial port is present.
 Install pyserial in Spyder's Python environment if needed:
