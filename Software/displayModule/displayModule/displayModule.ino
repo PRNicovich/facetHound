@@ -14,6 +14,7 @@
 #include "dcTerminal_80.h"
 #include "dcTerminal_60.h"
 #include "dcTerminal_40.h"
+#include "rp2040_display_modes.h"
 
 #include <FastCRC.h>
 
@@ -63,6 +64,21 @@ TFT_eSprite unitLabels = TFT_eSprite(&tft); // Sprite object stext1
 TFT_eSprite downLabels = TFT_eSprite(&tft); // Sprite object stext1
 
 bool printed_blank = false;
+
+// DISPLAY_LEGACY preserves the original GUI.  The other two modes are the
+// RP2040 ports of gem_display.py and gem_display_static.py.
+DisplayMode displayMode = DISPLAY_LEGACY;
+bool pythonUiDirty = false;
+int uiTier = 1;
+int uiTierCount = 10;
+int uiFacet = 1;
+int uiFacetCount = 8;
+bool uiMotorRunning = false;
+bool uiFlowRunning = false;
+float uiViewYaw = -18.0f;
+float uiViewPitch = -58.0f;
+String uiTitle = "POLAKIEWICZ ROUND";
+String usbLine;
 
 //bool useSerial = true;
 //bool useUART = false;
@@ -146,6 +162,8 @@ void setup() {
 
 void loop() {
 
+  serviceUsbCommands();
+
 
   while (baseSerial.available()){
 
@@ -165,6 +183,31 @@ void loop() {
 
 
 void spriteTickHandler(){
+
+  if (displayMode != DISPLAY_LEGACY) {
+    if (updateTipAngle || updateTiltAngle || updateTiltError || updateZValue ||
+        updateRPMValue || updateRPMsetValueBool || updateFlowRate ||
+        updateForceBarBool || updateTiltLockBool || updateZedLockBool ||
+        updateWheelIndexBool || updateFlowDirBool || updateRPMDirBool ||
+        updateTiltStepIndexBool || updateSpinServoIdxBool ||
+        updateZedStepIndexBool || updateMarkPointsBool) {
+      pythonUiDirty = true;
+    }
+
+    updateTipAngle = updateTiltAngle = updateTiltError = updateZValue = false;
+    updateRPMValue = updateRPMsetValueBool = updateFlowRate = false;
+    updateForceBarBool = updateTiltLockBool = updateZedLockBool = false;
+    updateWheelIndexBool = updateFlowDirBool = updateRPMDirBool = false;
+    updateTiltStepIndexBool = updateSpinServoIdxBool = false;
+    updateZedStepIndexBool = updateMarkPointsBool = false;
+
+    if (pythonUiDirty && (millis() - mainTick) > 35) {
+      drawSelectedMode();
+      pythonUiDirty = false;
+      mainTick = millis();
+    }
+    return;
+  }
 
   if (updateTipAngle){
     updateTipSprite();
@@ -255,6 +298,173 @@ void spriteTickHandler(){
 
 
 
+}
+
+
+PythonUiState currentPythonUiState() {
+  PythonUiState s;
+  s.theta = tipAngle;
+  s.thetaError = tiltSetError;
+  s.phi = tiltSetAngle;
+  s.phiError = 0.0f;
+  s.z = zValue;
+  s.force = constrain(forceBar / 20.0f, 0.0f, 1.0f);
+  s.flow = flowRate;
+  s.rpmSet = rpmSetValue;
+  s.rpmActual = RPMValue;
+  s.wheel = wheelIndex;
+  s.tier = uiTier;
+  s.tierCount = uiTierCount;
+  s.facet = uiFacet;
+  s.facetCount = uiFacetCount;
+  s.zStep = constrain(zedStepIndex, 1, 3);
+  s.motorDirection = (RPM_dir < 2) ? 1 : -1;
+  s.motorRunning = uiMotorRunning;
+  s.flowRunning = uiFlowRunning;
+  s.viewYaw = uiViewYaw;
+  s.viewPitch = uiViewPitch;
+  s.title = uiTitle;
+  return s;
+}
+
+
+void drawSelectedMode() {
+  PythonUiState s = currentPythonUiState();
+  if (displayMode == DISPLAY_DYNAMIC) Gen2Display::drawDynamic(tft, s);
+  else if (displayMode == DISPLAY_STATIC) Gen2Display::drawStatic(tft, s);
+}
+
+
+const char *displayModeName() {
+  if (displayMode == DISPLAY_DYNAMIC) return "dynamic";
+  if (displayMode == DISPLAY_STATIC) return "static";
+  return "legacy";
+}
+
+
+void selectDisplayMode(DisplayMode next) {
+  if (next == displayMode) {
+    pythonUiDirty = true;
+    return;
+  }
+  displayMode = next;
+  tft.fillScreen(TFT_BLACK);
+  if (displayMode == DISPLAY_LEGACY) {
+    drawMainScreen(false);
+  } else {
+    pythonUiDirty = true;
+  }
+}
+
+
+void printUsbHelp() {
+  Serial.println("OK commands:");
+  Serial.println("  mode legacy|dynamic|static");
+  Serial.println("  theta N | phi N | theta_error N | z N");
+  Serial.println("  rpm N | rpmset N | flow N | force 0..1");
+  Serial.println("  tier N [count] | facet N [count]");
+  Serial.println("  motor on|off [cw|ccw] | flowrun on|off");
+  Serial.println("  rotate yaw pitch | title TEXT | show | redraw");
+  Serial.println("  old one-letter proxies: T P Z R F N W h r f z");
+  Serial.println("  raw <checksummed-controller-frame>");
+}
+
+
+bool wordOn(const String &v) {
+  return v == "on" || v == "1" || v == "true" || v == "run";
+}
+
+
+void usbCommandHandler(String line) {
+  line.trim();
+  if (!line.length()) return;
+
+  int split = line.indexOf(' ');
+  String cmd = split < 0 ? line : line.substring(0, split);
+  String arg = split < 0 ? "" : line.substring(split + 1);
+  cmd.toLowerCase();
+  arg.trim();
+
+  if (cmd == "help" || cmd == "?") printUsbHelp();
+  else if (cmd == "mode") {
+    arg.toLowerCase();
+    if (arg == "legacy" || arg == "0") selectDisplayMode(DISPLAY_LEGACY);
+    else if (arg == "dynamic" || arg == "1") selectDisplayMode(DISPLAY_DYNAMIC);
+    else if (arg == "static" || arg == "2") selectDisplayMode(DISPLAY_STATIC);
+    else { Serial.println("ERR mode must be legacy, dynamic, or static"); return; }
+  }
+  else if (cmd == "theta" || cmd == "p") tipAngle = arg.toFloat(), updateTipAngle = true;
+  else if (cmd == "phi" || cmd == "t") tiltSetAngle = arg.toFloat(), updateTiltAngle = true;
+  else if (cmd == "theta_error" || cmd == "c") tiltSetError = arg.toFloat(), updateTiltError = true;
+  else if (cmd == "z") zValue = arg.toFloat(), updateZValue = true;
+  else if (cmd == "rpm" || cmd == "r") RPMValue = (uint32_t)max(0L, arg.toInt()), updateRPMValue = true;
+  else if (cmd == "rpmset" || cmd == "h") rpmSetValue = arg.toInt(), updateRPMsetValueBool = true;
+  else if (cmd == "flow" || cmd == "f") flowRate = arg.toFloat(), updateFlowRate = true;
+  else if (cmd == "force" || cmd == "n") {
+    float v = arg.toFloat();
+    forceBar = constrain((int)(v <= 1.0f ? v * 20.0f : v), 0, 20);
+    updateForceBarBool = true;
+  }
+  else if (cmd == "wheel" || cmd == "w") wheelIndex = max(1L, arg.toInt()), updateWheelIndexBool = true;
+  else if (cmd == "zstep") zedStepIndex = constrain(arg.toInt(), 1, 3), updateZedStepIndexBool = true;
+  else if (cmd == "tier" || cmd == "facet") {
+    int sep = arg.indexOf(' ');
+    int value = arg.toInt();
+    int count = sep < 0 ? 0 : arg.substring(sep + 1).toInt();
+    if (cmd == "tier") { uiTier = max(1, value); if (count > 0) uiTierCount = count; }
+    else { uiFacet = max(1, value); if (count > 0) uiFacetCount = count; }
+    pythonUiDirty = true;
+  }
+  else if (cmd == "motor") {
+    int sep = arg.indexOf(' ');
+    String run = sep < 0 ? arg : arg.substring(0, sep);
+    String dir = sep < 0 ? "" : arg.substring(sep + 1);
+    run.toLowerCase(); dir.toLowerCase();
+    uiMotorRunning = wordOn(run);
+    if (dir == "cw") RPM_dir = 0;
+    else if (dir == "ccw") RPM_dir = 2;
+    pythonUiDirty = true;
+  }
+  else if (cmd == "flowrun") { arg.toLowerCase(); uiFlowRunning = wordOn(arg); pythonUiDirty = true; }
+  else if (cmd == "rotate") {
+    int sep = arg.indexOf(' ');
+    if (sep < 0) { Serial.println("ERR rotate needs yaw pitch"); return; }
+    uiViewYaw = arg.substring(0, sep).toFloat();
+    uiViewPitch = arg.substring(sep + 1).toFloat();
+    pythonUiDirty = true;
+  }
+  else if (cmd == "title") { uiTitle = arg; pythonUiDirty = true; }
+  else if (cmd == "redraw") pythonUiDirty = true;
+  else if (cmd == "show") {
+    Serial.println(String("OK mode=") + displayModeName() + " theta=" + String(tipAngle, 2) +
+                   " phi=" + String(tiltSetAngle, 2) + " z=" + String(zValue, 3) +
+                   " rpm=" + String(RPMValue) + " flow=" + String(flowRate, 2) +
+                   " tier=" + String(uiTier) + "/" + String(uiTierCount) +
+                   " facet=" + String(uiFacet) + "/" + String(uiFacetCount));
+    return;
+  }
+  else if (cmd == "raw") { inputHandler(arg); Serial.println("OK raw"); return; }
+  else { Serial.println("ERR unknown command; send help"); return; }
+
+  Serial.println(String("OK ") + cmd);
+}
+
+
+void serviceUsbCommands() {
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (usbLine.length()) {
+        usbCommandHandler(usbLine);
+        usbLine = "";
+      }
+    } else if (usbLine.length() < 160) {
+      usbLine += c;
+    } else {
+      usbLine = "";
+      Serial.println("ERR command too long");
+    }
+  }
 }
 
 
