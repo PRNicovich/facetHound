@@ -26,6 +26,28 @@ dedicated to the live BLD-510B RS-485 link.
 Use a FAT16/FAT32 card. Put `.asc` or `.fct` files in the card root. The browser
 intentionally ignores directories and other file types.
 
+## Geometry cache
+
+Before rebuilding a design, the base checks for a same-named `.fhc` file on the
+same card (`stone.asc` becomes `stone.fhc`). The versioned binary cache holds
+the parsed cuts and complete runtime planes, vertices, and edges. Its header
+stores the source file's exact byte count and CRC32, so editing or replacing the
+ASC automatically invalidates stale geometry. A missing, old, malformed, or
+mismatched cache is ignored safely; the normal parser and convex builder run,
+then the result is saved as a replacement `.fhc` when the card is writable.
+
+To prepare a card on a PC, use the folder converter:
+
+```text
+python tools/bulk_convert_gems.py D:\\facet-files
+python tools/bulk_convert_gems.py D:\\facet-files --recursive --force
+```
+
+By default each cache is written next to its `.asc`. `--output-dir PATH` puts
+the generated caches in another folder. The converter uses the repository's
+existing `gemUtils/gem_generator.py`, and continues through a bulk run while
+reporting any files that fail.
+
 ## GemCad `.asc`
 
 The on-Pico parser follows `gemLoader.py`: `g` sets the wheel resolution and

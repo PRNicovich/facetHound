@@ -369,6 +369,11 @@ bool gemSdFileNameAt(size_t index, char* output, size_t outputSize)
     return copyText(output, outputSize, leafName(path));
 }
 
+bool gemSdFilePathAt(size_t index, char* output, size_t outputSize)
+{
+    return findFile(index, output, outputSize);
+}
+
 GemSdResult loadGemSdFileAt(size_t index, GemSdDesign* design)
 {
     if (!design) return GemSdResult::OPEN_FAILED;

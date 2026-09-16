@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690">
+  <style>
+    .bg{fill:#10151b}.panel{fill:#19212a;stroke:#64717d;stroke-width:3}.key{fill:#303b46;stroke:#82909d;stroke-width:2}.menu{fill:#37482e}.reserved{fill:#292f35}.wheel{fill:#253b48;stroke:#68b9dd;stroke-width:3}.title{font:700 30px sans-serif;fill:#f2f5f7}.sub{font:16px sans-serif;fill:#aebbc6}.k{font:700 22px monospace;fill:#85e34d}.code{font:14px monospace;fill:#93a2ad}.action{font:15px sans-serif;fill:#fff}.note{font:14px sans-serif;fill:#b9c4cc}.arrow{font:700 24px sans-serif;fill:#68b9dd}
+  </style>
+  <rect class="bg" width="1200" height="690"/>
+  <text class="title" x="40" y="45">Facet Hound keyboard map — keyboardSettings.png layer 3</text>
+  <text class="sub" x="40" y="72">The keyboard bridge sends “D,&lt;USB HID usage&gt;\n” to base GPIO 6/7 at 115200 baud.</text>
+  <rect class="panel" x="30" y="95" width="650" height="480" rx="28"/>
+
+  <!-- 4 × 3 rectangular key bank -->
+  <g>
+    <rect class="key menu" x="60" y="125" width="130" height="110" rx="12"/><text class="k" x="75" y="153">A · HID 4</text><text class="action" x="75" y="180">SETTINGS</text><text class="note" x="75" y="202">open / back</text>
+    <rect class="key reserved" x="205" y="125" width="130" height="110" rx="12"/><text class="k" x="220" y="153">B · HID 5</text><text class="action" x="220" y="180">RESERVED</text><text class="note" x="220" y="202">wheel index is menu-only</text>
+    <rect class="key" x="350" y="125" width="130" height="110" rx="12"/><text class="k" x="365" y="153">C · HID 6</text><text class="action" x="365" y="180">offset marks</text><text class="note" x="365" y="202">menu: delete</text>
+    <rect class="key" x="495" y="125" width="130" height="110" rx="12"/><text class="k" x="510" y="153">D · HID 7</text><text class="action" x="510" y="180">Z lock toggle</text>
+
+    <rect class="key" x="60" y="250" width="130" height="110" rx="12"/><text class="k" x="75" y="278">E · HID 8</text><text class="action" x="75" y="305">add mark</text><text class="note" x="75" y="327">at target index</text>
+    <rect class="key" x="205" y="250" width="130" height="110" rx="12"/><text class="k" x="220" y="278">F · HID 9</text><text class="action" x="220" y="305">update mark</text>
+    <rect class="key" x="350" y="250" width="130" height="110" rx="12"/><text class="k" x="365" y="278">G · HID 10</text><text class="action" x="365" y="305">delete mark</text>
+    <rect class="key reserved" x="495" y="250" width="130" height="110" rx="12"/><text class="k" x="510" y="278">H · HID 11</text><text class="action" x="510" y="305">RESERVED</text><text class="note" x="510" y="327">menu: finer tier</text>
+
+    <rect class="key" x="60" y="375" width="130" height="110" rx="12"/><text class="k" x="75" y="403">I · HID 12</text><text class="action" x="75" y="430">next facet</text>
+    <rect class="key" x="205" y="375" width="130" height="110" rx="12"/><text class="k" x="220" y="403">J · HID 13</text><text class="action" x="220" y="430">previous facet</text>
+    <rect class="key" x="350" y="375" width="130" height="110" rx="12"/><text class="k" x="365" y="403">K · HID 14</text><text class="action" x="365" y="430">home selected</text>
+    <rect class="key" x="495" y="375" width="130" height="110" rx="12"/><text class="k" x="510" y="403">L · HID 15</text><text class="action" x="510" y="430">index lock</text>
+  </g>
+
+  <!-- Encoder/control groups -->
+  <rect class="panel" x="710" y="95" width="455" height="540" rx="28"/>
+  <text class="sub" x="735" y="126">ROTARY CONTROLS — PHYSICAL LAYOUT</text>
+
+  <!-- The two smaller top encoders sit beside each other. -->
+  <g transform="translate(730 160)">
+    <text class="action" x="55" y="0">LAP</text>
+    <text class="arrow" x="0" y="54">↶</text><text class="k" x="28" y="52">1</text><text class="note" x="0" y="82">RPM −</text>
+    <circle class="wheel" cx="95" cy="45" r="45"/><text class="k" x="84" y="43">2</text><text class="note" x="60" y="64">pause/dir</text>
+    <text class="k" x="158" y="52">3</text><text class="arrow" x="180" y="54">↷</text><text class="note" x="157" y="82">RPM +</text>
+  </g>
+  <g transform="translate(950 160)">
+    <text class="action" x="46" y="0">WATER</text>
+    <text class="arrow" x="0" y="54">↶</text><text class="k" x="28" y="52">4</text><text class="note" x="0" y="82">flow −</text>
+    <circle class="wheel" cx="95" cy="45" r="45"/><text class="k" x="84" y="43">5</text><text class="note" x="60" y="64">pause/dir</text>
+    <text class="k" x="158" y="52">6</text><text class="arrow" x="180" y="54">↷</text><text class="note" x="157" y="82">flow +</text>
+  </g>
+
+  <!-- Large Z encoder in the middle, large index encoder below it. -->
+  <g transform="translate(825 315)">
+    <text class="action" x="96" y="0">Z AXIS</text>
+    <text class="arrow" x="0" y="72">↶</text><text class="k" x="34" y="70">7</text><text class="note" x="0" y="100">Z down</text>
+    <circle class="wheel" cx="125" cy="60" r="60"/><text class="k" x="114" y="58">8</text><text class="note" x="110" y="82">step</text>
+    <text class="k" x="212" y="70">9</text><text class="arrow" x="238" y="72">↷</text><text class="note" x="210" y="100">Z up</text>
+  </g>
+  <g transform="translate(825 485)">
+    <text class="action" x="66" y="0">INDEX / MENU</text>
+    <text class="arrow" x="0" y="72">↶</text><text class="k" x="32" y="70">M</text><text class="note" x="0" y="100">index − / up</text>
+    <circle class="wheel" cx="125" cy="60" r="60"/><text class="k" x="114" y="58">N</text><text class="note" x="93" y="82">step/select</text>
+    <text class="k" x="210" y="70">O</text><text class="arrow" x="238" y="72">↷</text><text class="note" x="198" y="100">index + / down</text>
+  </g>
+
+  <text class="note" x="40" y="620">Encoder push behavior: lap/water single click toggles run/pause; double click changes direction.</text>
+  <text class="note" x="40" y="646">Settings suppresses machine motion: A=back, C=delete, H=finer, M/O=up/down, N=select.</text>
+  <text class="note" x="40" y="672">Source image: Software/keyboardSettings.png · Firmware: keyboardFunctions.cpp and baseChassisModule.ino</text>
+</svg>

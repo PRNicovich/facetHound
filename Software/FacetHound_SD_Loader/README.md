@@ -3,16 +3,11 @@
 This package contains the paired base and display firmware for loading GemCad
 designs from a microSD card through Display Settings.
 
-## Flash targets
+## Source targets
 
-- `firmware/baseChassisModule_Pico2_SD.uf2` is compiled for **Raspberry Pi
-  Pico 2 (RP2350)**.
-- `firmware/displayModule_Waveshare_RP2040_Zero_SD.uf2` is compiled for the
-  existing **Waveshare RP2040 Zero** display module with the HX8357D pin/setup
-  flags used by the source project.
-
-The complete Arduino sources are in `baseChassisModule/` and
-`displayModule_v6_gem/`.
+The complete Arduino sources are in `baseChassisModule/` for the Raspberry Pi
+Pico 2 base and `displayModule_v6_gem/` for the Waveshare RP2040 Zero display
+with the existing HX8357D wiring. No UF2 image is required in this source tree.
 
 ## SD hookup
 
@@ -32,6 +27,13 @@ Use a FAT16/FAT32 card. Put `.asc` or `.fct` files in its root, insert it, then
 open **Settings -> Load SD design**. Scroll with the twist wheel and click to
 load. The existing next/previous mark controls then walk the file's cuts in
 GemCad order and home the index axis to the selected cut.
+
+On first load the base looks for a same-named `.fhc` geometry cache. A cache is
+used only when its format version, source byte count, and source CRC32 match.
+Otherwise the Pico rebuilds the geometry and writes a fresh cache beside the
+source. For example, `round.asc` produces `round.fhc`. Prebuild one file or a
+whole folder on a PC with `tools/bulk_convert_gems.py` so the Pico only needs to
+validate and load the cache.
 
 Classic mode shows `T<tier> F<facet>`, signed target angle, and index in the
 mark row. Dynamic/static gem modes show the loaded title and target angle/index
@@ -56,13 +58,15 @@ polarity, flow conversion calibration in mL/min per raw flow tick, and a Special
 Commands page for signed 0.01-10 RPM constant index spin. Spin stops on page
 exit and times out if the display keepalive disappears.
 
-See `baseChassisModule/SD_GEM_LOADER.md` for the parser behavior, `.fct`
-coordinate format, limits, and serial protocol.
+See `baseChassisModule/SD_GEM_LOADER.md` for the parser behavior, cache format,
+`.fct` coordinate format, limits, and serial protocol. See
+`baseChassisModule/BASE_WIRING_AND_TEST.md` for the full pin map, dedicated
+keyboard UART, and USB CDC bench console.
 
 ## Verification
 
 - Base source compiled with Arduino-Pico 5.6.0 for Raspberry Pi Pico 2:
-  165,708 bytes flash; 16,224 bytes static RAM.
+  172,676 bytes flash; 16,392 bytes static RAM.
 - Display source compiled with Arduino-Pico 5.6.0 and the existing HX8357D
   flags: 406,464 bytes flash; 25,120 bytes static RAM.
 - The reference `gemLoader.py` was exercised against nine supplied ASC

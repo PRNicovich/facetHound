@@ -434,10 +434,6 @@ void handleKey(SystemState* S, uint8_t key)
 {
     switch (key)
     {
-        case 5:
-            incrementWheelIndex(S);
-            break;
-
         case 6:
             toggleCheatMode(S);
             break;

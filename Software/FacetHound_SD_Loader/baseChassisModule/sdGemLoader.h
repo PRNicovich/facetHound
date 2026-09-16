@@ -54,5 +54,6 @@ bool beginGemSd();
 bool gemSdReady();
 size_t gemSdFileCount();
 bool gemSdFileNameAt(size_t index, char* output, size_t outputSize);
+bool gemSdFilePathAt(size_t index, char* output, size_t outputSize);
 GemSdResult loadGemSdFileAt(size_t index, GemSdDesign* design);
 const char* gemSdResultText(GemSdResult result);

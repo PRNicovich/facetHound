@@ -10,6 +10,7 @@
 #include "keyboardFunctions.h"
 #include "sdGemLoader.h"
 #include "gemGeometry.h"
+#include "gemCache.h"
 
 SerialPIO keysSerial(7, 6);
 SerialPIO dispSerial(5, 4);
@@ -20,6 +21,7 @@ GemSdDesign activeGemDesign;
 GemRuntimeGeometry activeGemGeometry;
 bool activeGemLoaded = false;
 int lastJobCutSent = -1;
+char activeGemCacheStatus[20] = "NONE";
 
 static const float TWIST_ENCODER_COUNTS = 4096.0f;
 
@@ -42,9 +44,19 @@ uint8_t keyIdx = 0;
 char dispBuf[128];
 uint8_t dispIdx = 0;
 
+char usbBuf[128];
+uint8_t usbIdx = 0;
+uint32_t keyRxCount = 0;
+uint32_t displayRxCount = 0;
+uint32_t usbRxCount = 0;
+bool usbStateStream = false;
+uint32_t usbStatePeriodMs = 250;
+uint32_t lastUsbStateMs = 0;
+
 bool settingsMenuOpen = false;
 
-static const uint8_t MENU_TOGGLE_KEY = 5;
+// keyboardSettings.png programs the physical top-left key as HID A (usage 4).
+static const uint8_t MENU_TOGGLE_KEY = 4;
 static const uint8_t MENU_DELETE_KEY = 6;
 // The former servo key is available for the second edit-tier direction.
 static const uint8_t MENU_TIER_FINER_KEY = 11;
@@ -536,6 +548,7 @@ static void sendConfigSnapshot()
     sendCfgCount("MESH_EDGE_COUNT", activeGemGeometry.edges.size());
     sendCfgCount("MESH_PLANE_COUNT", activeGemGeometry.planes.size());
     sendCfgText("SD_STATUS", gemSdReady() ? "READY" : "NO_CARD");
+    sendCfgText("GEM_CACHE", activeGemCacheStatus);
     if (activeGemLoaded)
     {
         char title[GEM_SD_TITLE_LENGTH] = {};
@@ -820,20 +833,46 @@ static void applyConfigAction(char* actionText)
             return;
         }
 
-        GemSdDesign candidate;
-        GemSdResult result = loadGemSdFileAt(size_t(index), &candidate);
-        if (result != GemSdResult::OK)
+        char sourcePath[GEM_SD_FILE_NAME_LENGTH] = {};
+        if (!gemSdFilePathAt(size_t(index), sourcePath, sizeof(sourcePath)))
         {
-            sendCfgNak(action, gemSdResultText(result));
+            sendCfgNak(action, "OPEN_FAILED");
             return;
         }
 
+        GemSdDesign candidate;
         GemRuntimeGeometry candidateGeometry;
-        GemGeometryResult geometryResult = buildGemGeometry(candidate, &candidateGeometry);
-        if (geometryResult != GemGeometryResult::OK)
+        GemCacheResult cacheResult = loadGemCache(sourcePath, &candidate,
+                                                  &candidateGeometry);
+        if (cacheResult == GemCacheResult::OK)
         {
-            sendCfgNak(action, gemGeometryResultText(geometryResult));
-            return;
+            snprintf(activeGemCacheStatus, sizeof(activeGemCacheStatus), "LOADED");
+        }
+        else
+        {
+            GemSdResult result = loadGemSdFileAt(size_t(index), &candidate);
+            if (result != GemSdResult::OK)
+            {
+                sendCfgNak(action, gemSdResultText(result));
+                return;
+            }
+
+            GemGeometryResult geometryResult = buildGemGeometry(candidate,
+                                                                 &candidateGeometry);
+            if (geometryResult != GemGeometryResult::OK)
+            {
+                sendCfgNak(action, gemGeometryResultText(geometryResult));
+                return;
+            }
+
+            GemCacheResult saveResult = saveGemCache(sourcePath, candidate,
+                                                      candidateGeometry);
+            snprintf(activeGemCacheStatus, sizeof(activeGemCacheStatus),
+                     saveResult == GemCacheResult::OK ? "BUILT_SAVED" : "BUILT_ONLY");
+            Serial.print("CACHE ");
+            Serial.print(gemCacheResultText(cacheResult));
+            Serial.print(" -> ");
+            Serial.println(gemCacheResultText(saveResult));
         }
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));
@@ -843,6 +882,7 @@ static void applyConfigAction(char* actionText)
         sendCfgText("SD_ACTIVE", title);
         sendCfgCount("SD_CUT_COUNT", activeGemDesign.cuts.size());
         sendCfgCount("SD_TIER_COUNT", activeGemDesign.tierCount);
+        sendCfgText("GEM_CACHE", activeGemCacheStatus);
         sendCfgFloat("WHEEL_INDEX", S.wheelIndex);
         sendCfgCount("POSITION_COUNT", S.markPoints.size());
         sendActiveCut(true);
@@ -857,6 +897,7 @@ void displayRxTask()
     while (dispSerial.available())
     {
         char c = dispSerial.read();
+        displayRxCount++;
 
         if (c == '\r')
             continue;
@@ -956,11 +997,264 @@ void displayRxTask()
     }
 }
 
+static void sendUsbState()
+{
+    Serial.print("@STATE,");
+    Serial.print(millis());
+    Serial.print(",tip="); Serial.print(S.tipDegrees, 3);
+    Serial.print(",target="); Serial.print(S.targetTwist, 4);
+    Serial.print(",actual="); Serial.print(S.actualTwist, 4);
+    Serial.print(",error="); Serial.print(S.twistError, 4);
+    Serial.print(",z_mm="); Serial.print(S.zMM, 4);
+    Serial.print(",rpm_set="); Serial.print(S.RPMSetpoint);
+    Serial.print(",rpm_actual="); Serial.print(S.RPMValue);
+    Serial.print(",flow="); Serial.print(S.flowSetpoint, 2);
+    Serial.print(",force="); Serial.print(S.forceValue, 1);
+    Serial.print(",twist_lock="); Serial.print(S.twistLock);
+    Serial.print(",z_lock="); Serial.print(S.zLock);
+    Serial.print(",motor_dir="); Serial.print(S.motorDir);
+    Serial.print(",flow_dir="); Serial.print(S.flow_dir);
+    Serial.print(",mark="); Serial.print(S.markIdx + 1);
+    Serial.print("/"); Serial.print(S.markPoints.size());
+    Serial.print(",sd="); Serial.print(gemSdReady() ? "ready" : "missing");
+    Serial.print(",gem=");
+    Serial.println(activeGemLoaded ? activeGemDesign.fileName : "none");
+
+    Serial.print("@IO,mast_rx="); Serial.print(S.mastRxCount);
+    Serial.print(",key_rx="); Serial.print(keyRxCount);
+    Serial.print(",display_rx="); Serial.print(displayRxCount);
+    Serial.print(",usb_rx="); Serial.println(usbRxCount);
+}
+
+static void stopAllFromUsb()
+{
+    hardStopTwist(S);
+    S.zLock = 0;
+    hardStopZ();
+    S.RPMSetpoint = 0;
+    S.flowSetpoint = 0.0f;
+    S.flow_dir = 1;
+    S.dirty = true;
+}
+
+static void printUsbHelp()
+{
+    Serial.println("@HELP,STATUS | STREAM ON [ms] | STREAM OFF");
+    Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
+    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF | FLOW <0..750>");
+    Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
+}
+
+static void routeKeyboardKey(uint8_t key)
+{
+    if (!settingsMenuOpen && key == MENU_TOGGLE_KEY)
+    {
+        sendDisplayLine("@MENU,1");
+    }
+    else if (settingsMenuOpen)
+    {
+        if (key == MENU_TOGGLE_KEY)
+            sendDisplayLine("@MENUKEY,BACK");
+        else if (key == MENU_DELETE_KEY)
+            sendDisplayLine("@MENUKEY,DELETE");
+        else if (key == MENU_TIER_FINER_KEY)
+            sendDisplayLine("@MENUKEY,FINER");
+        else if (key == TWIST_WHEEL_CCW_KEY)
+            sendDisplayLine("@MENUKEY,UP");
+        else if (key == TWIST_WHEEL_CW_KEY)
+            sendDisplayLine("@MENUKEY,DOWN");
+        else if (key == TWIST_WHEEL_CLICK_KEY)
+            sendDisplayLine("@MENUKEY,SELECT");
+        // Machine-motion keys are intentionally suppressed in menus.
+    }
+    else
+    {
+        handleKey(&S, key);
+    }
+}
+
+static void handleUsbCommand(char* line)
+{
+    char* save = nullptr;
+    char* command = strtok_r(line, " \t", &save);
+    if (!command) return;
+
+    if (!strcasecmp(command, "HELP"))
+    {
+        printUsbHelp();
+        return;
+    }
+    if (!strcasecmp(command, "STATUS"))
+    {
+        sendUsbState();
+        return;
+    }
+    if (!strcasecmp(command, "STREAM"))
+    {
+        char* mode = strtok_r(nullptr, " \t", &save);
+        if (mode && !strcasecmp(mode, "ON"))
+        {
+            long period = long(usbStatePeriodMs);
+            char* periodText = strtok_r(nullptr, " \t", &save);
+            if (periodText && !parseStrictLong(periodText, &period)) period = 250;
+            usbStatePeriodMs = uint32_t(constrain(period, 50L, 5000L));
+            usbStateStream = true;
+            lastUsbStateMs = 0;
+            Serial.println("@ACK,STREAM,ON");
+        }
+        else if (mode && !strcasecmp(mode, "OFF"))
+        {
+            usbStateStream = false;
+            Serial.println("@ACK,STREAM,OFF");
+        }
+        else Serial.println("@ERR,STREAM,expected ON [ms] or OFF");
+        return;
+    }
+    if (!strcasecmp(command, "KEY"))
+    {
+        long key = -1;
+        char* value = strtok_r(nullptr, " \t", &save);
+        if (!value || !parseStrictLong(value, &key) || key < 0 || key > 255)
+            Serial.println("@ERR,KEY,expected HID code 0..255");
+        else
+        {
+            routeKeyboardKey(uint8_t(key));
+            Serial.print("@ACK,KEY,"); Serial.println(key);
+        }
+        return;
+    }
+    if (!strcasecmp(command, "JOG"))
+    {
+        char* axis = strtok_r(nullptr, " \t", &save);
+        char* valueText = strtok_r(nullptr, " \t", &save);
+        if (!axis || !valueText)
+        {
+            Serial.println("@ERR,JOG,expected TWIST <units> or Z <steps>");
+            return;
+        }
+        if (!strcasecmp(axis, "TWIST"))
+        {
+            float delta = 0.0f;
+            if (!parseStrictFloat(valueText, &delta))
+            {
+                Serial.println("@ERR,JOG,bad twist delta");
+                return;
+            }
+            const float start = S.twistReady ? S.actualTwist : S.targetTwist;
+            S.targetTwist = wrapPositive(start + delta, S.wheelIndex);
+            S.targetValid = true;
+            S.twistLock = 1;
+            notifyTwistTargetChanged();
+            S.dirty = true;
+            Serial.print("@ACK,JOG,TWIST,"); Serial.println(S.targetTwist, 4);
+        }
+        else if (!strcasecmp(axis, "Z"))
+        {
+            long steps = 0;
+            if (!parseStrictLong(valueText, &steps) || steps == 0)
+            {
+                Serial.println("@ERR,JOG,bad Z steps");
+                return;
+            }
+            S.zLock = 1;
+            requestZMove(steps * S.zSign);
+            S.dirty = true;
+            Serial.print("@ACK,JOG,Z,"); Serial.println(steps);
+        }
+        else Serial.println("@ERR,JOG,unknown axis");
+        return;
+    }
+    if (!strcasecmp(command, "RPM") || !strcasecmp(command, "FLOW"))
+    {
+        float value = 0.0f;
+        char* valueText = strtok_r(nullptr, " \t", &save);
+        if (!valueText || !parseStrictFloat(valueText, &value))
+        {
+            Serial.println("@ERR,VALUE,bad number");
+            return;
+        }
+        if (!strcasecmp(command, "RPM"))
+        {
+            S.RPMSetpoint = constrain(int(lroundf(value)), RPM_LIMIT_LOW, RPM_LIMIT_HIGH);
+            Serial.print("@ACK,RPM,"); Serial.println(S.RPMSetpoint);
+        }
+        else
+        {
+            S.flowSetpoint = constrain(value, 0.0f, 750.0f);
+            Serial.print("@ACK,FLOW,"); Serial.println(S.flowSetpoint, 2);
+        }
+        S.dirty = true;
+        return;
+    }
+    if (!strcasecmp(command, "MOTOR") || !strcasecmp(command, "PUMP"))
+    {
+        char* mode = strtok_r(nullptr, " \t", &save);
+        if (!mode)
+        {
+            Serial.println("@ERR,MODE,missing direction");
+            return;
+        }
+        if (!strcasecmp(command, "MOTOR"))
+        {
+            if (!strcasecmp(mode, "CW")) S.motorDir = 1;
+            else if (!strcasecmp(mode, "CCW")) S.motorDir = 3;
+            else if (!strcasecmp(mode, "OFF")) S.RPMSetpoint = 0;
+            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF"); return; }
+            Serial.println("@ACK,MOTOR");
+        }
+        else
+        {
+            if (!strcasecmp(mode, "FWD")) S.flow_dir = 2;
+            else if (!strcasecmp(mode, "REV")) S.flow_dir = 0;
+            else if (!strcasecmp(mode, "OFF")) S.flow_dir = 1;
+            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF"); return; }
+            Serial.println("@ACK,PUMP");
+        }
+        S.dirty = true;
+        return;
+    }
+    if (!strcasecmp(command, "STOP"))
+    {
+        stopAllFromUsb();
+        Serial.println("@ACK,STOP");
+        return;
+    }
+    Serial.println("@ERR,UNKNOWN,use HELP");
+}
+
+void usbDiagnosticTask()
+{
+    while (Serial.available())
+    {
+        char c = char(Serial.read());
+        usbRxCount++;
+        if (c == '\r') continue;
+        if (c == '\n')
+        {
+            usbBuf[usbIdx] = '\0';
+            if (usbIdx) handleUsbCommand(usbBuf);
+            usbIdx = 0;
+        }
+        else if (usbIdx < sizeof(usbBuf) - 1)
+            usbBuf[usbIdx++] = c;
+        else
+            usbIdx = 0;
+    }
+
+    const uint32_t now = millis();
+    if (usbStateStream && now - lastUsbStateMs >= usbStatePeriodMs)
+    {
+        lastUsbStateMs = now;
+        sendUsbState();
+    }
+}
+
 void keyboardTask()
 {
     while (keysSerial.available())
     {
         char c = keysSerial.read();
+        keyRxCount++;
 
         if (c == '\r')
             continue;
@@ -973,31 +1267,9 @@ void keyboardTask()
             if (keyBuf[0] == 'D')
             {
                 int key = atoi(&keyBuf[2]);
+                Serial.print("@KEY,"); Serial.println(key);
 
-                if (!settingsMenuOpen && key == MENU_TOGGLE_KEY)
-                {
-                    sendDisplayLine("@MENU,1");
-                }
-                else if (settingsMenuOpen)
-                {
-                    if (key == MENU_TOGGLE_KEY)
-                        sendDisplayLine("@MENUKEY,BACK");
-                    else if (key == MENU_DELETE_KEY)
-                        sendDisplayLine("@MENUKEY,DELETE");
-                    else if (key == MENU_TIER_FINER_KEY)
-                        sendDisplayLine("@MENUKEY,FINER");
-                    else if (key == TWIST_WHEEL_CCW_KEY)
-                        sendDisplayLine("@MENUKEY,UP");
-                    else if (key == TWIST_WHEEL_CW_KEY)
-                        sendDisplayLine("@MENUKEY,DOWN");
-                    else if (key == TWIST_WHEEL_CLICK_KEY)
-                        sendDisplayLine("@MENUKEY,SELECT");
-                    // Machine-motion keys are intentionally suppressed in menus.
-                }
-                else
-                {
-                    handleKey(&S, uint8_t(key));
-                }
+                routeKeyboardKey(uint8_t(key));
             }
         }
         else if (keyIdx < sizeof(keyBuf) - 1)
@@ -1299,6 +1571,7 @@ void loop()
     mastTask();
     displayRxTask();
     keyboardTask();
+    usbDiagnosticTask();
 
     twistWatchdogTask();
     pollDoubleClick(&S);
