@@ -1045,6 +1045,52 @@ static void printUsbHelp()
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
 }
 
+static bool selectAdjacentGemTier(bool forward)
+{
+    const size_t count = min(activeGemDesign.cuts.size(), S.markPoints.size());
+    if (!activeGemLoaded || count == 0) return false;
+
+    size_t current = S.markIdx >= 0 ? size_t(S.markIdx) : 0;
+    if (current >= count) current = 0;
+    const uint16_t currentTier = activeGemDesign.cuts[current].tier;
+
+    size_t currentTierStart = current;
+    while (currentTierStart > 0 &&
+           activeGemDesign.cuts[currentTierStart - 1].tier == currentTier)
+        --currentTierStart;
+
+    size_t nextTierStart = 0;
+    if (forward)
+    {
+        nextTierStart = currentTierStart;
+        while (nextTierStart < count &&
+               activeGemDesign.cuts[nextTierStart].tier == currentTier)
+            ++nextTierStart;
+        if (nextTierStart >= count) nextTierStart = 0;
+    }
+    else if (currentTierStart == 0)
+    {
+        nextTierStart = count - 1;
+        const uint16_t previousTier = activeGemDesign.cuts[nextTierStart].tier;
+        while (nextTierStart > 0 &&
+               activeGemDesign.cuts[nextTierStart - 1].tier == previousTier)
+            --nextTierStart;
+    }
+    else
+    {
+        nextTierStart = currentTierStart - 1;
+        const uint16_t previousTier = activeGemDesign.cuts[nextTierStart].tier;
+        while (nextTierStart > 0 &&
+               activeGemDesign.cuts[nextTierStart - 1].tier == previousTier)
+            --nextTierStart;
+    }
+
+    S.markIdx = int(nextTierStart);
+    homeMarkPoint(&S);
+    sendActiveCut(true);
+    return true;
+}
+
 static void routeKeyboardKey(uint8_t key)
 {
     if (!settingsMenuOpen && key == MENU_TOGGLE_KEY)
@@ -1069,7 +1115,12 @@ static void routeKeyboardKey(uint8_t key)
     }
     else
     {
-        handleKey(&S, key);
+        if (key == 5)
+            selectAdjacentGemTier(true);
+        else if (key == 6)
+            selectAdjacentGemTier(false);
+        else
+            handleKey(&S, key);
     }
 }
 

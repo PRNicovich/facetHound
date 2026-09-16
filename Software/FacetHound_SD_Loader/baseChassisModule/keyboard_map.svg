@@ -10,14 +10,14 @@
   <!-- 4 × 3 rectangular key bank -->
   <g>
     <rect class="key menu" x="60" y="125" width="130" height="110" rx="12"/><text class="k" x="75" y="153">A · HID 4</text><text class="action" x="75" y="180">SETTINGS</text><text class="note" x="75" y="202">open / back</text>
-    <rect class="key reserved" x="205" y="125" width="130" height="110" rx="12"/><text class="k" x="220" y="153">B · HID 5</text><text class="action" x="220" y="180">RESERVED</text><text class="note" x="220" y="202">wheel index is menu-only</text>
-    <rect class="key" x="350" y="125" width="130" height="110" rx="12"/><text class="k" x="365" y="153">C · HID 6</text><text class="action" x="365" y="180">offset marks</text><text class="note" x="365" y="202">menu: delete</text>
+    <rect class="key" x="205" y="125" width="130" height="110" rx="12"/><text class="k" x="220" y="153">B · HID 5</text><text class="action" x="220" y="180">next tier</text><text class="note" x="220" y="202">first listed facet</text>
+    <rect class="key" x="350" y="125" width="130" height="110" rx="12"/><text class="k" x="365" y="153">C · HID 6</text><text class="action" x="365" y="180">previous tier</text><text class="note" x="365" y="202">menu: delete</text>
     <rect class="key" x="495" y="125" width="130" height="110" rx="12"/><text class="k" x="510" y="153">D · HID 7</text><text class="action" x="510" y="180">Z lock toggle</text>
 
     <rect class="key" x="60" y="250" width="130" height="110" rx="12"/><text class="k" x="75" y="278">E · HID 8</text><text class="action" x="75" y="305">add mark</text><text class="note" x="75" y="327">at target index</text>
     <rect class="key" x="205" y="250" width="130" height="110" rx="12"/><text class="k" x="220" y="278">F · HID 9</text><text class="action" x="220" y="305">update mark</text>
     <rect class="key" x="350" y="250" width="130" height="110" rx="12"/><text class="k" x="365" y="278">G · HID 10</text><text class="action" x="365" y="305">delete mark</text>
-    <rect class="key reserved" x="495" y="250" width="130" height="110" rx="12"/><text class="k" x="510" y="278">H · HID 11</text><text class="action" x="510" y="305">RESERVED</text><text class="note" x="510" y="327">menu: finer tier</text>
+    <rect class="key" x="495" y="250" width="130" height="110" rx="12"/><text class="k" x="510" y="278">H · HID 11</text><text class="action" x="510" y="305">offset marks</text><text class="note" x="510" y="327">menu: finer tier</text>
 
     <rect class="key" x="60" y="375" width="130" height="110" rx="12"/><text class="k" x="75" y="403">I · HID 12</text><text class="action" x="75" y="430">next facet</text>
     <rect class="key" x="205" y="375" width="130" height="110" rx="12"/><text class="k" x="220" y="403">J · HID 13</text><text class="action" x="220" y="430">previous facet</text>

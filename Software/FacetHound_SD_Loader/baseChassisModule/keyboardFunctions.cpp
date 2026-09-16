@@ -434,7 +434,7 @@ void handleKey(SystemState* S, uint8_t key)
 {
     switch (key)
     {
-        case 6:
+        case 11:
             toggleCheatMode(S);
             break;
 

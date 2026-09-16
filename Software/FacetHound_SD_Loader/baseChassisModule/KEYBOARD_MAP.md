@@ -12,13 +12,13 @@ The Pico's native USB port is reserved for the optional PC diagnostic console.
 | Physical | HID | Normal mode | Settings mode | Firmware action |
 |---|---:|---|---|---|
 | A (top-left) | 4 | Open Settings | Back/close | `MENU_TOGGLE_KEY` |
-| B | 5 | Reserved | Reserved | Wheel index moved to Settings |
-| C | 6 | Offset all marks (cheat) | Delete item | `toggleCheatMode()` |
+| B | 5 | Next tier, first listed facet | Suppressed | `selectAdjacentGemTier(true)` |
+| C | 6 | Previous tier, first listed facet | Delete item | `selectAdjacentGemTier(false)` |
 | D | 7 | Toggle Z lock | Suppressed | `toggleZLock()` |
 | E | 8 | Add mark at target index | Suppressed | `addPositionToList()` |
 | F | 9 | Update selected mark | Suppressed | `updatePositionInList()` |
 | G | 10 | Delete selected mark | Suppressed | `deletePositionInList()` |
-| H | 11 | Reserved | Finer edit tier | `MENU_TIER_FINER_KEY` |
+| H | 11 | Offset all marks | Finer edit tier | `toggleCheatMode()` / `MENU_TIER_FINER_KEY` |
 | I | 12 | Next facet/mark | Suppressed | `changeMarkPointIndex(true)` |
 | J | 13 | Previous facet/mark | Suppressed | `changeMarkPointIndex(false)` |
 | K | 14 | Home selected facet/mark | Suppressed | `homeMarkPoint()` |
