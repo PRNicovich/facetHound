@@ -83,8 +83,13 @@ client should read values by name rather than fixed column position.
 The following `@IO` record contains cumulative received-byte counters:
 
 ```text
-@IO,mast_rx=1234,key_rx=37,display_rx=8912,usb_rx=44
+@IO,mast_rx=1234,key_rx=37,display_rx=8912,display_link=up,display_age_ms=237,usb_rx=44
 ```
+
+The display sends an idle heartbeat once per second, so `display_rx` increases
+even when its encoder is stationary. `display_link` is `up` when a byte arrived
+from the display in the last 2.5 seconds; `display_age_ms` is the time since the
+most recent byte (`0` means none has ever arrived).
 
 `@KEY,<hid>` is emitted whenever a key arrives from the physical keyboard
 UART. It allows a PC supervisory application to observe operator input without

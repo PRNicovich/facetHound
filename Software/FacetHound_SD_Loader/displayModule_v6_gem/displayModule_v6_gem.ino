@@ -135,6 +135,7 @@ bool linkAlive = false;
 uint32_t telemetryVersion = 0;
 DisplayMode displayMode = DisplayMode::CLASSIC;
 bool restoreDisplayPending = false;
+bool usbDemoMode = false;
 
 static const uint32_t DISPLAY_BAUD = 460800;
 static const uint16_t RX_BYTE_BUDGET = 320;
@@ -1506,12 +1507,27 @@ void setup()
   Serial.begin(115200);
   baseSerial.begin(DISPLAY_BAUD);
 
+  // The animated title card is useful on the bench, but it should not hold up
+  // an installed display.  Treat USB mode as an actively opened CDC port, not
+  // merely USB power being present.  A short window lets the host finish CDC
+  // enumeration after reset without adding much delay to an instrument boot.
+  const uint32_t usbDetectStarted = millis();
+  while (!Serial && millis() - usbDetectStarted < 750)
+  {
+    delay(5);
+    yield();
+  }
+  usbDemoMode = bool(Serial);
+
   EEPROM.begin(256);
   displayMode = loadDisplayMode();
 
   tft.init();
   tft.setRotation(2);
-  drawSplashScreen();
+  if (usbDemoMode)
+    drawSplashScreen();
+  else
+    tft.fillScreen(TFT_BLACK);
 
   if (displayMode == DisplayMode::CLASSIC)
   {
@@ -1527,6 +1543,9 @@ void setup()
   delay(50);
 
   systemReady = true;
+  baseSerial.println("@HELLO,DISPLAY");
+  if (usbDemoMode)
+    Serial.println("@HELLO,DISPLAY,USB_DEMO");
   sendLineBoth("@CFGGET,MESH");
 }
 
@@ -1534,6 +1553,16 @@ void loop()
 {
   rxUpdate();
   sendEncoder();
+
+  // This heartbeat gives the base a continuous, non-motion-dependent way to
+  // verify the display-to-base half of the UART.  Encoder traffic alone is not
+  // sufficient because a stationary encoder sends nothing.
+  static uint32_t lastDisplayHeartbeat = 0;
+  if (millis() - lastDisplayHeartbeat >= 1000)
+  {
+    baseSerial.println("@HELLO,DISPLAY");
+    lastDisplayHeartbeat = millis();
+  }
 
   static uint32_t lastIndexSpinKeepalive = 0;
   if (settingsMenu.isOpen() && settingsMenu.indexSpinRunning() &&

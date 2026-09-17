@@ -28,9 +28,9 @@ integration changes.
 
 | Controller | Flash | Static RAM |
 |---|---:|---:|
-| Base | 172,876 bytes | 16,392 bytes |
+| Base | 173,236 bytes | 16,400 bytes |
 | Mast | 60,972 bytes | 9,672 bytes |
-| Display | 392,832 bytes | 29,228 bytes |
+| Display | 393,024 bytes | 29,232 bytes |
 | Keyboard USB host | 90,308 bytes | 33,004 bytes |
 
 ## Inter-controller links
@@ -42,6 +42,25 @@ All logic UARTs are 3.3 V TTL and require a shared ground.
 | Keyboard bridge to base | bridge TX0 -> base RX6; bridge RX1 <- base TX7 | 115200 |
 | Mast to base | mast TX8 -> base RX2; mast RX9 <- base TX3 | 115200 |
 | Display to base | display TX8 -> base RX4; display RX9 <- base TX5 | 460800 |
+
+### V8 connector pin order
+
+The GPIO mapping above describes signal direction.  The physical connector pin
+order is equally important:
+
+| Connector | Pin 1 | Pin 2 | Pin 3 | Pin 4 |
+|---|---|---|---|---|
+| Base `DISPLAY` | supply | base RX4 | base TX5 | GND |
+| Display-board UART end | GND | display RX9 | display TX8 | supply |
+| Base `MAST` | supply | base RX2 | base TX3 | GND |
+| Mast-board UART end | GND | mast RX9 | mast TX8 | supply |
+| Base `KEYS` | supply | base RX6 | base TX7 | GND |
+| USB-host board | supply | bridge TX0 | bridge RX1 | GND |
+
+Therefore the display and mast cables reverse all four conductors
+(`1->4, 2->3, 3->2, 4->1`).  The keyboard USB-host cable is straight through
+(`1->1, 2->2, 3->3, 4->4`).  Verify connector pin numbers with continuity;
+do not infer them from wire color or from which side of a housing is visible.
 
 Do not join the modules through a PCB with a suspected rail short. Validate the
 PCB rails first, then add these links one at a time as described in the

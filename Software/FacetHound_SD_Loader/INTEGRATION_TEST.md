@@ -71,13 +71,23 @@ UART and verify each line begins with `@` and ends with newline.
 ## 4. Add display, keyboard, and SD
 
 1. Add the display UART: base TX5 to display RX9, base RX4 from display TX8,
-   plus common ground. The display link is 460800 baud.
+   plus common ground. The display link is 460800 baud. On the v8 PCBs the
+   four-conductor cable is fully reversed: base connector pins 1/2/3/4 land on
+   display connector pins 4/3/2/1. Confirm that mapping with continuity before
+   applying power.
 2. Confirm telemetry appears in Classic, Dynamic, and Static modes.
 3. Add the dedicated keyboard bridge UART: bridge TX0 to base RX6 and bridge
    RX1 to base TX7. Verify A opens Settings, B/C change tiers, H offsets marks,
    and the twist wheel operates the menu.
 4. Add the SD reader on base GPIO8-11 and load a known ASC/FHC pair. Confirm the
    loaded facet, target tip/index, dynamic highlight, and tier buttons agree.
+
+With the base USB console open, send `STATUS`. A healthy display return path
+reports `display_link=up`; repeated `STATUS` calls about a second apart show
+`display_rx` increasing because the display sends a heartbeat. If the display
+updates but `display_link=down`, only the base-to-display direction works. If
+the display stays stale but `display_link=up`, only display-to-base works or the
+base TX/display RX conductor is wrong.
 
 ## 5. Add motion last
 

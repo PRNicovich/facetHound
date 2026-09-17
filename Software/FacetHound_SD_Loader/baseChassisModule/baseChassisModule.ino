@@ -49,6 +49,8 @@ uint8_t usbIdx = 0;
 uint32_t keyRxCount = 0;
 uint32_t displayRxCount = 0;
 uint32_t usbRxCount = 0;
+uint32_t lastDisplayRxMs = 0;
+bool displayLinkReported = false;
 bool usbStateStream = false;
 uint32_t usbStatePeriodMs = 250;
 uint32_t lastUsbStateMs = 0;
@@ -916,6 +918,16 @@ void displayRxTask()
             const char* key = dispBuf + 1;
             char* valueText = comma + 1;
 
+            // Count raw bytes separately, but declare the link healthy only
+            // after receiving a correctly framed protocol line.  This keeps a
+            // floating or wrong-baud RX pin from looking like a valid link.
+            lastDisplayRxMs = millis();
+            if (!displayLinkReported)
+            {
+                displayLinkReported = true;
+                Serial.println("@LINK,DISPLAY,RX_ACTIVE");
+            }
+
             if (!strcmp(key, "ZENC"))
             {
                 long raw = 0;
@@ -985,6 +997,12 @@ void displayRxTask()
             {
                 applyConfigAction(valueText);
             }
+            else if (!strcmp(key, "HELLO") && !strcasecmp(valueText, "DISPLAY"))
+            {
+                // The regular base telemetry is already the display's return
+                // heartbeat.  Keep HELLO side-effect free so reconnecting a
+                // display cannot change machine state.
+            }
         }
         else if (dispIdx < sizeof(dispBuf) - 1)
         {
@@ -1023,6 +1041,10 @@ static void sendUsbState()
     Serial.print("@IO,mast_rx="); Serial.print(S.mastRxCount);
     Serial.print(",key_rx="); Serial.print(keyRxCount);
     Serial.print(",display_rx="); Serial.print(displayRxCount);
+    Serial.print(",display_link=");
+    Serial.print(lastDisplayRxMs && millis() - lastDisplayRxMs < 2500 ? "up" : "down");
+    Serial.print(",display_age_ms=");
+    Serial.print(lastDisplayRxMs ? millis() - lastDisplayRxMs : 0);
     Serial.print(",usb_rx="); Serial.println(usbRxCount);
 }
 
@@ -1615,6 +1637,8 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
+    Serial.println("DISPLAY UART: base TX5 -> display RX9; display TX8 -> base RX4; 460800 baud");
+    Serial.println("Send STATUS or STREAM ON 500 to inspect link counters");
 }
 
 void loop()
