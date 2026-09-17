@@ -10,7 +10,9 @@
 namespace
 {
 bool sdReady = false;
+GemSdDiagnostics sdDiagnostics;
 SoftwareSPI gemSdSpi(GEM_SD_SCK_PIN, GEM_SD_MISO_PIN, GEM_SD_MOSI_PIN);
+constexpr uint32_t SD_RETRY_INTERVAL_MS = 1000;
 
 bool supportedName(const char* name)
 {
@@ -33,18 +35,33 @@ bool copyText(char* output, size_t outputSize, const char* input)
     return strlen(input) < outputSize;
 }
 
-bool reopenCard()
+bool reopenCard(bool force = false)
 {
     if (sdReady) return true;
+    const uint32_t now = millis();
+    if (!force && sdDiagnostics.beginAttempts &&
+        now - sdDiagnostics.lastAttemptMs < SD_RETRY_INTERVAL_MS)
+        return false;
+
     digitalWrite(GEM_SD_CS_PIN, HIGH);
+    sdDiagnostics.beginAttempts++;
+    sdDiagnostics.lastAttemptMs = now;
     sdReady = SD.begin(GEM_SD_CS_PIN, gemSdSpi);
+    sdDiagnostics.ready = sdReady;
+    sdDiagnostics.rootChecked = false;
+    sdDiagnostics.rootReadable = false;
+    if (sdReady) sdDiagnostics.beginSuccesses++;
     return sdReady;
 }
 
 File openRoot()
 {
     if (!reopenCard()) return File();
-    return SD.open("/");
+    File root = SD.open("/");
+    sdDiagnostics.rootChecked = true;
+    sdDiagnostics.rootReadable = bool(root) && root.isDirectory();
+    if (!sdDiagnostics.rootReadable && root) root.close();
+    return root;
 }
 
 bool findFile(size_t wanted, char* path, size_t pathSize)
@@ -342,11 +359,25 @@ bool beginGemSd()
     pinMode(GEM_SD_CS_PIN, OUTPUT);
     digitalWrite(GEM_SD_CS_PIN, HIGH);
     gemSdSpi.begin();
-    sdReady = SD.begin(GEM_SD_CS_PIN, gemSdSpi);
-    return sdReady;
+    sdReady = false;
+    sdDiagnostics = GemSdDiagnostics{};
+    return reopenCard(true);
 }
 
 bool gemSdReady() { return reopenCard(); }
+
+bool retryGemSd()
+{
+    sdReady = false;
+    sdDiagnostics.ready = false;
+    return reopenCard(true);
+}
+
+const GemSdDiagnostics& gemSdDiagnostics()
+{
+    sdDiagnostics.ready = sdReady;
+    return sdDiagnostics;
+}
 
 size_t gemSdFileCount()
 {
@@ -359,6 +390,7 @@ size_t gemSdFileCount()
         entry.close();
     }
     root.close();
+    sdDiagnostics.lastFileCount = count;
     return count;
 }
 

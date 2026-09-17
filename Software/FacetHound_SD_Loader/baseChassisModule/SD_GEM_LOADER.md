@@ -15,7 +15,7 @@ PIO-backed `SoftwareSPI`, allowing the requested sequential signal order:
 | SCK | 9 |
 | MISO | 10 |
 | MOSI | 11 |
-| VCC | 3.3 V (or the reader's documented supply) |
+| VCC | Reader's documented supply |
 | GND | GND |
 
 This ordering is not a legal hardware-SPI1 mapping, so one PIO state machine is

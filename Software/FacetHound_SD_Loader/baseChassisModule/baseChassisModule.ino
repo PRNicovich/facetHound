@@ -1096,6 +1096,69 @@ void displayRxTask()
     }
 }
 
+static void printHexByte(uint8_t value)
+{
+    if (value < 0x10) Serial.print('0');
+    Serial.print(value, HEX);
+}
+
+static void sendUsbMotorStatus()
+{
+    const LapMotorDiagnostics& d = lapMotorDiagnostics();
+    Serial.print("@MOTOR,lap=");
+    Serial.print(!d.enabled ? "disabled" : (lapMotorLinkUp() ? "up" : "down"));
+    Serial.print(",waiting="); Serial.print(d.awaitingReply ? 1 : 0);
+    Serial.print(",tx="); Serial.print(d.txFrames);
+    Serial.print(",rx_bytes="); Serial.print(d.rxBytes);
+    Serial.print(",valid="); Serial.print(d.validReplies);
+    Serial.print(",write_ack="); Serial.print(d.writeAcks);
+    Serial.print(",read_reply="); Serial.print(d.readReplies);
+    Serial.print(",timeout="); Serial.print(d.timeouts);
+    Serial.print(",crc="); Serial.print(d.crcErrors);
+    Serial.print(",exception="); Serial.print(d.exceptions);
+    Serial.print(",unexpected="); Serial.print(d.unexpectedReplies);
+    Serial.print(",age_ms=");
+    Serial.print(d.lastValidReplyMs ? millis() - d.lastValidReplyMs : 0);
+    Serial.print(",last_fn=0x"); printHexByte(d.lastFunction);
+    Serial.print(",last_exception=0x"); printHexByte(d.lastException);
+    Serial.print(",last=");
+    if (!d.lastReplyLength)
+        Serial.print("none");
+    else
+        for (uint8_t i = 0; i < d.lastReplyLength; ++i)
+        {
+            if (i) Serial.print('-');
+            printHexByte(d.lastReply[i]);
+        }
+    Serial.println(",tmc_uart=tx_only");
+}
+
+static void sendUsbSdStatus()
+{
+    const GemSdDiagnostics& d = gemSdDiagnostics();
+    Serial.print("@SD,state="); Serial.print(d.ready ? "ready" : "missing");
+    Serial.print(",attempts="); Serial.print(d.beginAttempts);
+    Serial.print(",successes="); Serial.print(d.beginSuccesses);
+    Serial.print(",attempt_age_ms=");
+    Serial.print(d.beginAttempts ? millis() - d.lastAttemptMs : 0);
+    Serial.print(",root=");
+    Serial.print(!d.rootChecked ? "unchecked" : (d.rootReadable ? "readable" : "failed"));
+    Serial.print(",files="); Serial.println(d.lastFileCount);
+}
+
+static void sendUsbSdList()
+{
+    const size_t count = gemSdFileCount();
+    sendUsbSdStatus();
+    Serial.print("@SD,listing="); Serial.println(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        char name[GEM_SD_FILE_NAME_LENGTH] = {};
+        if (!gemSdFileNameAt(i, name, sizeof(name))) continue;
+        Serial.print("@SD_FILE,"); Serial.print(i); Serial.print(','); Serial.println(name);
+    }
+}
+
 static void sendUsbState()
 {
     Serial.print("@STATE,");
@@ -1149,6 +1212,8 @@ static void sendUsbState()
     Serial.print("K"); Serial.print(keysSerial.overflow() ? 1 : 0);
     Serial.print("D"); Serial.print(dispSerial.overflow() ? 1 : 0);
     Serial.print(",usb_rx="); Serial.println(usbRxCount);
+    sendUsbMotorStatus();
+    sendUsbSdStatus();
 }
 
 static void stopAllFromUsb()
@@ -1166,9 +1231,9 @@ static void printUsbHelp()
 {
     Serial.println("@HELP,STATUS | STREAM ON [ms] | STREAM OFF");
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
-    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF | FLOW <0..750>");
+    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
-    Serial.println("@HELP,PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
+    Serial.println("@HELP,SD STATUS|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
 }
 
 static bool selectAdjacentGemTier(bool forward)
@@ -1270,7 +1335,8 @@ static void handleUsbCommand(char* line)
     {
         mastSerial.write('?');
         sendDisplayLine("@MODE,?");
-        Serial.println("@ACK,PROBE,MAST_AND_DISPLAY");
+        requestLapMotorProbe();
+        Serial.println("@ACK,PROBE,MAST_DISPLAY_AND_LAP");
         return;
     }
     if (!strcasecmp(command, "TRACE"))
@@ -1359,6 +1425,30 @@ static void handleUsbCommand(char* line)
         }
         return;
     }
+    if (!strcasecmp(command, "SD"))
+    {
+        char* mode = strtok_r(nullptr, " \t", &save);
+        if (!mode || !strcasecmp(mode, "STATUS"))
+        {
+            sendUsbSdStatus();
+        }
+        else if (!strcasecmp(mode, "RETRY"))
+        {
+            const bool ready = retryGemSd();
+            Serial.print("@ACK,SD,RETRY,"); Serial.println(ready ? "READY" : "MISSING");
+            if (ready) gemSdFileCount();
+            sendUsbSdStatus();
+        }
+        else if (!strcasecmp(mode, "LIST"))
+        {
+            sendUsbSdList();
+        }
+        else
+        {
+            Serial.println("@ERR,SD,expected STATUS|RETRY|LIST");
+        }
+        return;
+    }
     if (!strcasecmp(command, "JOG"))
     {
         char* axis = strtok_r(nullptr, " \t", &save);
@@ -1435,7 +1525,18 @@ static void handleUsbCommand(char* line)
             if (!strcasecmp(mode, "CW")) S.motorDir = 1;
             else if (!strcasecmp(mode, "CCW")) S.motorDir = 3;
             else if (!strcasecmp(mode, "OFF")) S.RPMSetpoint = 0;
-            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF"); return; }
+            else if (!strcasecmp(mode, "STATUS"))
+            {
+                sendUsbMotorStatus();
+                return;
+            }
+            else if (!strcasecmp(mode, "PROBE"))
+            {
+                requestLapMotorProbe();
+                Serial.println("@ACK,MOTOR,PROBE");
+                return;
+            }
+            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF|STATUS|PROBE"); return; }
             Serial.println("@ACK,MOTOR");
         }
         else

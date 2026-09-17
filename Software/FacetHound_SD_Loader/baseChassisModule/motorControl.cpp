@@ -39,6 +39,7 @@ static int lastPumpDir = -1;
 static int lastPumpFlow = -1;
 static bool twistDriverIsEnabled = false;
 static bool zedDriverIsEnabled = false;
+static LapMotorDiagnostics lapDiagnostics;
 
 #if USE_LAP_MOTOR_RS485
 static const uint16_t REG_CONTROL      = 0x8000;
@@ -56,6 +57,14 @@ static uint32_t lapRequestStartedMs = 0;
 static uint32_t lapLastFrameMs = 0;
 static int lapSentRpm = -1;
 static uint8_t lapSentControl = 0xff;
+static bool lapProbeRequested = false;
+
+static void rememberLapReply(uint8_t length)
+{
+    lapDiagnostics.lastReplyLength = min(length, uint8_t(sizeof(lapDiagnostics.lastReply)));
+    for (uint8_t i = 0; i < lapDiagnostics.lastReplyLength; ++i)
+        lapDiagnostics.lastReply[i] = lapReply[i];
+}
 
 static uint16_t modbusCRC(const uint8_t* data, size_t length)
 {
@@ -82,6 +91,7 @@ static void sendModbusFrame(uint8_t* frame, uint8_t length, uint8_t expectedRepl
         lapMotorSerial.read();
 
     lapMotorSerial.write(frame, length);
+    lapDiagnostics.txFrames++;
     lapReplyLength = 0;
     lapExpectedLength = expectedReply;
     lapRequestStartedMs = millis();
@@ -109,12 +119,43 @@ static void readLapActualSpeed()
 static bool collectLapReply(SystemState &S)
 {
     while (lapMotorSerial.available() && lapReplyLength < sizeof(lapReply))
+    {
         lapReply[lapReplyLength++] = uint8_t(lapMotorSerial.read());
+        lapDiagnostics.rxBytes++;
+        lapDiagnostics.lastRxByteMs = millis();
+    }
+
+    // A Modbus exception is always slave, function|0x80, exception, CRC16.
+    if (lapReplyLength >= 5 && lapReply[0] == LAP_MOTOR_SLAVE_ID &&
+        (lapReply[1] & 0x80u))
+    {
+        const uint16_t receivedCRC = uint16_t(lapReply[3]) |
+                                     (uint16_t(lapReply[4]) << 8);
+        rememberLapReply(5);
+        lapDiagnostics.lastFunction = lapReply[1];
+        lapDiagnostics.lastException = lapReply[2];
+        if (receivedCRC == modbusCRC(lapReply, 3))
+        {
+            lapDiagnostics.validReplies++;
+            lapDiagnostics.exceptions++;
+            lapDiagnostics.lastValidReplyMs = millis();
+        }
+        else
+        {
+            lapDiagnostics.crcErrors++;
+        }
+        lapExpectedLength = 0;
+        lapPhase = 0;
+        return true;
+    }
 
     if (lapReplyLength < lapExpectedLength)
     {
         if (millis() - lapRequestStartedMs <= 60)
             return false;
+
+        lapDiagnostics.timeouts++;
+        rememberLapReply(lapReplyLength);
 
         if (lapPhase == 1)
             lapSentRpm = -1;
@@ -133,12 +174,28 @@ static bool collectLapReply(SystemState &S)
     bool validWriteEcho = validCRC && lapExpectedLength == 8 &&
                           lapReply[0] == LAP_MOTOR_SLAVE_ID && lapReply[1] == 0x06;
 
+    rememberLapReply(lapExpectedLength);
+    lapDiagnostics.lastFunction = lapReply[1];
+    lapDiagnostics.lastException = 0;
+
+    if (!validCRC)
+        lapDiagnostics.crcErrors++;
+
     if (validCRC &&
         lapReply[0] == LAP_MOTOR_SLAVE_ID && lapReply[1] == 0x03 &&
         lapExpectedLength == 7 && lapReply[2] == 2)
     {
         uint16_t rawSpeed = (uint16_t(lapReply[3]) << 8) | lapReply[4];
         S.RPMValue = int((uint32_t(rawSpeed) * 20U) / LAP_MOTOR_POLE_PAIRS);
+        lapDiagnostics.validReplies++;
+        lapDiagnostics.readReplies++;
+        lapDiagnostics.lastValidReplyMs = millis();
+    }
+    else if (validWriteEcho)
+    {
+        lapDiagnostics.validReplies++;
+        lapDiagnostics.writeAcks++;
+        lapDiagnostics.lastValidReplyMs = millis();
     }
     else if ((lapPhase == 1 || lapPhase == 2) && !validWriteEcho)
     {
@@ -146,7 +203,10 @@ static bool collectLapReply(SystemState &S)
             lapSentRpm = -1;
         else
             lapSentControl = 0xff;
+        lapDiagnostics.unexpectedReplies++;
     }
+    else if (validCRC)
+        lapDiagnostics.unexpectedReplies++;
 
     lapExpectedLength = 0;
     lapPhase = 0;
@@ -172,6 +232,17 @@ static void updateLapMotorRS485(SystemState &S)
 
     if (millis() - lapLastFrameMs < 5)
         return;
+
+    // An explicit diagnostic read takes priority over re-sending a failed
+    // setpoint write, so a disconnected or misconfigured controller still
+    // produces a useful probe result.
+    if (lapProbeRequested)
+    {
+        lapProbeRequested = false;
+        lapPhase = 3;
+        readLapActualSpeed();
+        return;
+    }
 
     // The controller manual's speed examples use little-byte value order.
     if (lapSentRpm != S.RPMSetpoint)
@@ -430,6 +501,8 @@ void initSteppers()
 void initESCMotor()
 {
 #if USE_LAP_MOTOR_RS485
+    lapDiagnostics = LapMotorDiagnostics{};
+    lapDiagnostics.enabled = true;
     lapMotorSerial.begin(LAP_MOTOR_BAUD);
 #else
     pinMode(motorALMpin, OUTPUT);
@@ -445,6 +518,34 @@ void initESCMotor()
     digitalWrite(motorENpin, LOW);
     digitalWrite(motorFRpin, LOW);
     digitalWrite(motorBKpin, LOW);
+#endif
+}
+
+const LapMotorDiagnostics& lapMotorDiagnostics()
+{
+    lapDiagnostics.awaitingReply =
+#if USE_LAP_MOTOR_RS485
+        lapExpectedLength != 0;
+#else
+        false;
+#endif
+    return lapDiagnostics;
+}
+
+void requestLapMotorProbe()
+{
+#if USE_LAP_MOTOR_RS485
+    lapProbeRequested = true;
+#endif
+}
+
+bool lapMotorLinkUp()
+{
+#if USE_LAP_MOTOR_RS485
+    return lapDiagnostics.lastValidReplyMs != 0 &&
+           millis() - lapDiagnostics.lastValidReplyMs < 1500;
+#else
+    return false;
 #endif
 }
 

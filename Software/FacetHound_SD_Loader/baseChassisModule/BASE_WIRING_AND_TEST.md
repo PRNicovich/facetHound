@@ -20,16 +20,15 @@ All UART logic must be 3.3 V TTL and every module needs a common ground.
 | SD SCK | 9 | PIO-backed software SPI |
 | SD MISO | 10 | PIO-backed software SPI |
 | SD MOSI | 11 | PIO-backed software SPI |
-| Twist STEP / DIR / EN / UART TX | 1 / 0 / 14 / 28 | TMC2209 axis |
-| Z STEP / DIR / EN / UART TX | 16 / 17 / 18 / 15 | TMC2209 axis |
-| Pump STEP / DIR / EN / UART TX | 20 / 21 / 22 / 19 | TMC2209 axis |
+| Twist STEP / DIR / EN / UART TX | 1 / 0 / 14 / 28 | TMC2208-compatible axis |
+| Z STEP / DIR / EN / UART TX | 16 / 17 / 18 / 15 | TMC2208-compatible axis |
+| Pump STEP / DIR / EN / UART TX | 20 / 21 / 22 / 19 | TMC2208-compatible axis |
 | Lap RS-485 TX / RX | 26 / 27 | BLD-510B link, 9600 baud |
 | PC diagnostics | Native USB | USB CDC only; not the keyboard path |
 
 GPIO 8-11 were legacy lap-controller signals. The current RS-485 lap mode uses
 GPIO 26/27, leaving 8-11 available for the SD reader. Verify the SD breakout's
-supply requirement before connecting it; the GPIO signals themselves must not
-exceed 3.3 V.
+supply requirement before connecting it.
 
 For the opposite end of the mast link, connect mast TX GPIO8 to base RX GPIO2
 and mast RX GPIO9 to base TX GPIO3. The matching streaming records and numeric
@@ -82,6 +81,23 @@ flow 100
 pump fwd
 stop
 ```
+
+For integration diagnostics, `MOTOR PROBE` requests BLD-510B actual-speed
+register `0x8018` without starting the lap. `MOTOR STATUS` reports validated
+Modbus replies, CRC errors, exceptions, timeouts, byte counts, and the last raw
+reply. `STATUS` includes the same `@MOTOR` record. A valid Modbus exception
+proves the electrical link even though it indicates a rejected request.
+
+Current firmware defines only one UART transmit GPIO for each TMC2208-compatible
+driver and operates the links as write-only configuration channels, reported as
+`tmc_uart=tx_only`. It therefore cannot truthfully report TMC driver status.
+Bidirectional diagnostics can be added after the current PCB's return/shared
+UART routing is present in the repository and verified.
+
+Use `SD RETRY` after inserting a card, `SD STATUS` to inspect initialization,
+and `SD LIST` to verify that the root directory and supported `.asc`/`.fct`
+files are readable. Failed automatic initialization retries are limited to one
+per second so a missing card does not stall the rest of the control loop.
 
 `quit`, Ctrl+C, and EOF send `STREAM OFF` and `STOP` before closing. Keep the
 machine mechanically safe during bench tests: begin with motors unloaded or

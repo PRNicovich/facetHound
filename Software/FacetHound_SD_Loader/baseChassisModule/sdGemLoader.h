@@ -50,8 +50,21 @@ enum class GemSdResult : uint8_t
     LINE_TOO_LONG,
 };
 
+struct GemSdDiagnostics
+{
+    bool ready = false;
+    bool rootChecked = false;
+    bool rootReadable = false;
+    uint32_t beginAttempts = 0;
+    uint32_t beginSuccesses = 0;
+    uint32_t lastAttemptMs = 0;
+    size_t lastFileCount = 0;
+};
+
 bool beginGemSd();
 bool gemSdReady();
+bool retryGemSd();
+const GemSdDiagnostics& gemSdDiagnostics();
 size_t gemSdFileCount();
 bool gemSdFileNameAt(size_t index, char* output, size_t outputSize);
 bool gemSdFilePathAt(size_t index, char* output, size_t outputSize);

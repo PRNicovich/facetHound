@@ -141,6 +141,8 @@ Local shortcuts (commands are logged in both directions):
   jog z <steps>            relative raw-step jog; enables Z lock
   rpm <0..200>             set lap RPM command
   motor cw|ccw|off         lap direction/off
+  motor status|probe       inspect/probe the BLD-510B Modbus link
+  sd status|retry|list     inspect, reinitialize, or list the SD card
   flow <0..750>            pump raw velocity
   pump fwd|rev|off         pump direction/off
   stop                     immediately stop index, Z, lap, and pump commands

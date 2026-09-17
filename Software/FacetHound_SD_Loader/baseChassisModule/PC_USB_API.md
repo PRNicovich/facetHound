@@ -32,7 +32,7 @@ unknown lines for forward compatibility.
 | `STATUS` | Emit one complete state and I/O snapshot | `@STATE,...` then `@IO,...` |
 | `STREAM ON [ms]` | Stream snapshots every 50-5000 ms; default 250 ms | `@ACK,STREAM,ON` |
 | `STREAM OFF` | Stop periodic snapshots | `@ACK,STREAM,OFF` |
-| `PROBE` | Immediately query the mast and display links | `@ACK,PROBE,MAST_AND_DISPLAY` |
+| `PROBE` | Immediately query the mast, display, and lap Modbus links | `@ACK,PROBE,MAST_DISPLAY_AND_LAP` |
 | `TRACE ON` / `TRACE OFF` | Mirror complete incoming peripheral UART lines to PC USB | `@ACK,TRACE,ON/OFF` |
 | `TEST DISPLAY ON` | Send changing synthetic values to the display without changing machine state | `@ACK,TEST,DISPLAY,ON` |
 | `TEST DISPLAY OFF` | Restore normal machine telemetry | `@ACK,TEST,DISPLAY,OFF` |
@@ -44,6 +44,11 @@ unknown lines for forward compatibility.
 | `MOTOR CW` | Set lap direction clockwise | `@ACK,MOTOR` |
 | `MOTOR CCW` | Set lap direction counter-clockwise | `@ACK,MOTOR` |
 | `MOTOR OFF` | Set lap RPM command to zero | `@ACK,MOTOR` |
+| `MOTOR PROBE` | Queue a non-motion Modbus read of lap actual speed | `@ACK,MOTOR,PROBE` |
+| `MOTOR STATUS` | Report Modbus validation counters and last raw reply | `@MOTOR,...` |
+| `SD STATUS` | Report SD initialization and root-directory state | `@SD,...` |
+| `SD RETRY` | Force SD reinitialization after insertion/wiring changes | `@ACK,SD,RETRY,READY/MISSING` |
+| `SD LIST` | List readable root-level `.asc` and `.fct` files | `@SD_FILE,<index>,<name>` |
 | `FLOW <0..750>` | Set raw pump velocity; displayed mL/min uses the configured conversion | `@ACK,FLOW,<value>` |
 | `PUMP FWD` | Set forward pump direction | `@ACK,PUMP` |
 | `PUMP REV` | Set reverse pump direction | `@ACK,PUMP` |
@@ -140,6 +145,17 @@ For a base-only pin-direction trial, change `MAST_UART_SWAP_TRIAL` or
 `KEYBOARD_UART_SWAP_TRIAL` at the top of `baseChassisModule.ino`, then upload
 only the base. Leave both `false` for the documented v8 wiring. Set only one at
 a time so the result is unambiguous.
+
+`@MOTOR` distinguishes a stopped motor from a dead Modbus link. `lap=up`
+requires a correctly addressed, CRC-valid reply within 1.5 seconds. The record
+also reports transmit count, received bytes, timeouts, CRC failures, Modbus
+exceptions, and the last reply in hexadecimal. `tmc_uart=tx_only` describes
+the three on-board stepper-driver configuration links; it is not the lap-motor
+RS-485 link.
+
+`@SD` reports card initialization attempts separately from root-directory
+readability. Automatic retries while a card is missing are throttled to once
+per second. `SD RETRY` bypasses that delay for an explicit bench test.
 
 `@KEY,<hid>` is emitted whenever a key arrives from the physical keyboard
 UART. It allows a PC supervisory application to observe operator input without

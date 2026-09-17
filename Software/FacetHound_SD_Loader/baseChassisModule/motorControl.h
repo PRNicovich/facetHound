@@ -103,6 +103,27 @@ extern float tiltConversion;
 extern float zConversionFactor;
 extern int   zMult[3];
 
+struct LapMotorDiagnostics
+{
+    bool enabled = false;
+    bool awaitingReply = false;
+    uint32_t txFrames = 0;
+    uint32_t rxBytes = 0;
+    uint32_t validReplies = 0;
+    uint32_t writeAcks = 0;
+    uint32_t readReplies = 0;
+    uint32_t timeouts = 0;
+    uint32_t crcErrors = 0;
+    uint32_t exceptions = 0;
+    uint32_t unexpectedReplies = 0;
+    uint32_t lastValidReplyMs = 0;
+    uint32_t lastRxByteMs = 0;
+    uint8_t lastFunction = 0;
+    uint8_t lastException = 0;
+    uint8_t lastReply[8] = {};
+    uint8_t lastReplyLength = 0;
+};
+
 void initSteppers();
 void initESCMotor();
 void updateMotors(SystemState &S);
@@ -118,3 +139,6 @@ void cancelTwistMoveKeepLock(SystemState &S);
 void hardStopZ();
 bool requestZMove(long steps);
 bool twistMotionActive();
+const LapMotorDiagnostics& lapMotorDiagnostics();
+void requestLapMotorProbe();
+bool lapMotorLinkUp();
