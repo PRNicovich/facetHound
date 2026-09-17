@@ -144,6 +144,7 @@ static const uint32_t DISPLAY_BAUD = 460800;
 static const uint16_t RX_BYTE_BUDGET = 320;
 static const uint8_t RX_LINE_BUDGET = 12;
 static const uint32_t SETTINGS_MAGIC = 0x46484D36; // "FHM6"
+static const char DISPLAY_FIRMWARE_ID[] = "PING512-20260917";
 
 struct PersistedSettings
 {
@@ -1560,9 +1561,15 @@ void setup()
   delay(50);
 
   systemReady = true;
+  baseSerial.print("@FW,DISPLAY,");
+  baseSerial.println(DISPLAY_FIRMWARE_ID);
   baseSerial.println("@HELLO,DISPLAY");
   if (usbDemoMode)
+  {
+    Serial.print("@FW,DISPLAY,");
+    Serial.println(DISPLAY_FIRMWARE_ID);
     Serial.println("@HELLO,DISPLAY,USB_DEMO");
+  }
   sendLineBoth("@CFGGET,MESH");
 }
 

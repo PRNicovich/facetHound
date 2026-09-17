@@ -1136,6 +1136,8 @@ static void sendUsbState()
     Serial.print(lastDisplayRxMs ? millis() - lastDisplayRxMs : 0);
     Serial.print(",display_roundtrip=");
     Serial.print(lastDisplayRoundTripMs && millis() - lastDisplayRoundTripMs < 2500 ? "up" : "down");
+    Serial.print(",display_test=");
+    Serial.print(displayTestMode ? "on" : "off");
     Serial.print(",display_loopback=");
     Serial.print(lastDisplayLoopbackMs && millis() - lastDisplayLoopbackMs < 5000 ? "up" : "down");
     Serial.print(",rx_levels=M"); Serial.print(digitalRead(MAST_UART_SWAP_TRIAL ? 3 : 2));
@@ -1606,7 +1608,8 @@ void displayTask()
 
     // Establish a genuine request/reply before starting screen telemetry. This
     // keeps an unready or one-way display link completely free of data bursts.
-    if (!lastDisplayRoundTripMs || now - lastDisplayRoundTripMs >= 2500)
+    if (!displayTestMode &&
+        (!lastDisplayRoundTripMs || now - lastDisplayRoundTripMs >= 2500))
         return;
 
     if (now - lastDisplay < DISPLAY_FAST_PERIOD_MS)

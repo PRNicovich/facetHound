@@ -111,6 +111,8 @@ most recent byte (`0` means none has ever arrived).
 `@PING,BASE` and requires the display to echo `@PONG,BASE`, proving that both
 UART directions and the display parser work. `display_link=up` with
 `display_roundtrip=down` means only display-to-base has been proven.
+An explicit `TEST DISPLAY ON` bypasses the handshake gate so it can test the
+base-to-display direction even when the display-to-base direction is dead.
 
 Display telemetry is serialized as one short protocol record every 10 ms.
 This avoids overflowing the display controller's 32-byte SerialPIO receive
