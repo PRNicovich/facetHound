@@ -18,10 +18,10 @@ constexpr bool KEYBOARD_UART_SWAP_TRIAL = false;
 constexpr bool MAST_UART_SWAP_TRIAL = false;
 
 SerialPIO keysSerial(KEYBOARD_UART_SWAP_TRIAL ? 6 : 7,
-                     KEYBOARD_UART_SWAP_TRIAL ? 7 : 6);
-SerialPIO dispSerial(5, 4);
+                     KEYBOARD_UART_SWAP_TRIAL ? 7 : 6, 128);
+SerialPIO dispSerial(5, 4, 256);
 SerialPIO mastSerial(MAST_UART_SWAP_TRIAL ? 2 : 3,
-                     MAST_UART_SWAP_TRIAL ? 3 : 2);
+                     MAST_UART_SWAP_TRIAL ? 3 : 2, 256);
 
 SystemState S;
 GemSdDesign activeGemDesign;
@@ -67,6 +67,9 @@ bool displayLinkReported = false;
 uint32_t lastDisplayRoundTripMs = 0;
 bool displayRoundTripReported = false;
 bool displayTestMode = false;
+bool uartTraceEnabled = false;
+uint32_t lastDisplayLoopbackMs = 0;
+uint32_t displayLoopbackUntilMs = 0;
 bool usbStateStream = false;
 uint32_t usbStatePeriodMs = 250;
 uint32_t lastUsbStateMs = 0;
@@ -238,6 +241,12 @@ void mastTask()
         {
             mastBuf[mastIdx] = '\0';
             mastIdx = 0;
+
+            if (uartTraceEnabled)
+            {
+                Serial.print("@RAW,MAST,");
+                Serial.println(mastBuf);
+            }
 
             if (mastBuf[0] != '@')
                 continue;
@@ -948,6 +957,12 @@ void displayRxTask()
             dispBuf[dispIdx] = '\0';
             dispIdx = 0;
 
+            if (uartTraceEnabled)
+            {
+                Serial.print("@RAW,DISPLAY,");
+                Serial.println(dispBuf);
+            }
+
             if (dispBuf[0] != '@')
                 continue;
 
@@ -1049,6 +1064,11 @@ void displayRxTask()
                     Serial.println(valueText);
                 }
             }
+            else if (!strcmp(key, "LOOPBACK") && !strcmp(valueText, "BASE"))
+            {
+                lastDisplayLoopbackMs = millis();
+                Serial.println("@LINK,DISPLAY,BASE_GPIO_LOOPBACK");
+            }
             else if (!strcmp(key, "HELLO") && !strcasecmp(valueText, "DISPLAY"))
             {
                 // The regular base telemetry is already the display's return
@@ -1107,11 +1127,16 @@ static void sendUsbState()
     Serial.print(lastDisplayRxMs ? millis() - lastDisplayRxMs : 0);
     Serial.print(",display_roundtrip=");
     Serial.print(lastDisplayRoundTripMs && millis() - lastDisplayRoundTripMs < 2500 ? "up" : "down");
+    Serial.print(",display_loopback=");
+    Serial.print(lastDisplayLoopbackMs && millis() - lastDisplayLoopbackMs < 5000 ? "up" : "down");
     Serial.print(",rx_levels=M"); Serial.print(digitalRead(MAST_UART_SWAP_TRIAL ? 3 : 2));
     Serial.print("K"); Serial.print(digitalRead(KEYBOARD_UART_SWAP_TRIAL ? 7 : 6));
     Serial.print("D"); Serial.print(digitalRead(4));
     Serial.print(",uart_map=M"); Serial.print(MAST_UART_SWAP_TRIAL ? "swapped" : "normal");
     Serial.print("/K"); Serial.print(KEYBOARD_UART_SWAP_TRIAL ? "swapped" : "normal");
+    Serial.print(",rx_overflow=M"); Serial.print(mastSerial.overflow() ? 1 : 0);
+    Serial.print("K"); Serial.print(keysSerial.overflow() ? 1 : 0);
+    Serial.print("D"); Serial.print(dispSerial.overflow() ? 1 : 0);
     Serial.print(",usb_rx="); Serial.println(usbRxCount);
 }
 
@@ -1132,7 +1157,7 @@ static void printUsbHelp()
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
     Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
-    Serial.println("@HELP,PROBE | TEST DISPLAY ON|OFF");
+    Serial.println("@HELP,PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
 }
 
 static bool selectAdjacentGemTier(bool forward)
@@ -1237,20 +1262,37 @@ static void handleUsbCommand(char* line)
         Serial.println("@ACK,PROBE,MAST_AND_DISPLAY");
         return;
     }
+    if (!strcasecmp(command, "TRACE"))
+    {
+        char* mode = strtok_r(nullptr, " \t", &save);
+        if (mode && !strcasecmp(mode, "ON"))
+        {
+            uartTraceEnabled = true;
+            Serial.println("@ACK,TRACE,ON");
+        }
+        else if (mode && !strcasecmp(mode, "OFF"))
+        {
+            uartTraceEnabled = false;
+            Serial.println("@ACK,TRACE,OFF");
+        }
+        else
+        {
+            Serial.println("@ERR,TRACE,expected ON|OFF");
+        }
+        return;
+    }
     if (!strcasecmp(command, "TEST"))
     {
         char* target = strtok_r(nullptr, " \t", &save);
         char* mode = strtok_r(nullptr, " \t", &save);
         if (!target || strcasecmp(target, "DISPLAY") || !mode)
         {
-            Serial.println("@ERR,TEST,expected DISPLAY ON|OFF");
+            Serial.println("@ERR,TEST,expected DISPLAY ON|OFF|LOOPBACK");
             return;
         }
         if (!strcasecmp(mode, "ON"))
         {
             displayTestMode = true;
-            // Keep this complete line below the display's 32-byte RX FIFO.
-            sendDisplayLine("@JOB,0,1,45,0,24,TEST");
             Serial.println("@ACK,TEST,DISPLAY,ON");
         }
         else if (!strcasecmp(mode, "OFF"))
@@ -1259,9 +1301,16 @@ static void handleUsbCommand(char* line)
             sendActiveCut(true);
             Serial.println("@ACK,TEST,DISPLAY,OFF");
         }
+        else if (!strcasecmp(mode, "LOOPBACK"))
+        {
+            displayTestMode = false;
+            lastDisplayLoopbackMs = 0;
+            displayLoopbackUntilMs = millis() + 5000;
+            Serial.println("@ACK,TEST,DISPLAY,LOOPBACK,5_SECONDS");
+        }
         else
         {
-            Serial.println("@ERR,TEST,expected DISPLAY ON|OFF");
+            Serial.println("@ERR,TEST,expected DISPLAY ON|OFF|LOOPBACK");
         }
         return;
     }
@@ -1440,6 +1489,12 @@ void keyboardTask()
             keyBuf[keyIdx] = '\0';
             keyIdx = 0;
 
+            if (uartTraceEnabled)
+            {
+                Serial.print("@RAW,KEYBOARD,");
+                Serial.println(keyBuf);
+            }
+
             bool validKeyboardRecord = false;
             if (!strcmp(keyBuf, "@HELLO,KEYBOARD"))
             {
@@ -1519,21 +1574,40 @@ void rpmTask()
 
 void displayTask()
 {
+    const uint32_t now = millis();
+
+    if (displayLoopbackUntilMs && int32_t(displayLoopbackUntilMs - now) > 0)
+    {
+        static uint32_t lastLoopbackProbeMs = 0;
+        if (now - lastLoopbackProbeMs >= 250)
+        {
+            sendDisplayLine("@LOOPBACK,BASE");
+            lastLoopbackProbeMs = now;
+        }
+        return;
+    }
+    displayLoopbackUntilMs = 0;
+
     static uint32_t lastDisplayProbeMs = 0;
-    if (millis() - lastDisplayProbeMs >= 1000)
+    if (now - lastDisplayProbeMs >= 500)
     {
         sendDisplayLine("@MODE,?");
-        lastDisplayProbeMs = millis();
+        lastDisplayProbeMs = now;
     }
 
-    if (millis() - lastDisplay < DISPLAY_FAST_PERIOD_MS)
+    // Establish a genuine request/reply before starting screen telemetry. This
+    // keeps an unready or one-way display link completely free of data bursts.
+    if (!lastDisplayRoundTripMs || now - lastDisplayRoundTripMs >= 2500)
         return;
 
-    lastDisplay = millis();
+    if (now - lastDisplay < DISPLAY_FAST_PERIOD_MS)
+        return;
+
+    lastDisplay = now;
 
     if (displayTestMode)
     {
-        const float phase = TWO_PI * float(millis() % 8000UL) / 8000.0f;
+        const float phase = TWO_PI * float(now % 8000UL) / 8000.0f;
         const float indexError = 12.0f * sinf(phase);
 
         // Exactly one record per call prevents overflowing the display's

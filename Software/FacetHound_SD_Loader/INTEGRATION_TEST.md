@@ -97,6 +97,11 @@ directions. With sensors disconnected, ordinary values remain constant even on
 a healthy display. Send `TEST DISPLAY ON` to animate synthetic tip, index, Z,
 RPM, and flow values; send `TEST DISPLAY OFF` afterward.
 
+`TRACE ON` mirrors complete incoming mast, keyboard, and display records to the
+PC as `@RAW,...` lines. Use it briefly to distinguish malformed framing from a
+silent electrical link, then send `TRACE OFF`. The base reports UART FIFO
+overflow latches as `rx_overflow=MxKxDx` in each status record.
+
 For mast or keyboard connector trials that would otherwise require reflashing
 several modules, the two `*_UART_SWAP_TRIAL` constants at the top of the base
 sketch reverse only the selected base GPIO pair. Upload only the base and test

@@ -33,8 +33,10 @@ unknown lines for forward compatibility.
 | `STREAM ON [ms]` | Stream snapshots every 50-5000 ms; default 250 ms | `@ACK,STREAM,ON` |
 | `STREAM OFF` | Stop periodic snapshots | `@ACK,STREAM,OFF` |
 | `PROBE` | Immediately query the mast and display links | `@ACK,PROBE,MAST_AND_DISPLAY` |
+| `TRACE ON` / `TRACE OFF` | Mirror complete incoming peripheral UART lines to PC USB | `@ACK,TRACE,ON/OFF` |
 | `TEST DISPLAY ON` | Send changing synthetic values to the display without changing machine state | `@ACK,TEST,DISPLAY,ON` |
 | `TEST DISPLAY OFF` | Restore normal machine telemetry | `@ACK,TEST,DISPLAY,OFF` |
+| `TEST DISPLAY LOOPBACK` | Five-second base GPIO4/5 loopback test | `@ACK,TEST,DISPLAY,LOOPBACK,5_SECONDS` |
 | `KEY <0..255>` | Inject one configured HID usage through the same action router as the UART keyboard | `@ACK,KEY,<hid>` |
 | `JOG TWIST <index-units>` | Set a relative index target and enable index lock | `@ACK,JOG,TWIST,<target>` |
 | `JOG Z <signed-steps>` | Request a relative Z move in raw motor steps | `@ACK,JOG,Z,<steps>` |
@@ -114,6 +116,18 @@ Display telemetry is serialized as one short protocol record every 10 ms.
 This avoids overflowing the display controller's 32-byte SerialPIO receive
 FIFO while it is rendering; older base builds sent the entire screen as one
 large burst and could appear one-way even with correct wiring.
+
+The base now uses larger receive queues and sends only `@MODE,?` until a valid
+display reply establishes the round trip. Normal or synthetic screen telemetry
+does not start on a one-way link. `rx_overflow=MxKxDx` reports and clears each
+SerialPIO overflow latch whenever `STATUS` is emitted.
+
+For a base-side electrical loopback, power down, disconnect the display cable,
+and jumper only signal pins 2 and 3 of the base `DISPLAY` connector. Do not
+jumper either power pin. Power the base from USB, send
+`TEST DISPLAY LOOPBACK`, then `STATUS` within five seconds. A
+`display_loopback=up` result proves base GPIO5 TX, GPIO4 RX, and the base UART
+software; the fault is then beyond the base connector.
 
 `rx_levels=M1K1D1` reports the instantaneous mast, keyboard, and display RX pin
 levels. UART idle is normally high (`1`); a persistent zero suggests a short,
