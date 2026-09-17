@@ -46,6 +46,7 @@ struct SystemState
     // ESC spindle
     int RPMSetpoint = 0;
     int RPMValue    = 0;
+    // 0 = paused CCW, 1 = running CW, 2 = paused CW, 3 = running CCW.
     int motorDir    = 1;
     int motorPaused = 0;
     int motorOn     = 0;

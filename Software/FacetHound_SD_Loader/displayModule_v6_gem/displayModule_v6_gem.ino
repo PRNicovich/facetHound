@@ -1335,7 +1335,7 @@ void updateZSprite()
 void updateRPMSprite()
 {
   stext4.fillSprite(SPRITE_FILL);
-  const bool running = RPM_dir == 0 || RPM_dir == 2;
+  const bool running = RPM_dir == 1 || RPM_dir == 3;
   stext4.drawNumber(running ? RPMValue : rpmSetValue, 120, 60);
   stext4.pushSprite(5, 380);
 }

@@ -865,7 +865,7 @@ void GemUi::drawHud(const GemTelemetry& state)
     textAt(hudCanvas_, "mm", 205, 141, C_MAGENTA, 2, ML_DATUM);
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
-    const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
+    const bool motorRunning = state.rpmDirection == 1 || state.rpmDirection == 3;
     drawRotationArrow(hudCanvas_, 234, 116, clockwise, motorRunning, C_TEXT);
     const unsigned long shownRpm = motorRunning
                                        ? static_cast<unsigned long>(state.rpmActual)

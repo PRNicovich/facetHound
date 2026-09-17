@@ -2109,11 +2109,11 @@ static void forceSafeBootState()
     else if (S.flow_dir == 2)
         S.flow_dir = 3;
 
-    // ESC: with this hardware enable polarity, 0/2 are active, 1/3 are paused.
-    if (S.motorDir == 0)
-        S.motorDir = 3;
-    else if (S.motorDir == 2)
-        S.motorDir = 1;
+    // Lap motor: 1/3 run CW/CCW; 2/0 are the matching paused states.
+    if (S.motorDir == 1)
+        S.motorDir = 2;
+    else if (S.motorDir == 3)
+        S.motorDir = 0;
 }
 
 void setup()

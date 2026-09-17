@@ -28,7 +28,7 @@ The Pico's native USB port is reserved for the optional PC diagnostic console.
 | N | 17 | Cycle index step | Select | `changeTwistIndex()` / `MENUKEY,SELECT` |
 | O | 18 | Index increment | Menu down | `changeTiltAngle()` / `MENUKEY,DOWN` |
 | 1 | 30 | Lap RPM −1 | Suppressed | `changeMotorSpeed(-1)` |
-| 2 | 31 | Lap run/pause; double-click direction | Suppressed | `changeMotorDirection()` |
+| 2 | 31 | Lap run/pause; double-click reverses and pauses | Suppressed | `changeMotorDirection()` |
 | 3 | 32 | Lap RPM +1 | Suppressed | `changeMotorSpeed(+1)` |
 | 4 | 33 | Flow −1 | Suppressed | `changeFlowRate(-1)` |
 | 5 | 34 | Pump run/pause | Suppressed | Immediate `changeFlowDirection(false)`; no reverse gesture |
@@ -50,6 +50,6 @@ so this behavior does not replace Classic's editable mark list.
 
 The display owns the Settings open/closed state. The top-left key sends a
 toggle request, and both sides exchange periodic menu-state checks so one lost
-close packet cannot leave all machine keys suppressed. Lap double-click changes
-direction without changing run/pause state; pump control intentionally has no
-double-click reverse action.
+close packet cannot leave all machine keys suppressed. Lap double-click selects
+the opposite direction in its paused state; a separate click is required to
+restart. Pump control intentionally has no double-click reverse action.

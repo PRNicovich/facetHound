@@ -260,11 +260,12 @@ void changeMotorDirection(SystemState* S, bool isDoubleClick)
 {
     if (isDoubleClick)
     {
-        // Reverse without changing run/pause state.
+        // Reversal is deliberately interlocked: select the opposite direction
+        // in its paused state.  A separate click is required to restart.
         if      (S->motorDir == 0) S->motorDir = 2;
         else if (S->motorDir == 2) S->motorDir = 0;
-        else if (S->motorDir == 1) S->motorDir = 3;
-        else                       S->motorDir = 1;
+        else if (S->motorDir == 1) S->motorDir = 0;
+        else                       S->motorDir = 2;
     }
     else
     {
