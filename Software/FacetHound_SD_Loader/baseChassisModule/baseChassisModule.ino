@@ -1064,6 +1064,15 @@ void displayRxTask()
                     Serial.println(valueText);
                 }
             }
+            else if (!strcmp(key, "PONG") && !strcmp(valueText, "BASE"))
+            {
+                lastDisplayRoundTripMs = millis();
+                if (!displayRoundTripReported)
+                {
+                    displayRoundTripReported = true;
+                    Serial.println("@LINK,DISPLAY,ROUNDTRIP,PONG");
+                }
+            }
             else if (!strcmp(key, "LOOPBACK") && !strcmp(valueText, "BASE"))
             {
                 lastDisplayLoopbackMs = millis();
@@ -1591,7 +1600,7 @@ void displayTask()
     static uint32_t lastDisplayProbeMs = 0;
     if (now - lastDisplayProbeMs >= 500)
     {
-        sendDisplayLine("@MODE,?");
+        sendDisplayLine("@PING,BASE");
         lastDisplayProbeMs = now;
     }
 

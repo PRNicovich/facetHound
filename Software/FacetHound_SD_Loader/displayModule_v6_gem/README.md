@@ -11,14 +11,19 @@ The firmware listens to the instrument UART and USB CDC simultaneously. Both
 use the existing newline-delimited `@KEY,value` protocol, so the USB connection
 is also the proxy/test input; no alternate firmware image is necessary.
 
-Every restart begins with a roughly 3.3-second animated splash. The compiled
+The instrument UART uses a 512-byte receive queue so rendering cannot discard
+short bursts from the base. Before normal telemetry begins, the base sends
+`@PING,BASE`; the display answers `@PONG,BASE` to prove both UART directions.
+
+When the display's own USB CDC port is open during boot, it begins with a
+roughly 3.3-second animated splash. An installed display without an active USB
+session goes directly to its persisted UI. The compiled
 fallback gem is shown as a neutral, depth-cued wireframe at the C1 mast angle
 and rotates at constant index speed. After about 0.9 seconds, the colored
 `FACET HOUND` title fades in over the gem and remains for about 2.4 seconds
 while rotation continues. A small centered
 `A product of Advanced Precision Technologies, LLC` credit accompanies the
-title at the bottom; the selected persisted UI then starts normally. The splash
-does not wait for geometry or telemetry from the base module.
+title at the bottom; the selected persisted UI then starts normally.
 
 A transient settings menu overlays any of the three screens. It currently edits
 display mode and is structured for later base-module settings.

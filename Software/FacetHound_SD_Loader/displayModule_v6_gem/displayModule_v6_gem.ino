@@ -35,7 +35,10 @@
 #define TXPin 8
 #define RXPin 9
 
-SerialPIO baseSerial(TXPin, RXPin);
+// Rendering can keep the main loop busy long enough to overflow SerialPIO's
+// 32-byte default queue. Keep a full telemetry burst available until rxUpdate
+// gets CPU time.
+SerialPIO baseSerial(TXPin, RXPin, 512);
 PioEncoder encoder(10);
 TFT_eSPI tft = TFT_eSPI();
 GemUi gemUi(tft);
@@ -771,6 +774,20 @@ void parseLine(char* line)
     {
       Serial.println("@ERR,MODE,expected CLASSIC|DYNAMIC|STATIC");
       baseSerial.println("@ERR,MODE,expected CLASSIC|DYNAMIC|STATIC");
+    }
+    return;
+  }
+
+  if (!strcmp(key, "PING"))
+  {
+    // Minimal request/reply used by the base before it starts telemetry. Echo
+    // the token so unsolicited display traffic cannot fake a round trip.
+    baseSerial.print("@PONG,");
+    baseSerial.println(valueText);
+    if (Serial)
+    {
+      Serial.print("@PONG,");
+      Serial.println(valueText);
     }
     return;
   }

@@ -107,9 +107,9 @@ even when its encoder is stationary. `display_link` is `up` when a byte arrived
 from the display in the last 2.5 seconds; `display_age_ms` is the time since the
 most recent byte (`0` means none has ever arrived).
 
-`display_roundtrip=up` is the stronger display test. The base sends `@MODE,?`
-once per second and requires a valid mode reply, proving that both UART
-directions and the display parser work. `display_link=up` with
+`display_roundtrip=up` is the stronger display test. The base sends
+`@PING,BASE` and requires the display to echo `@PONG,BASE`, proving that both
+UART directions and the display parser work. `display_link=up` with
 `display_roundtrip=down` means only display-to-base has been proven.
 
 Display telemetry is serialized as one short protocol record every 10 ms.
@@ -117,7 +117,7 @@ This avoids overflowing the display controller's 32-byte SerialPIO receive
 FIFO while it is rendering; older base builds sent the entire screen as one
 large burst and could appear one-way even with correct wiring.
 
-The base now uses larger receive queues and sends only `@MODE,?` until a valid
+The base now uses larger receive queues and sends only `@PING,BASE` until a valid
 display reply establishes the round trip. Normal or synthetic screen telemetry
 does not start on a one-way link. `rx_overflow=MxKxDx` reports and clears each
 SerialPIO overflow latch whenever `STATUS` is emitted.
