@@ -89,10 +89,11 @@ The following `@IO` record contains cumulative received-byte counters:
 @IO,mast_rx=1234,mast_link=up,mast_age_ms=4,key_rx=37,keyboard_link=up,keyboard_age_ms=183,display_rx=8912,display_link=up,display_age_ms=237,usb_rx=44
 ```
 
-The mast normally publishes a complete sensor frame every 20 ms.
 `mast_link=up` requires a valid `tip`, `twist`, or `force` protocol record in
-the last 500 ms; random bytes do not count. `mast_age_ms` is the time since the
-last valid mast record (`0` means none has ever arrived).
+the last 3.5 seconds; random bytes do not count. The deliberately generous
+integration timeout also supports older mast firmware that answers the base's
+periodic `?` poll instead of streaming continuously. `mast_age_ms` is the time
+since the last valid mast record (`0` means none has ever arrived).
 
 The keyboard bridge publishes an idle health record once per second while its
 USB-host core is responsive. `keyboard_link` uses a 2.5-second timeout, so the
@@ -108,6 +109,11 @@ most recent byte (`0` means none has ever arrived).
 once per second and requires a valid mode reply, proving that both UART
 directions and the display parser work. `display_link=up` with
 `display_roundtrip=down` means only display-to-base has been proven.
+
+Display telemetry is serialized as one short protocol record every 10 ms.
+This avoids overflowing the display controller's 32-byte SerialPIO receive
+FIFO while it is rendering; older base builds sent the entire screen as one
+large burst and could appear one-way even with correct wiring.
 
 `rx_levels=M1K1D1` reports the instantaneous mast, keyboard, and display RX pin
 levels. UART idle is normally high (`1`); a persistent zero suggests a short,

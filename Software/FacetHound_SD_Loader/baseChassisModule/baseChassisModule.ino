@@ -35,7 +35,9 @@ static const float TWIST_ENCODER_COUNTS = 4096.0f;
 static const float TIP_COUNTS_CLASSIC = 131072.0f;
 
 static const uint32_t DISPLAY_BAUD = 460800;
-static const uint32_t DISPLAY_FAST_PERIOD_MS = 20;
+// One short UART record per tick. The display-side SerialPIO FIFO is only 32
+// bytes, so sending the whole screen as one burst causes silent line loss.
+static const uint32_t DISPLAY_FAST_PERIOD_MS = 10;
 static const uint32_t SAVE_DEBOUNCE_MS = 500;
 static const float MARK_MATCH_TOLERANCE = 0.0025f;
 
@@ -1090,7 +1092,7 @@ static void sendUsbState()
 
     Serial.print("@IO,mast_rx="); Serial.print(S.mastRxCount);
     Serial.print(",mast_link=");
-    Serial.print(lastMastRxMs && millis() - lastMastRxMs < 500 ? "up" : "down");
+    Serial.print(lastMastRxMs && millis() - lastMastRxMs < 3500 ? "up" : "down");
     Serial.print(",mast_age_ms=");
     Serial.print(lastMastRxMs ? millis() - lastMastRxMs : 0);
     Serial.print(",key_rx="); Serial.print(keyRxCount);
@@ -1247,7 +1249,8 @@ static void handleUsbCommand(char* line)
         if (!strcasecmp(mode, "ON"))
         {
             displayTestMode = true;
-            sendDisplayLine("@JOB,0,1,45.0000,0.0000,24.0000,UART TEST");
+            // Keep this complete line below the display's 32-byte RX FIFO.
+            sendDisplayLine("@JOB,0,1,45,0,24,TEST");
             Serial.println("@ACK,TEST,DISPLAY,ON");
         }
         else if (!strcasecmp(mode, "OFF"))
@@ -1532,17 +1535,25 @@ void displayTask()
     {
         const float phase = TWO_PI * float(millis() % 8000UL) / 8000.0f;
         const float indexError = 12.0f * sinf(phase);
-        sendKV("T", 24.0f);
-        sendKV("E", indexError);
-        sendKV("TIP", 45.0f + 12.0f * sinf(phase * 0.5f));
-        sendKV("ZMM", 100.0f + 25.0f * cosf(phase));
-        sendKV("F", 0.0f);
-        sendKV("RPM", 120);
-        sendKV("RPV", 118 + int(3.0f * sinf(phase * 7.0f)));
-        sendKV("FLW", 25.0f + 2.0f * sinf(phase * 5.0f));
-        sendKV("DIR", 1);
-        sendKV("FLD", 2);
-        sendKV("WIDX", 96);
+
+        // Exactly one record per call prevents overflowing the display's
+        // 32-byte PIO UART queue while it is busy rendering a frame.
+        switch (displaySlot)
+        {
+            case 0:  sendKV("T", 24.0f); break;
+            case 1:  sendKV("E", indexError); break;
+            case 2:  sendKV("TIP", 45.0f + 12.0f * sinf(phase * 0.5f)); break;
+            case 3:  sendKV("ZMM", 100.0f + 25.0f * cosf(phase)); break;
+            case 4:  sendKV("F", 0.0f); break;
+            case 5:  sendKV("RPM", 120); break;
+            case 6:  sendKV("RPV", 118 + int(3.0f * sinf(phase * 7.0f))); break;
+            case 7:  sendKV("FLW", 25.0f + 2.0f * sinf(phase * 5.0f)); break;
+            case 8:  sendKV("DIR", 1); break;
+            case 9:  sendKV("FLD", 2); break;
+            case 10: sendKV("WIDX", 96); break;
+            default: displaySlot = 0; return;
+        }
+        displaySlot = (displaySlot + 1) % 11;
         return;
     }
 
@@ -1557,34 +1568,30 @@ void displayTask()
         );
     }
 
-    sendKV("T",   S.targetTwist);
-    sendKV("E",   displayTwistError);
-    sendKV("TIP", S.tipDegrees);
-    sendKV("ZMM", S.zMM);
-    sendKV("F",   S.forceValue);
-    sendKV("RPM", S.RPMSetpoint);
-    sendKV("FLW", S.flowSetpoint * S.flowTicksToMlMin);
-    sendKV("MST", markTargetStatus());
-    sendActiveCut();
-
     switch (displaySlot)
     {
-        case 0:
-            sendKV("RPV", S.RPMValue);
-            sendActiveCut(true); // periodic refresh also recovers a rebooted display
-            break;
-        case 1:  sendKV("DIR",  S.motorDir); break;
-        case 2:  sendKV("FLD",  S.flow_dir); break;
-        case 3:  sendKV("TLK",  S.twistLock); break;
-        case 4:  sendKV("ZLK",  S.zLock); break;
-        case 5:  sendKV("WIDX", int(S.wheelIndex)); break;
-        case 6:  sendKV("TIDX", S.twistIdx); break;
-        case 7:  sendKV("ZIDX", S.zIdx); break;
-        case 8:  sendKV("SSV",  S.spinServoIdx); break;
-        case 9:  sendKV("MID",  S.markIdx); break;
-        case 10: sendKV("MCT",  int(S.markPoints.size())); break;
+        case 0:  sendKV("T",   S.targetTwist); break;
+        case 1:  sendKV("E",   displayTwistError); break;
+        case 2:  sendKV("TIP", S.tipDegrees); break;
+        case 3:  sendKV("ZMM", S.zMM); break;
+        case 4:  sendKV("F",   S.forceValue); break;
+        case 5:  sendKV("RPM", S.RPMSetpoint); break;
+        case 6:  sendKV("FLW", S.flowSetpoint * S.flowTicksToMlMin); break;
+        case 7:  sendKV("MST", markTargetStatus()); break;
+        case 8:  sendActiveCut(); break;
+        case 9:  sendKV("RPV", S.RPMValue); break;
+        case 10: sendKV("DIR",  S.motorDir); break;
+        case 11: sendKV("FLD",  S.flow_dir); break;
+        case 12: sendKV("TLK",  S.twistLock); break;
+        case 13: sendKV("ZLK",  S.zLock); break;
+        case 14: sendKV("WIDX", int(S.wheelIndex)); break;
+        case 15: sendKV("TIDX", S.twistIdx); break;
+        case 16: sendKV("ZIDX", S.zIdx); break;
+        case 17: sendKV("SSV",  S.spinServoIdx); break;
+        case 18: sendKV("MID",  S.markIdx); break;
+        case 19: sendKV("MCT",  int(S.markPoints.size())); break;
 
-        case 11:
+        case 20:
         {
             float left = 0.0f;
 
@@ -1599,7 +1606,7 @@ void displayTask()
             break;
         }
 
-        case 12:
+        case 21:
         {
             float right = 0.0f;
 
@@ -1621,7 +1628,7 @@ void displayTask()
 
     displaySlot++;
 
-    if (displaySlot > 12)
+    if (displaySlot > 21)
         displaySlot = 0;
 }
 
