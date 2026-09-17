@@ -31,6 +31,10 @@ GPIO 26/27, leaving 8-11 available for the SD reader. Verify the SD breakout's
 supply requirement before connecting it; the GPIO signals themselves must not
 exceed 3.3 V.
 
+For the opposite end of the mast link, connect mast TX GPIO8 to base RX GPIO2
+and mast RX GPIO9 to base TX GPIO3. The matching streaming records and numeric
+ranges are documented in [the mast README](../mastModule/README.md).
+
 ## Keyboard protocol
 
 The keyboard module sends one newline-terminated record per action:

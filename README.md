@@ -10,7 +10,7 @@ Subfolders of `Software/` contain the Arduino C++ sketches and desktop Python to
 
 ## Current firmware
 
-The current paired Pico 2 base and RP2040 Zero display release is in
+The current Pico 2 base plus RP2040 Zero mast and display release is in
 [`Software/FacetHound_SD_Loader`](Software/FacetHound_SD_Loader). It includes:
 
 - Classic, Dynamic, and Static HX8357D display modes.
@@ -18,16 +18,18 @@ The current paired Pico 2 base and RP2040 Zero display release is in
 - Persistent CW/CCW indexing, Table Adapter, servo, calibration, and axis settings.
 - Variable-length mark points with direct numeric editing.
 - GemCad `.asc` and Facet Hound `.fct` loading from microSD.
+- Source-validated `.fhc` geometry caching and a PC bulk converter.
 - Runtime convex-gem mesh generation on the Pico 2 and streaming to the display.
-- Verified, ready-to-flash UF2 files for both controllers.
+- A documented USB CDC API and PC diagnostic/motion-test console.
+- Matching streaming mast telemetry for tip, index, and force sensing.
 
 See the [release README](Software/FacetHound_SD_Loader/README.md) for SD wiring, dependencies, flashing instructions, limits, and verification results.
 
 ## Repository map
 
 - `Hardware/`: complete assemblies and fabrication files.
-- `Software/FacetHound_SD_Loader/`: current paired firmware release.
-- `Software/caseModule/`, `displayModule/`, `mastModule/`, and `usbToUART/`: earlier module sketches and hardware support firmware.
+- `Software/FacetHound_SD_Loader/`: current three-controller firmware release.
+- `Software/caseModule/`, `displayModule/`, and `usbToUART/`: earlier module sketches and hardware support firmware.
 - `Software/gemUtils/`: GemCad parsing, display prototypes, and geometry utilities.
 - `Software/engraveUtils/`: engraving experiments.
 
