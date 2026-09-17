@@ -46,6 +46,11 @@ UART does not depend on USB. Telemetry is also mirrored to USB only when the
 mast's USB CDC port is actively open during boot; USB power by itself does not
 enable diagnostic mirroring.
 
+The AMT23 SSI response begins with two parity/check bits. The 14-bit tip
+position is taken from the low 14 bits before being scaled by eight for the
+legacy base-module range. The 12-bit twist position is shifted right by two
+because that mode supplies two low padding bits.
+
 The firmware does not wait for any sensor to identify itself. With sensors
 unplugged it continues sending frames, although the floating input values are
 not meaningful. This permits UART integration testing before installing the
