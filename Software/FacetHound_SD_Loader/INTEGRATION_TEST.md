@@ -91,6 +91,17 @@ updates but `display_link=down`, only the base-to-display direction works. If
 the display stays stale but `display_link=up`, only display-to-base works or the
 base TX/display RX conductor is wrong.
 
+The current base also reports `display_roundtrip`. When this is `up`, the base
+has sent a query which the display parsed and answered, proving both UART
+directions. With sensors disconnected, ordinary values remain constant even on
+a healthy display. Send `TEST DISPLAY ON` to animate synthetic tip, index, Z,
+RPM, and flow values; send `TEST DISPLAY OFF` afterward.
+
+For mast or keyboard connector trials that would otherwise require reflashing
+several modules, the two `*_UART_SWAP_TRIAL` constants at the top of the base
+sketch reverse only the selected base GPIO pair. Upload only the base and test
+one link at a time. The normal v8 settings are both `false`.
+
 ## 5. Add motion last
 
 Keep mechanical loads clear and use the lowest practical driver current during

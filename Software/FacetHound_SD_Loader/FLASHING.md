@@ -28,7 +28,7 @@ integration changes.
 
 | Controller | Flash | Static RAM |
 |---|---:|---:|
-| Base | 173,788 bytes | 16,408 bytes |
+| Base | Upload from Arduino IDE; current diagnostic build not re-measured | - |
 | Mast | 61,172 bytes | 9,672 bytes |
 | Display | 393,024 bytes | 29,232 bytes |
 | Keyboard USB host | 90,404 bytes | 33,008 bytes |

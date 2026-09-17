@@ -32,6 +32,9 @@ unknown lines for forward compatibility.
 | `STATUS` | Emit one complete state and I/O snapshot | `@STATE,...` then `@IO,...` |
 | `STREAM ON [ms]` | Stream snapshots every 50-5000 ms; default 250 ms | `@ACK,STREAM,ON` |
 | `STREAM OFF` | Stop periodic snapshots | `@ACK,STREAM,OFF` |
+| `PROBE` | Immediately query the mast and display links | `@ACK,PROBE,MAST_AND_DISPLAY` |
+| `TEST DISPLAY ON` | Send changing synthetic values to the display without changing machine state | `@ACK,TEST,DISPLAY,ON` |
+| `TEST DISPLAY OFF` | Restore normal machine telemetry | `@ACK,TEST,DISPLAY,OFF` |
 | `KEY <0..255>` | Inject one configured HID usage through the same action router as the UART keyboard | `@ACK,KEY,<hid>` |
 | `JOG TWIST <index-units>` | Set a relative index target and enable index lock | `@ACK,JOG,TWIST,<target>` |
 | `JOG Z <signed-steps>` | Request a relative Z move in raw motor steps | `@ACK,JOG,Z,<steps>` |
@@ -100,6 +103,21 @@ The display sends an idle heartbeat once per second, so `display_rx` increases
 even when its encoder is stationary. `display_link` is `up` when a byte arrived
 from the display in the last 2.5 seconds; `display_age_ms` is the time since the
 most recent byte (`0` means none has ever arrived).
+
+`display_roundtrip=up` is the stronger display test. The base sends `@MODE,?`
+once per second and requires a valid mode reply, proving that both UART
+directions and the display parser work. `display_link=up` with
+`display_roundtrip=down` means only display-to-base has been proven.
+
+`rx_levels=M1K1D1` reports the instantaneous mast, keyboard, and display RX pin
+levels. UART idle is normally high (`1`); a persistent zero suggests a short,
+unpowered transmitter, or incorrect connector mapping. `uart_map` reports the
+compiled mast and keyboard trial mapping.
+
+For a base-only pin-direction trial, change `MAST_UART_SWAP_TRIAL` or
+`KEYBOARD_UART_SWAP_TRIAL` at the top of `baseChassisModule.ino`, then upload
+only the base. Leave both `false` for the documented v8 wiring. Set only one at
+a time so the result is unambiguous.
 
 `@KEY,<hid>` is emitted whenever a key arrives from the physical keyboard
 UART. It allows a PC supervisory application to observe operator input without

@@ -12,9 +12,16 @@
 #include "gemGeometry.h"
 #include "gemCache.h"
 
-SerialPIO keysSerial(7, 6);
+// Integration trials: change one flag to true and upload only this base sketch
+// to reverse that link's GPIO direction without reflashing the remote module.
+constexpr bool KEYBOARD_UART_SWAP_TRIAL = false;
+constexpr bool MAST_UART_SWAP_TRIAL = false;
+
+SerialPIO keysSerial(KEYBOARD_UART_SWAP_TRIAL ? 6 : 7,
+                     KEYBOARD_UART_SWAP_TRIAL ? 7 : 6);
 SerialPIO dispSerial(5, 4);
-SerialPIO mastSerial(3, 2);
+SerialPIO mastSerial(MAST_UART_SWAP_TRIAL ? 2 : 3,
+                     MAST_UART_SWAP_TRIAL ? 3 : 2);
 
 SystemState S;
 GemSdDesign activeGemDesign;
@@ -55,6 +62,9 @@ uint32_t lastMastRxMs = 0;
 bool mastLinkReported = false;
 uint32_t lastDisplayRxMs = 0;
 bool displayLinkReported = false;
+uint32_t lastDisplayRoundTripMs = 0;
+bool displayRoundTripReported = false;
+bool displayTestMode = false;
 bool usbStateStream = false;
 uint32_t usbStatePeriodMs = 250;
 uint32_t lastUsbStateMs = 0;
@@ -316,6 +326,15 @@ void mastTask()
         {
             mastIdx = 0;
         }
+    }
+
+    // Polling is harmless with the streaming mast and also wakes the legacy
+    // compatible snapshot path, giving each base-only trial a prompt response.
+    static uint32_t lastMastProbeMs = 0;
+    if (millis() - lastMastProbeMs >= 1000)
+    {
+        mastSerial.write('?');
+        lastMastProbeMs = millis();
     }
 }
 
@@ -1015,6 +1034,19 @@ void displayRxTask()
             {
                 applyConfigAction(valueText);
             }
+            else if (!strcmp(key, "MODE") &&
+                     (!strcasecmp(valueText, "CLASSIC") ||
+                      !strcasecmp(valueText, "DYNAMIC") ||
+                      !strcasecmp(valueText, "STATIC")))
+            {
+                lastDisplayRoundTripMs = millis();
+                if (!displayRoundTripReported)
+                {
+                    displayRoundTripReported = true;
+                    Serial.print("@LINK,DISPLAY,ROUNDTRIP,");
+                    Serial.println(valueText);
+                }
+            }
             else if (!strcmp(key, "HELLO") && !strcasecmp(valueText, "DISPLAY"))
             {
                 // The regular base telemetry is already the display's return
@@ -1071,6 +1103,13 @@ static void sendUsbState()
     Serial.print(lastDisplayRxMs && millis() - lastDisplayRxMs < 2500 ? "up" : "down");
     Serial.print(",display_age_ms=");
     Serial.print(lastDisplayRxMs ? millis() - lastDisplayRxMs : 0);
+    Serial.print(",display_roundtrip=");
+    Serial.print(lastDisplayRoundTripMs && millis() - lastDisplayRoundTripMs < 2500 ? "up" : "down");
+    Serial.print(",rx_levels=M"); Serial.print(digitalRead(MAST_UART_SWAP_TRIAL ? 3 : 2));
+    Serial.print("K"); Serial.print(digitalRead(KEYBOARD_UART_SWAP_TRIAL ? 7 : 6));
+    Serial.print("D"); Serial.print(digitalRead(4));
+    Serial.print(",uart_map=M"); Serial.print(MAST_UART_SWAP_TRIAL ? "swapped" : "normal");
+    Serial.print("/K"); Serial.print(KEYBOARD_UART_SWAP_TRIAL ? "swapped" : "normal");
     Serial.print(",usb_rx="); Serial.println(usbRxCount);
 }
 
@@ -1091,6 +1130,7 @@ static void printUsbHelp()
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
     Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
+    Serial.println("@HELP,PROBE | TEST DISPLAY ON|OFF");
 }
 
 static bool selectAdjacentGemTier(bool forward)
@@ -1186,6 +1226,40 @@ static void handleUsbCommand(char* line)
     if (!strcasecmp(command, "STATUS"))
     {
         sendUsbState();
+        return;
+    }
+    if (!strcasecmp(command, "PROBE"))
+    {
+        mastSerial.write('?');
+        sendDisplayLine("@MODE,?");
+        Serial.println("@ACK,PROBE,MAST_AND_DISPLAY");
+        return;
+    }
+    if (!strcasecmp(command, "TEST"))
+    {
+        char* target = strtok_r(nullptr, " \t", &save);
+        char* mode = strtok_r(nullptr, " \t", &save);
+        if (!target || strcasecmp(target, "DISPLAY") || !mode)
+        {
+            Serial.println("@ERR,TEST,expected DISPLAY ON|OFF");
+            return;
+        }
+        if (!strcasecmp(mode, "ON"))
+        {
+            displayTestMode = true;
+            sendDisplayLine("@JOB,0,1,45.0000,0.0000,24.0000,UART TEST");
+            Serial.println("@ACK,TEST,DISPLAY,ON");
+        }
+        else if (!strcasecmp(mode, "OFF"))
+        {
+            displayTestMode = false;
+            sendActiveCut(true);
+            Serial.println("@ACK,TEST,DISPLAY,OFF");
+        }
+        else
+        {
+            Serial.println("@ERR,TEST,expected DISPLAY ON|OFF");
+        }
         return;
     }
     if (!strcasecmp(command, "STREAM"))
@@ -1442,10 +1516,35 @@ void rpmTask()
 
 void displayTask()
 {
+    static uint32_t lastDisplayProbeMs = 0;
+    if (millis() - lastDisplayProbeMs >= 1000)
+    {
+        sendDisplayLine("@MODE,?");
+        lastDisplayProbeMs = millis();
+    }
+
     if (millis() - lastDisplay < DISPLAY_FAST_PERIOD_MS)
         return;
 
     lastDisplay = millis();
+
+    if (displayTestMode)
+    {
+        const float phase = TWO_PI * float(millis() % 8000UL) / 8000.0f;
+        const float indexError = 12.0f * sinf(phase);
+        sendKV("T", 24.0f);
+        sendKV("E", indexError);
+        sendKV("TIP", 45.0f + 12.0f * sinf(phase * 0.5f));
+        sendKV("ZMM", 100.0f + 25.0f * cosf(phase));
+        sendKV("F", 0.0f);
+        sendKV("RPM", 120);
+        sendKV("RPV", 118 + int(3.0f * sinf(phase * 7.0f)));
+        sendKV("FLW", 25.0f + 2.0f * sinf(phase * 5.0f));
+        sendKV("DIR", 1);
+        sendKV("FLD", 2);
+        sendKV("WIDX", 96);
+        return;
+    }
 
     float displayTwistError = 0.0f;
 
@@ -1681,8 +1780,10 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
-    Serial.println("KEYBOARD UART: bridge TX0 -> base RX6; bridge RX1 <- base TX7; 115200 baud");
-    Serial.println("MAST UART: mast TX8 -> base RX2; mast RX9 <- base TX3; 115200 baud");
+    Serial.print("KEYBOARD UART MAP: ");
+    Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");
+    Serial.print("MAST UART MAP: ");
+    Serial.println(MAST_UART_SWAP_TRIAL ? "SWAPPED base TX2/RX3" : "NORMAL base TX3/RX2");
     Serial.println("DISPLAY UART: base TX5 -> display RX9; display TX8 -> base RX4; 460800 baud");
     Serial.println("Send STATUS or STREAM ON 500 to inspect link counters");
 }
