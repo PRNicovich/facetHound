@@ -29,9 +29,10 @@
 // Lap motor communication. Set to 0 to restore the legacy EN/FR/BK/SV wiring.
 #define USE_LAP_MOTOR_RS485  1
 
-// BLD-510B Modbus RTU / RS-485 (automatic-direction transceiver).
-#define LAP_MOTOR_TX_PIN    26
-#define LAP_MOTOR_RX_PIN    27
+// BLD-510B Modbus RTU / RS-485 through the v9 PCB's ESC.TTL header and an
+// external automatic-direction 3.3 V TTL-to-RS-485 module.
+#define LAP_MOTOR_TX_PIN     8
+#define LAP_MOTOR_RX_PIN     9
 #define LAP_MOTOR_BAUD    9600
 #define LAP_MOTOR_SLAVE_ID   1
 #define LAP_MOTOR_POLE_PAIRS 2

@@ -22,7 +22,7 @@ Notable behavior:
   is open-loop, suspends normal index locking, stops on page exit, and has a
   1.5-second command-lease timeout if display keepalives disappear.
 - Position values are returned to the display in eight-value pages.
-- SD coordinate loading uses PIO SoftwareSPI on GPIO 8/9/10/11. It browses
+- SD coordinate loading uses PIO SoftwareSPI on GPIO 10/11/12/13. It browses
   root-level `.asc`/`.fct` files and loads flattened cuts into the mark sequence.
 - Pico 2 constructs the loaded design's convex mesh at runtime and streams up
   to 512 planes, 1,024 vertices, and 2,048 edges to the display.

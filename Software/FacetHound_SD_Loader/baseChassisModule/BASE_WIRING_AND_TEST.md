@@ -16,19 +16,19 @@ All UART logic must be 3.3 V TTL and every module needs a common ground.
 | Display UART RX | 4 | Display to base, 460800 baud |
 | Mast UART TX | 3 | Base to mast, 115200 baud |
 | Mast UART RX | 2 | Mast to base, 115200 baud |
-| SD CS | 8 | PIO-backed software SPI |
-| SD SCK | 9 | PIO-backed software SPI |
-| SD MISO | 10 | PIO-backed software SPI |
-| SD MOSI | 11 | PIO-backed software SPI |
-| Twist STEP / DIR / EN / UART TX | 1 / 0 / 14 / 28 | TMC2208-compatible axis |
-| Z STEP / DIR / EN / UART TX | 16 / 17 / 18 / 15 | TMC2208-compatible axis |
-| Pump STEP / DIR / EN / UART TX | 20 / 21 / 22 / 19 | TMC2208-compatible axis |
-| Lap RS-485 TX / RX | 26 / 27 | BLD-510B link, 9600 baud |
+| Lap TTL TX / RX | 8 / 9 | v9 `ESC.TTL` header to external automatic-direction RS-485 module; BLD-510B, 9600 baud |
+| SD CS | 10 | v9 microSD header pin 2; PIO-backed software SPI |
+| SD SCK | 11 | v9 microSD header pin 3; PIO-backed software SPI |
+| SD MOSI | 12 | v9 microSD header pin 4; PIO-backed software SPI |
+| SD MISO | 13 | v9 microSD header pin 5; PIO-backed software SPI |
+| Twist STEP / DIR / EN / shared UART | 1 / 0 / 14 / 28 | TMC2208-compatible axis; UART through 1 kΩ |
+| Z STEP / DIR / EN / shared UART | 16 / 17 / 18 / 15 | TMC2208-compatible axis; UART through 1 kΩ |
+| Pump STEP / DIR / EN / shared UART | 20 / 21 / 22 / 19 | TMC2208-compatible axis; UART through 1 kΩ |
 | PC diagnostics | Native USB | USB CDC only; not the keyboard path |
 
-GPIO 8-11 were legacy lap-controller signals. The current RS-485 lap mode uses
-GPIO 26/27, leaving 8-11 available for the SD reader. Verify the SD breakout's
-supply requirement before connecting it.
+This map comes from `Hardware/pcb/v9/BaseModule.sch`.
+The v9 board does not connect GPIO 26/27. The microSD header is, in pin order,
+3V3, CS, SCK, MOSI, MISO, GND. Do not use the old GPIO 8-11 SD map with v9.
 
 For the opposite end of the mast link, connect mast TX GPIO8 to base RX GPIO2
 and mast RX GPIO9 to base TX GPIO3. The matching streaming records and numeric
@@ -88,11 +88,12 @@ Modbus replies, CRC errors, exceptions, timeouts, byte counts, and the last raw
 reply. `STATUS` includes the same `@MOTOR` record. A valid Modbus exception
 proves the electrical link even though it indicates a rejected request.
 
-Current firmware defines only one UART transmit GPIO for each TMC2208-compatible
-driver and operates the links as write-only configuration channels, reported as
-`tmc_uart=tx_only`. It therefore cannot truthfully report TMC driver status.
-Bidirectional diagnostics can be added after the current PCB's return/shared
-UART routing is present in the repository and verified.
+The v9 schematic ties both PDN/UART pads of each TMC2208-compatible carrier
+together, then connects that node through 1 kΩ to one Pico GPIO (twist GP28,
+Z GP15, pump GP19). The electrical routing therefore supports single-wire
+half-duplex UART. Current firmware still configures `SerialPIO` as TX-only and
+reports `tmc_uart=tx_only`; it does not claim TMC readback until a tested
+single-pin turnaround implementation is added.
 
 Use `SD RETRY` after inserting a card, `SD STATUS` to inspect initialization,
 and `SD LIST` to verify that the root directory and supported `.asc`/`.fct`

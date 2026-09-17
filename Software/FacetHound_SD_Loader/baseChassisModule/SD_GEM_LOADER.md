@@ -6,22 +6,22 @@ settings link.
 
 ## Wiring
 
-The loader uses the retired legacy lap-motor pins through Arduino-Pico's
-PIO-backed `SoftwareSPI`, allowing the requested sequential signal order:
+The loader follows the v9 BaseModule header through Arduino-Pico's PIO-backed
+`SoftwareSPI`:
 
 | microSD reader | Base GPIO |
 | --- | ---: |
-| CS | 8 |
-| SCK | 9 |
-| MISO | 10 |
-| MOSI | 11 |
+| CS | 10 |
+| SCK | 11 |
+| MOSI | 12 |
+| MISO | 13 |
 | VCC | Reader's documented supply |
 | GND | GND |
 
-This ordering is not a legal hardware-SPI1 mapping, so one PIO state machine is
+This ordering is not a legal hardware-SPI mapping, so one PIO state machine is
 used for software SPI. The pin constants are grouped at the top of
-`sdGemLoader.h`. GPIO 26/27 remain
-dedicated to the live BLD-510B RS-485 link.
+`sdGemLoader.h`. GPIO 8/9 serve the v9 `ESC.TTL` header for the external
+BLD-510B RS-485 interface; GPIO 26/27 are not connected on v9.
 
 Use a FAT16/FAT32 card. Put `.asc` or `.fct` files in the card root. The browser
 intentionally ignores directories and other file types.

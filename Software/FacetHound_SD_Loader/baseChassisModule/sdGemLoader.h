@@ -3,13 +3,13 @@
 #include <Arduino.h>
 #include <vector>
 
-// Requested sequential wiring. This order is implemented with the
+// BaseModule v9 microSD header. This order is implemented with the
 // Arduino-Pico PIO-backed SoftwareSPI class because it is not a legal
-// hardware-SPI1 signal mapping.
-#define GEM_SD_CS_PIN    8
-#define GEM_SD_SCK_PIN   9
-#define GEM_SD_MISO_PIN 10
-#define GEM_SD_MOSI_PIN 11
+// hardware-SPI signal mapping.
+#define GEM_SD_CS_PIN   10
+#define GEM_SD_SCK_PIN  11
+#define GEM_SD_MOSI_PIN 12
+#define GEM_SD_MISO_PIN 13
 
 constexpr size_t GEM_SD_MAX_CUTS = 2048;
 constexpr size_t GEM_SD_FILE_NAME_LENGTH = 64;

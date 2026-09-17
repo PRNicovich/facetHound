@@ -20,15 +20,16 @@ ranges are documented in `mastModule/README.md`.
 
 | microSD reader | Base GPIO |
 | --- | ---: |
-| CS | 8 |
-| SCK | 9 |
-| MISO | 10 |
-| MOSI | 11 |
+| CS | 10 |
+| SCK | 11 |
+| MOSI | 12 |
+| MISO | 13 |
 
-These are the retired legacy lap-motor/level-shifter signals. Because this
-requested ordering is not a legal hardware-SPI1 mapping, the firmware uses the
-Arduino-Pico PIO-backed `SoftwareSPI` implementation. The active motor RS-485
-link remains on GPIO 26/27.
+This is the connector order routed by `Hardware/pcb/v9/BaseModule.sch`.
+Because it is not a legal hardware-SPI mapping, the firmware
+uses Arduino-Pico's PIO-backed `SoftwareSPI`. The active motor link uses GPIO
+8/9 at the v9 `ESC.TTL` header and an external automatic-direction RS-485
+module; GPIO 26/27 are not routed on the v9 board.
 
 Use a FAT16/FAT32 card. Put `.asc` or `.fct` files in its root, insert it, then
 open **Settings -> Load SD design**. Scroll with the twist wheel and click to
