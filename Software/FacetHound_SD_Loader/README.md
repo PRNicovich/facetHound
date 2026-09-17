@@ -52,6 +52,12 @@ GemCad center-to-facet distance is used only as the plane equation distance
 during mesh construction; it is not machine Z and is never shown or commanded
 as a Z target.
 
+Without an SD design, Dynamic and Static navigate the built-in display gem.
+The base carries its compact facet-pose table and sends an exact `@JOB` record,
+so keyboard tier/facet changes select the target face instead of inferring a
+face from the current encoder pose. Facets advance by increasing machine index
+within each tier; tier changes begin at that tier's lowest index.
+
 The Pico 2 now rebuilds the loaded design's 3D wireframe by incrementally
 clipping a convex mesh against the GemCad half-space planes, then streams it to
 both dynamic and static display modes. Redundant planes are skipped without

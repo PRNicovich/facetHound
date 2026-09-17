@@ -11,6 +11,7 @@
 #include "sdGemLoader.h"
 #include "gemGeometry.h"
 #include "gemCache.h"
+#include "builtinGemCuts.h"
 
 // Integration trials: change one flag to true and upload only this base sketch
 // to reverse that link's GPIO direction without reflashing the remote module.
@@ -28,6 +29,10 @@ GemSdDesign activeGemDesign;
 GemRuntimeGeometry activeGemGeometry;
 bool activeGemLoaded = false;
 int lastJobCutSent = -1;
+int builtinCutIndex = 0;
+int lastBuiltinCutSent = -1;
+uint8_t displayVisualMode = 0; // 0 classic/unknown, 1 dynamic, 2 static
+bool displayModeKnown = false;
 char activeGemCacheStatus[20] = "NONE";
 
 static const float TWIST_ENCODER_COUNTS = 4096.0f;
@@ -413,10 +418,57 @@ static void safeProtocolText(const char* input, char* output, size_t outputSize)
     output[written] = '\0';
 }
 
+static bool oppositeFacetApproach(float storedTipDegrees)
+{
+    return storedTipDegrees < 0.0f || storedTipDegrees > 90.0f;
+}
+
+static float machineIndexForFacet(float rawIndex, float storedTipDegrees,
+                                  float sourceWheelIndex)
+{
+    float index = rawIndex;
+    if (oppositeFacetApproach(storedTipDegrees)) index += sourceWheelIndex * 0.5f;
+    index = wrapPositive(index, sourceWheelIndex);
+    if (S.wheelIndex > 0.0f && sourceWheelIndex > 0.0f)
+        index *= S.wheelIndex / sourceWheelIndex;
+    return wrapPositive(index, S.wheelIndex);
+}
+
+static void targetBuiltinCut()
+{
+    builtinCutIndex = constrain(builtinCutIndex, 0,
+                                int(BuiltinGem::kCutCount) - 1);
+    const BuiltinGem::Cut& cut = BuiltinGem::kCuts[builtinCutIndex];
+    S.targetTwist = machineIndexForFacet(
+        cut.rawIndex, cut.storedTipDegrees, BuiltinGem::kWheelIndex);
+    S.targetValid = true;
+    notifyTwistTargetChanged();
+    S.dirty = true;
+}
+
 static void sendActiveCut(bool force = false)
 {
-    if (!activeGemLoaded || S.markIdx < 0 ||
-        size_t(S.markIdx) >= activeGemDesign.cuts.size())
+    if (!activeGemLoaded)
+    {
+        if (builtinCutIndex < 0 || builtinCutIndex >= int(BuiltinGem::kCutCount))
+            builtinCutIndex = 0;
+        if (!force && lastBuiltinCutSent == builtinCutIndex) return;
+
+        const BuiltinGem::Cut& cut = BuiltinGem::kCuts[builtinCutIndex];
+        dispSerial.print("@JOB,");
+        dispSerial.print(cut.tier);
+        dispSerial.print(",");
+        dispSerial.print(cut.facet);
+        dispSerial.print(",");
+        dispSerial.print(cut.storedTipDegrees, 4);
+        dispSerial.print(",0.0000000,");
+        dispSerial.print(cut.rawIndex, 4);
+        dispSerial.println(",");
+        lastBuiltinCutSent = builtinCutIndex;
+        return;
+    }
+
+    if (S.markIdx < 0 || size_t(S.markIdx) >= activeGemDesign.cuts.size())
         return;
     if (!force && lastJobCutSent == S.markIdx) return;
 
@@ -436,6 +488,33 @@ static void sendActiveCut(bool force = false)
     dispSerial.print(",");
     dispSerial.println(name);
     lastJobCutSent = S.markIdx;
+}
+
+static void setDisplayVisualMode(const char* mode)
+{
+    const uint8_t next = !strcasecmp(mode, "DYNAMIC") ? 1 :
+                         !strcasecmp(mode, "STATIC") ? 2 : 0;
+    const bool enteringGemView = displayVisualMode == 0 && next != 0;
+    displayVisualMode = next;
+    displayModeKnown = true;
+    if (!enteringGemView || activeGemLoaded) return;
+
+    const uint8_t firstTier = BuiltinGem::kCuts[0].tier;
+    float lowestIndex = INFINITY;
+    for (uint16_t i = 0; i < BuiltinGem::kCutCount; ++i)
+    {
+        const BuiltinGem::Cut& cut = BuiltinGem::kCuts[i];
+        if (cut.tier != firstTier) continue;
+        const float index = machineIndexForFacet(
+            cut.rawIndex, cut.storedTipDegrees, BuiltinGem::kWheelIndex);
+        if (index < lowestIndex)
+        {
+            lowestIndex = index;
+            builtinCutIndex = i;
+        }
+    }
+    targetBuiltinCut();
+    sendActiveCut(true);
 }
 
 static void sendActiveMesh()
@@ -547,10 +626,16 @@ static void applyLoadedGemDesign(GemSdDesign&& design, GemRuntimeGeometry&& geom
     S.markPoints.clear();
     S.markPoints.reserve(design.cuts.size());
     for (const GemCutCoordinate& cut : design.cuts)
-        S.markPoints.push_back(wrapPositive(cut.index, S.wheelIndex));
+        S.markPoints.push_back(machineIndexForFacet(
+            cut.index, cut.angleDegrees, design.wheelIndex));
 
     S.markIdx = 0;
-    S.targetTwist = S.markPoints.front();
+    const uint16_t firstTier = design.cuts.front().tier;
+    for (size_t i = 1; i < design.cuts.size(); ++i)
+        if (design.cuts[i].tier == firstTier &&
+            S.markPoints[i] < S.markPoints[size_t(S.markIdx)])
+            S.markIdx = int(i);
+    S.targetTwist = S.markPoints[size_t(S.markIdx)];
     S.targetValid = true;
     notifyTwistTargetChanged();
     S.dirty = true;
@@ -646,6 +731,7 @@ static void applyConfigSet(char* settingText)
 
     if (!strcmp(id, "DISPLAY_MODE"))
     {
+        setDisplayVisualMode(value);
         sendCfgAck(id, value);
         return;
     }
@@ -1056,6 +1142,7 @@ void displayRxTask()
                       !strcasecmp(valueText, "DYNAMIC") ||
                       !strcasecmp(valueText, "STATIC")))
             {
+                setDisplayVisualMode(valueText);
                 lastDisplayRoundTripMs = millis();
                 if (!displayRoundTripReported)
                 {
@@ -1180,7 +1267,7 @@ static void sendUsbState()
     Serial.print("/"); Serial.print(S.markPoints.size());
     Serial.print(",sd="); Serial.print(gemSdReady() ? "ready" : "missing");
     Serial.print(",gem=");
-    Serial.println(activeGemLoaded ? activeGemDesign.fileName : "none");
+    Serial.println(activeGemLoaded ? activeGemDesign.fileName : "builtin");
 
     Serial.print("@IO,mast_rx="); Serial.print(S.mastRxCount);
     Serial.print(",mast_link=");
@@ -1244,40 +1331,154 @@ static bool selectAdjacentGemTier(bool forward)
     size_t current = S.markIdx >= 0 ? size_t(S.markIdx) : 0;
     if (current >= count) current = 0;
     const uint16_t currentTier = activeGemDesign.cuts[current].tier;
-
-    size_t currentTierStart = current;
-    while (currentTierStart > 0 &&
-           activeGemDesign.cuts[currentTierStart - 1].tier == currentTier)
-        --currentTierStart;
-
-    size_t nextTierStart = 0;
-    if (forward)
+    uint16_t targetTier = currentTier;
+    bool foundTier = false;
+    for (size_t i = 0; i < count; ++i)
     {
-        nextTierStart = currentTierStart;
-        while (nextTierStart < count &&
-               activeGemDesign.cuts[nextTierStart].tier == currentTier)
-            ++nextTierStart;
-        if (nextTierStart >= count) nextTierStart = 0;
+        const uint16_t tier = activeGemDesign.cuts[i].tier;
+        if ((forward && tier > currentTier && (!foundTier || tier < targetTier)) ||
+            (!forward && tier < currentTier && (!foundTier || tier > targetTier)))
+        {
+            targetTier = tier;
+            foundTier = true;
+        }
     }
-    else if (currentTierStart == 0)
+    if (!foundTier)
     {
-        nextTierStart = count - 1;
-        const uint16_t previousTier = activeGemDesign.cuts[nextTierStart].tier;
-        while (nextTierStart > 0 &&
-               activeGemDesign.cuts[nextTierStart - 1].tier == previousTier)
-            --nextTierStart;
-    }
-    else
-    {
-        nextTierStart = currentTierStart - 1;
-        const uint16_t previousTier = activeGemDesign.cuts[nextTierStart].tier;
-        while (nextTierStart > 0 &&
-               activeGemDesign.cuts[nextTierStart - 1].tier == previousTier)
-            --nextTierStart;
+        targetTier = activeGemDesign.cuts[0].tier;
+        for (size_t i = 1; i < count; ++i)
+        {
+            const uint16_t tier = activeGemDesign.cuts[i].tier;
+            if ((forward && tier < targetTier) || (!forward && tier > targetTier))
+                targetTier = tier;
+        }
     }
 
-    S.markIdx = int(nextTierStart);
+    size_t selected = 0;
+    float lowestIndex = INFINITY;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (activeGemDesign.cuts[i].tier != targetTier) continue;
+        if (S.markPoints[i] < lowestIndex)
+        {
+            lowestIndex = S.markPoints[i];
+            selected = i;
+        }
+    }
+    S.markIdx = int(selected);
     homeMarkPoint(&S);
+    sendActiveCut(true);
+    return true;
+}
+
+static bool selectAdjacentGemFacet(bool forward)
+{
+    const size_t count = min(activeGemDesign.cuts.size(), S.markPoints.size());
+    if (!activeGemLoaded || count == 0) return false;
+    size_t current = S.markIdx >= 0 ? size_t(S.markIdx) : 0;
+    if (current >= count) current = 0;
+    const uint16_t tier = activeGemDesign.cuts[current].tier;
+    const float currentIndex = S.markPoints[current];
+
+    size_t selected = current;
+    float selectedIndex = forward ? INFINITY : -INFINITY;
+    bool found = false;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (activeGemDesign.cuts[i].tier != tier || i == current) continue;
+        const float index = S.markPoints[i];
+        if ((forward && index > currentIndex + 0.0001f && index < selectedIndex) ||
+            (!forward && index < currentIndex - 0.0001f && index > selectedIndex))
+        {
+            selected = i;
+            selectedIndex = index;
+            found = true;
+        }
+    }
+    if (!found)
+    {
+        selectedIndex = forward ? INFINITY : -INFINITY;
+        for (size_t i = 0; i < count; ++i)
+        {
+            if (activeGemDesign.cuts[i].tier != tier) continue;
+            const float index = S.markPoints[i];
+            if ((forward && index < selectedIndex) || (!forward && index > selectedIndex))
+            {
+                selected = i;
+                selectedIndex = index;
+            }
+        }
+    }
+    S.markIdx = int(selected);
+    homeMarkPoint(&S);
+    sendActiveCut(true);
+    return true;
+}
+
+static bool selectAdjacentBuiltin(bool changeTier, bool forward)
+{
+    const BuiltinGem::Cut& current = BuiltinGem::kCuts[builtinCutIndex];
+    uint8_t targetTier = current.tier;
+    if (changeTier)
+    {
+        bool found = false;
+        for (uint16_t i = 0; i < BuiltinGem::kCutCount; ++i)
+        {
+            const uint8_t tier = BuiltinGem::kCuts[i].tier;
+            if ((forward && tier > current.tier && (!found || tier < targetTier)) ||
+                (!forward && tier < current.tier && (!found || tier > targetTier)))
+            {
+                targetTier = tier;
+                found = true;
+            }
+        }
+        if (!found) targetTier = forward ? BuiltinGem::kCuts[0].tier
+                                         : BuiltinGem::kCuts[BuiltinGem::kCutCount - 1].tier;
+    }
+
+    const float currentIndex = machineIndexForFacet(
+        current.rawIndex, current.storedTipDegrees, BuiltinGem::kWheelIndex);
+    int selected = builtinCutIndex;
+    float selectedIndex = forward && !changeTier ? INFINITY :
+                          !forward && !changeTier ? -INFINITY : INFINITY;
+    bool found = false;
+    for (uint16_t i = 0; i < BuiltinGem::kCutCount; ++i)
+    {
+        const BuiltinGem::Cut& candidate = BuiltinGem::kCuts[i];
+        if (candidate.tier != targetTier || (!changeTier && i == builtinCutIndex)) continue;
+        const float index = machineIndexForFacet(
+            candidate.rawIndex, candidate.storedTipDegrees, BuiltinGem::kWheelIndex);
+        const bool acceptable = changeTier ||
+            (forward ? index > currentIndex + 0.0001f : index < currentIndex - 0.0001f);
+        if (!acceptable) continue;
+        if (!found || (changeTier ? index < selectedIndex
+                                  : (forward ? index < selectedIndex
+                                             : index > selectedIndex)))
+        {
+            selected = i;
+            selectedIndex = index;
+            found = true;
+        }
+    }
+    if (!found && !changeTier)
+    {
+        selectedIndex = forward ? INFINITY : -INFINITY;
+        for (uint16_t i = 0; i < BuiltinGem::kCutCount; ++i)
+        {
+            const BuiltinGem::Cut& candidate = BuiltinGem::kCuts[i];
+            if (candidate.tier != targetTier) continue;
+            const float index = machineIndexForFacet(
+                candidate.rawIndex, candidate.storedTipDegrees, BuiltinGem::kWheelIndex);
+            if ((forward && index < selectedIndex) || (!forward && index > selectedIndex))
+            {
+                selected = i;
+                selectedIndex = index;
+            }
+        }
+    }
+
+    builtinCutIndex = selected;
+    targetBuiltinCut();
     sendActiveCut(true);
     return true;
 }
@@ -1306,10 +1507,34 @@ static void routeKeyboardKey(uint8_t key)
     }
     else
     {
+        const bool useBuiltinGem = !activeGemLoaded && displayVisualMode != 0;
         if (key == 5)
-            selectAdjacentGemTier(true);
+        {
+            if (activeGemLoaded) selectAdjacentGemTier(true);
+            else if (useBuiltinGem) selectAdjacentBuiltin(true, true);
+        }
         else if (key == 6)
-            selectAdjacentGemTier(false);
+        {
+            if (activeGemLoaded) selectAdjacentGemTier(false);
+            else if (useBuiltinGem) selectAdjacentBuiltin(true, false);
+        }
+        else if (key == 12)
+        {
+            if (activeGemLoaded) selectAdjacentGemFacet(true);
+            else if (useBuiltinGem) selectAdjacentBuiltin(false, true);
+            else handleKey(&S, key);
+        }
+        else if (key == 13)
+        {
+            if (activeGemLoaded) selectAdjacentGemFacet(false);
+            else if (useBuiltinGem) selectAdjacentBuiltin(false, false);
+            else handleKey(&S, key);
+        }
+        else if (key == 14 && useBuiltinGem)
+        {
+            targetBuiltinCut();
+            sendActiveCut(true);
+        }
         else
             handleKey(&S, key);
     }
@@ -1703,7 +1928,7 @@ void displayTask()
     static uint32_t lastDisplayProbeMs = 0;
     if (now - lastDisplayProbeMs >= 500)
     {
-        sendDisplayLine("@PING,BASE");
+        sendDisplayLine(displayModeKnown ? "@PING,BASE" : "@MODE,?");
         lastDisplayProbeMs = now;
     }
 

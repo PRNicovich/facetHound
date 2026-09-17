@@ -1564,6 +1564,7 @@ void setup()
   baseSerial.print("@FW,DISPLAY,");
   baseSerial.println(DISPLAY_FIRMWARE_ID);
   baseSerial.println("@HELLO,DISPLAY");
+  reportDisplayMode("@MODE,");
   if (usbDemoMode)
   {
     Serial.print("@FW,DISPLAY,");
