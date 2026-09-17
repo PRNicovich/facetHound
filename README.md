@@ -10,7 +10,8 @@ Subfolders of `Software/` contain the Arduino C++ sketches and desktop Python to
 
 ## Current firmware
 
-The current Pico 2 base plus RP2040 Zero mast and display release is in
+The current Pico 2 base plus RP2040 Zero mast, display, and keyboard-host
+release is in
 [`Software/FacetHound_SD_Loader`](Software/FacetHound_SD_Loader). It includes:
 
 - Classic, Dynamic, and Static HX8357D display modes.
@@ -22,14 +23,15 @@ The current Pico 2 base plus RP2040 Zero mast and display release is in
 - Runtime convex-gem mesh generation on the Pico 2 and streaming to the display.
 - A documented USB CDC API and PC diagnostic/motion-test console.
 - Matching streaming mast telemetry for tip, index, and force sensing.
+- A dedicated PIO-USB keyboard host with the matching UART key protocol.
 
 See the [release README](Software/FacetHound_SD_Loader/README.md) for SD wiring, dependencies, flashing instructions, limits, and verification results.
 
 ## Repository map
 
 - `Hardware/`: complete assemblies and fabrication files.
-- `Software/FacetHound_SD_Loader/`: current three-controller firmware release.
-- `Software/caseModule/`, `displayModule/`, and `usbToUART/`: earlier module sketches and hardware support firmware.
+- `Software/FacetHound_SD_Loader/`: current four-controller firmware release.
+- `Software/caseModule/` and `displayModule/`: earlier module sketches.
 - `Software/gemUtils/`: GemCad parsing, display prototypes, and geometry utilities.
 - `Software/engraveUtils/`: engraving experiments.
 

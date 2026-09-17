@@ -59,5 +59,5 @@
 
   <text class="note" x="40" y="620">Encoder push behavior: lap/water single click toggles run/pause; double click changes direction.</text>
   <text class="note" x="40" y="646">Settings suppresses machine motion: A=back, C=delete, H=finer, M/O=up/down, N=select.</text>
-  <text class="note" x="40" y="672">Source image: Software/keyboardSettings.png · Firmware: keyboardFunctions.cpp and baseChassisModule.ino</text>
+  <text class="note" x="40" y="672">Source image: usbToUART/keyboardSettings.png · Firmware: keyboardFunctions.cpp and baseChassisModule.ino</text>
 </svg>

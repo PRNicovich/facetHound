@@ -2,7 +2,8 @@
 
 ![Facet Hound keyboard map](keyboard_map.svg)
 
-`keyboardSettings.png` programs ordinary HID key numbers into the dedicated
+[`keyboardSettings.png`](../usbToUART/keyboardSettings.png) programs ordinary
+HID key numbers into the dedicated
 keyboard module. That module reports them to the base as `D,<usage>\n` over
 the keyboard UART on GPIO 6/7 at 115200 baud. For example, physical **A** is
 HID usage 4, **M** is 16, and **1** is 30. This dedicated UART connection is

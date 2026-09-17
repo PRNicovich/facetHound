@@ -10,8 +10,8 @@ All UART logic must be 3.3 V TTL and every module needs a common ground.
 
 | Device / signal | Base GPIO | Notes |
 |---|---:|---|
-| Keyboard UART TX | 7 | Base TX to keyboard RX |
-| Keyboard UART RX | 6 | Keyboard `D,<HID>` events enter here |
+| Keyboard UART TX | 7 | Base TX to keyboard-host RX GPIO1 |
+| Keyboard UART RX | 6 | Keyboard-host TX GPIO0 sends `D,<HID>` events here |
 | Display UART TX | 5 | Base to display, 460800 baud |
 | Display UART RX | 4 | Display to base, 460800 baud |
 | Mast UART TX | 3 | Base to mast, 115200 baud |
@@ -44,7 +44,8 @@ D,4
 ```
 
 The second field is the HID usage number configured in
-`keyboardSettings.png`. See [KEYBOARD_MAP.md](KEYBOARD_MAP.md) and
+[`../usbToUART/keyboardSettings.png`](../usbToUART/keyboardSettings.png). See
+[KEYBOARD_MAP.md](KEYBOARD_MAP.md) and
 [keyboard_map.svg](keyboard_map.svg) for the physical layout and action map.
 
 ## USB bench console

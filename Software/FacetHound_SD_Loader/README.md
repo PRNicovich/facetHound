@@ -1,15 +1,16 @@
 # Facet Hound SD loader build
 
-This package contains the matching base, mast, and display firmware for loading
-GemCad designs from a microSD card through Display Settings and operating the
-Facet Hound hardware as one system.
+This package contains the matching base, mast, display, and USB keyboard-host
+firmware for loading GemCad designs from a microSD card through Display
+Settings and operating the Facet Hound hardware as one system.
 
 ## Source targets
 
 The complete Arduino sources are in `baseChassisModule/` for the Raspberry Pi
 Pico 2 base, `mastModule/` for the Waveshare RP2040 Zero sensor module, and
 `displayModule_v6_gem/` for the Waveshare RP2040 Zero display with the existing
-HX8357D wiring. No UF2 image is required in this source tree.
+HX8357D wiring. The dedicated keyboard host is in `usbToUART/`. Build and board
+settings for all four controllers are collected in `FLASHING.md`.
 
 See `INTEGRATION_TEST.md` for the staged three-module bring-up procedure and
 short-circuit isolation checklist. The mast's exact UART contract and sensor
@@ -77,6 +78,9 @@ base directly without depending on the supplied console UI.
   172,876 bytes flash; 16,392 bytes static RAM.
 - Mast source compiled with Arduino-Pico 5.6.0 for Waveshare RP2040 Zero:
   60,972 bytes flash; 9,672 bytes static RAM.
+- Keyboard USB-host source compiled with Arduino-Pico 5.6.0 for Waveshare
+  RP2040 Zero at 240 MHz, `-O`, and Adafruit TinyUSB: 90,308 bytes flash;
+  33,004 bytes static RAM.
 - Display source compiled with Arduino-Pico 5.6.0 and the existing HX8357D
   flags: 392,832 bytes flash; 29,228 bytes static RAM.
 - The reference `gemLoader.py` was exercised against nine supplied ASC

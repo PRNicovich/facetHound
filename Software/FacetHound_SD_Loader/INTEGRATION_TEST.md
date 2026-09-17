@@ -40,6 +40,9 @@ Test each controller separately before joining them:
 - **Base:** leave motor power disabled. Connect its native USB and run
   `tools/base_module_console.py`; `state` must return a valid snapshot and
   `stop` must acknowledge.
+- **Keyboard host:** power its protected keyboard VBUS without the base UART
+  connected. Confirm 5 V VBUS and 3.3 V controller rails remain stable, then
+  attach a keyboard and check for USB-host resets or excess supply current.
 
 ## 3. Base plus mast
 
@@ -70,8 +73,9 @@ UART and verify each line begins with `@` and ends with newline.
 1. Add the display UART: base TX5 to display RX9, base RX4 from display TX8,
    plus common ground. The display link is 460800 baud.
 2. Confirm telemetry appears in Classic, Dynamic, and Static modes.
-3. Add the dedicated keyboard UART on base GPIO6/7. Verify A opens Settings,
-   B/C change tiers, H offsets marks, and the twist wheel operates the menu.
+3. Add the dedicated keyboard bridge UART: bridge TX0 to base RX6 and bridge
+   RX1 to base TX7. Verify A opens Settings, B/C change tiers, H offsets marks,
+   and the twist wheel operates the menu.
 4. Add the SD reader on base GPIO8-11 and load a known ASC/FHC pair. Confirm the
    loaded facet, target tip/index, dynamic highlight, and tier buttons agree.
 
