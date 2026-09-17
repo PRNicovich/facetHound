@@ -24,9 +24,6 @@ constexpr uint8_t FORCE_AVERAGE_SAMPLES = 32;
 constexpr float TWIST_ENCODER_COUNTS = 4096.0f;
 constexpr uint32_t TELEMETRY_PERIOD_MS = 20; // 50 complete frames per second.
 
-// Set true only for a USB bench session. The machine link never depends on USB.
-constexpr bool MIRROR_TELEMETRY_TO_USB = false;
-
 SerialPIO baseSerial(BASE_TX_PIN, BASE_RX_PIN);
 
 RunningAverage twistCosAverage(TWIST_AVERAGE_SAMPLES);
@@ -38,6 +35,7 @@ uint32_t lastTelemetryMs = 0;
 long tipRawAveraged = 0;
 long twistRawAveraged = 0;
 long forceRawAveraged = 0;
+bool usbDiagnosticMode = false;
 
 static uint16_t readEncoderBitBang(uint8_t csPin, uint8_t clockPin,
                                    uint8_t dataPin, uint8_t dataBits)
@@ -71,7 +69,7 @@ static void sendTelemetryLine(const char* key, long value)
   baseSerial.print(',');
   baseSerial.println(value);
 
-  if (MIRROR_TELEMETRY_TO_USB && Serial)
+  if (usbDiagnosticMode && Serial)
   {
     Serial.print('@');
     Serial.print(key);
@@ -120,6 +118,16 @@ void setup()
   Serial.begin(115200); // Optional diagnostics only; never awaited.
   baseSerial.begin(BASE_BAUD);
 
+  // Mirror telemetry only for an actively opened mast USB CDC session. USB
+  // power alone does not change normal instrument behavior.
+  const uint32_t usbDetectStarted = millis();
+  while (!Serial && millis() - usbDetectStarted < 750)
+  {
+    delay(5);
+    yield();
+  }
+  usbDiagnosticMode = bool(Serial);
+
   analogReadResolution(12);
   pinMode(FORCE_PIN, INPUT);
 
@@ -143,6 +151,8 @@ void setup()
   // Seed every average before the first published frame.
   for (uint8_t i = 0; i < FORCE_AVERAGE_SAMPLES; ++i) sampleSensors();
   publishTelemetry();
+  if (usbDiagnosticMode)
+    Serial.println("@HELLO,MAST,USB_DIAGNOSTIC");
   lastTelemetryMs = millis();
 }
 

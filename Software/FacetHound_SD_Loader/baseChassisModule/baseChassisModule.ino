@@ -49,6 +49,10 @@ uint8_t usbIdx = 0;
 uint32_t keyRxCount = 0;
 uint32_t displayRxCount = 0;
 uint32_t usbRxCount = 0;
+uint32_t lastKeyboardRxMs = 0;
+bool keyboardLinkReported = false;
+uint32_t lastMastRxMs = 0;
+bool mastLinkReported = false;
 uint32_t lastDisplayRxMs = 0;
 bool displayLinkReported = false;
 bool usbStateStream = false;
@@ -236,6 +240,7 @@ void mastTask()
             const char* valueText = comma + 1;
 
             float val = 0.0f;
+            bool validMastRecord = false;
 
             if (!parseStrictFloat(valueText, &val))
                 continue;
@@ -247,6 +252,7 @@ void mastTask()
                 updateTipDegreesFromEncoder();
 
                 checkServoStatus(&S);
+                validMastRecord = true;
             }
             else if (!strcmp(key, "twist"))
             {
@@ -281,6 +287,7 @@ void mastTask()
                         S.targetValid = true;
                     }
                 }
+                validMastRecord = true;
             }
             else if (!strcmp(key, "force"))
             {
@@ -288,6 +295,17 @@ void mastTask()
                     continue;
 
                 S.forceValue = val;
+                validMastRecord = true;
+            }
+
+            if (validMastRecord)
+            {
+                lastMastRxMs = millis();
+                if (!mastLinkReported)
+                {
+                    mastLinkReported = true;
+                    Serial.println("@LINK,MAST,RX_ACTIVE");
+                }
             }
         }
         else if (mastIdx < sizeof(mastBuf) - 1)
@@ -1039,7 +1057,15 @@ static void sendUsbState()
     Serial.println(activeGemLoaded ? activeGemDesign.fileName : "none");
 
     Serial.print("@IO,mast_rx="); Serial.print(S.mastRxCount);
+    Serial.print(",mast_link=");
+    Serial.print(lastMastRxMs && millis() - lastMastRxMs < 500 ? "up" : "down");
+    Serial.print(",mast_age_ms=");
+    Serial.print(lastMastRxMs ? millis() - lastMastRxMs : 0);
     Serial.print(",key_rx="); Serial.print(keyRxCount);
+    Serial.print(",keyboard_link=");
+    Serial.print(lastKeyboardRxMs && millis() - lastKeyboardRxMs < 2500 ? "up" : "down");
+    Serial.print(",keyboard_age_ms=");
+    Serial.print(lastKeyboardRxMs ? millis() - lastKeyboardRxMs : 0);
     Serial.print(",display_rx="); Serial.print(displayRxCount);
     Serial.print(",display_link=");
     Serial.print(lastDisplayRxMs && millis() - lastDisplayRxMs < 2500 ? "up" : "down");
@@ -1337,12 +1363,30 @@ void keyboardTask()
             keyBuf[keyIdx] = '\0';
             keyIdx = 0;
 
-            if (keyBuf[0] == 'D')
+            bool validKeyboardRecord = false;
+            if (!strcmp(keyBuf, "@HELLO,KEYBOARD"))
             {
-                int key = atoi(&keyBuf[2]);
-                Serial.print("@KEY,"); Serial.println(key);
+                validKeyboardRecord = true;
+            }
+            else if (keyBuf[0] == 'D' && keyBuf[1] == ',')
+            {
+                long key = -1;
+                if (parseStrictLong(&keyBuf[2], &key) && key >= 0 && key <= 255)
+                {
+                    Serial.print("@KEY,"); Serial.println(key);
+                    routeKeyboardKey(uint8_t(key));
+                    validKeyboardRecord = true;
+                }
+            }
 
-                routeKeyboardKey(uint8_t(key));
+            if (validKeyboardRecord)
+            {
+                lastKeyboardRxMs = millis();
+                if (!keyboardLinkReported)
+                {
+                    keyboardLinkReported = true;
+                    Serial.println("@LINK,KEYBOARD,RX_ACTIVE");
+                }
             }
         }
         else if (keyIdx < sizeof(keyBuf) - 1)
@@ -1637,6 +1681,8 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
+    Serial.println("KEYBOARD UART: bridge TX0 -> base RX6; bridge RX1 <- base TX7; 115200 baud");
+    Serial.println("MAST UART: mast TX8 -> base RX2; mast RX9 <- base TX3; 115200 baud");
     Serial.println("DISPLAY UART: base TX5 -> display RX9; display TX8 -> base RX4; 460800 baud");
     Serial.println("Send STATUS or STREAM ON 500 to inspect link counters");
 }

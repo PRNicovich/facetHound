@@ -83,8 +83,18 @@ client should read values by name rather than fixed column position.
 The following `@IO` record contains cumulative received-byte counters:
 
 ```text
-@IO,mast_rx=1234,key_rx=37,display_rx=8912,display_link=up,display_age_ms=237,usb_rx=44
+@IO,mast_rx=1234,mast_link=up,mast_age_ms=4,key_rx=37,keyboard_link=up,keyboard_age_ms=183,display_rx=8912,display_link=up,display_age_ms=237,usb_rx=44
 ```
+
+The mast normally publishes a complete sensor frame every 20 ms.
+`mast_link=up` requires a valid `tip`, `twist`, or `force` protocol record in
+the last 500 ms; random bytes do not count. `mast_age_ms` is the time since the
+last valid mast record (`0` means none has ever arrived).
+
+The keyboard bridge publishes an idle health record once per second while its
+USB-host core is responsive. `keyboard_link` uses a 2.5-second timeout, so the
+link can be verified without pressing a key. Actual presses still produce the
+asynchronous `@KEY,<hid>` record.
 
 The display sends an idle heartbeat once per second, so `display_rx` increases
 even when its encoder is stationary. `display_link` is `up` when a byte arrived

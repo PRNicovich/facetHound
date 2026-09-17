@@ -28,10 +28,10 @@ integration changes.
 
 | Controller | Flash | Static RAM |
 |---|---:|---:|
-| Base | 173,236 bytes | 16,400 bytes |
-| Mast | 60,972 bytes | 9,672 bytes |
+| Base | 173,788 bytes | 16,408 bytes |
+| Mast | 61,172 bytes | 9,672 bytes |
 | Display | 393,024 bytes | 29,232 bytes |
-| Keyboard USB host | 90,308 bytes | 33,004 bytes |
+| Keyboard USB host | 90,404 bytes | 33,008 bytes |
 
 ## Inter-controller links
 

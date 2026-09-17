@@ -28,6 +28,7 @@ struct Heartbeat
 queue_t heartbeatQueue;
 uint32_t lastCoreHeartbeatMs = 0;
 uint32_t lastHeartbeatSentMs = 0;
+uint32_t lastBaseHeartbeatMs = 0;
 hid_keyboard_report_t previousKeyboardReport = {};
 
 static void usbHostCore();
@@ -87,10 +88,20 @@ void loop()
   while (queue_try_remove(&heartbeatQueue, &heartbeat))
     lastCoreHeartbeatMs = millis();
 
-  if (millis() - lastCoreHeartbeatMs > CORE_RESTART_MS)
+  const uint32_t now = millis();
+  if (now - lastCoreHeartbeatMs > CORE_RESTART_MS)
   {
-    lastCoreHeartbeatMs = millis();
+    lastCoreHeartbeatMs = now;
     restartUsbHostCore();
+  }
+
+  // Prove the idle bridge and its USB-host core are alive without requiring a
+  // key press. Do not claim health while the core heartbeat is stale.
+  if (now - lastBaseHeartbeatMs >= CORE_HEARTBEAT_MS &&
+      now - lastCoreHeartbeatMs < CORE_RESTART_MS)
+  {
+    Serial1.println("@HELLO,KEYBOARD");
+    lastBaseHeartbeatMs = now;
   }
 }
 

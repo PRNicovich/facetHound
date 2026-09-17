@@ -34,9 +34,9 @@ Test each controller separately before joining them:
 - **Display:** power and restart it several times. Confirm the complete splash,
   persisted UI mode, and no reset loop.
 - **Mast:** verify 3.3 V and sensor supplies, then confirm encoder clock/CS
-  activity. With `MIRROR_TELEMETRY_TO_USB = true` for a temporary bench build,
-  confirm `@tip`, `@twist`, and `@force` values change sensibly. Restore it to
-  `false` for the normal machine build.
+  activity. Open the mast's USB serial port during reset to enable automatic
+  diagnostic mirroring, then confirm `@tip`, `@twist`, and `@force` records.
+  No special bench build is required.
 - **Base:** leave motor power disabled. Connect its native USB and run
   `tools/base_module_console.py`; `state` must return a valid snapshot and
   `stop` must acknowledge.
@@ -58,6 +58,7 @@ stream 250
 Pass criteria:
 
 - `@IO,mast_rx=...` increases continuously.
+- `mast_link=up` and `mast_age_ms` remains well below 500.
 - `tip` changes smoothly through mast motion.
 - `actual` follows twist motion and crosses the wheel rollover without a large
   false jump.
@@ -78,7 +79,8 @@ UART and verify each line begins with `@` and ends with newline.
 2. Confirm telemetry appears in Classic, Dynamic, and Static modes.
 3. Add the dedicated keyboard bridge UART: bridge TX0 to base RX6 and bridge
    RX1 to base TX7. Verify A opens Settings, B/C change tiers, H offsets marks,
-   and the twist wheel operates the menu.
+   and the twist wheel operates the menu. `STATUS` should show
+   `keyboard_link=up` even before a key is pressed.
 4. Add the SD reader on base GPIO8-11 and load a known ASC/FHC pair. Confirm the
    loaded facet, target tip/index, dynamic highlight, and tier buttons agree.
 

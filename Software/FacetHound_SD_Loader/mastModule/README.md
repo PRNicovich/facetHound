@@ -42,8 +42,14 @@ The active base does not need to poll.
 Twist uses a circular average, so samples around the 4095/0 boundary do not
 average incorrectly through the middle of the wheel. Tip and force retain the
 classic oversampled ranges used by existing calibration values. The machine
-UART does not depend on USB; optional USB mirroring is disabled by default with
-`MIRROR_TELEMETRY_TO_USB`.
+UART does not depend on USB. Telemetry is also mirrored to USB only when the
+mast's USB CDC port is actively open during boot; USB power by itself does not
+enable diagnostic mirroring.
+
+The firmware does not wait for any sensor to identify itself. With sensors
+unplugged it continues sending frames, although the floating input values are
+not meaningful. This permits UART integration testing before installing the
+sensors.
 
 The obsolete mast protocol used space-delimited `i`, `l`, and `e` records only
 after receiving `?`. That format is not accepted by the current base and is no

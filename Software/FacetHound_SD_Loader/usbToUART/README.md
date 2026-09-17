@@ -33,6 +33,16 @@ are not sent. Already-held keys are suppressed when another key changes, and a
 multi-key report produces one record for each newly pressed key. Non-keyboard
 HID interfaces are ignored without stalling the USB host endpoint.
 
+The bridge also emits an idle health record once per second while its USB-host
+core is responsive:
+
+```text
+@HELLO,KEYBOARD
+```
+
+The base consumes this internally and reports `keyboard_link=up`; it never
+treats the heartbeat as a key press.
+
 The physical layout and HID assignments are in
 [keyboardSettings.png](keyboardSettings.png). Operator functions are mapped in
 [`../baseChassisModule/KEYBOARD_MAP.md`](../baseChassisModule/KEYBOARD_MAP.md).
