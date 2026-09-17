@@ -22,7 +22,7 @@ HID assignments need to be changed.
 ## Menu control
 
 ```text
-base -> display: @MENU,1
+base -> display: @MENU,TOGGLE
 display -> base: @MENU,OPEN
 base -> display: @MENUKEY,UP
 base -> display: @MENUKEY,DOWN
@@ -32,6 +32,11 @@ base -> display: @MENUKEY,FINER
 base -> display: @MENUKEY,DELETE
 display -> base: @MENU,CLOSED
 ```
+
+The display also accepts `@MENU,?` and replies with its current state. It sends
+that state with its one-second heartbeat, allowing the base safety interlock to
+self-correct after a dropped packet. `@MENU,1`/`OPEN` and `@MENU,0`/`CLOSE`
+remain supported for diagnostics.
 
 `OPEN`/`CLOSE`, `OK`/`ESC`, and an explicit `COARSER` menu key are also
 accepted.

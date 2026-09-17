@@ -27,8 +27,6 @@ static bool firstCrossServoThreshold = true;
 
 static uint32_t lastMotorDirClick = 0;
 static bool     inClickTimer_ESC  = false;
-static uint32_t lastFlowDirClick  = 0;
-static bool     inClickTimer_pump = false;
 
 static const uint32_t ESC_CLICK_WINDOW_MS = 2 * DOUBLE_CLICK_MS;
 
@@ -262,10 +260,11 @@ void changeMotorDirection(SystemState* S, bool isDoubleClick)
 {
     if (isDoubleClick)
     {
-        if (S->motorDir == 0 || S->motorDir == 3)
-            S->motorDir = 1;
-        else
-            S->motorDir = 3;
+        // Reverse without changing run/pause state.
+        if      (S->motorDir == 0) S->motorDir = 2;
+        else if (S->motorDir == 2) S->motorDir = 0;
+        else if (S->motorDir == 1) S->motorDir = 3;
+        else                       S->motorDir = 1;
     }
     else
     {
@@ -423,11 +422,6 @@ void pollDoubleClick(SystemState* S)
         changeMotorDirection(S, false);
     }
 
-    if (inClickTimer_pump && (now - lastFlowDirClick) > 2 * DOUBLE_CLICK_MS)
-    {
-        inClickTimer_pump = false;
-        changeFlowDirection(S, false);
-    }
 }
 
 void handleKey(SystemState* S, uint8_t key)
@@ -515,22 +509,9 @@ void handleKey(SystemState* S, uint8_t key)
             break;
 
         case 34:
-        {
-            uint32_t now = millis();
-
-            if ((now - lastFlowDirClick) < DOUBLE_CLICK_MS)
-            {
-                changeFlowDirection(S, true);
-                inClickTimer_pump = false;
-            }
-            else
-            {
-                inClickTimer_pump = true;
-            }
-
-            lastFlowDirClick = now;
+            // Flow run/pause is immediate; there is no reverse double-click.
+            changeFlowDirection(S, false);
             break;
-        }
 
         case 35:
             changeFlowRate(S, +1);

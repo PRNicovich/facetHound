@@ -497,18 +497,13 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
 
     int jobPlane = -1;
-    if (state.jobActive) {
-        if (runtimeGemMesh().active()) {
-            jobPlane = runtimeGemMesh().findPlane(state.jobTier, state.jobFacet);
-        } else {
-            for (uint16_t i = 0; i < GemData::kPlaneCount; ++i) {
-                if (GemData::kPlanes[i].tier == state.jobTier &&
-                    GemData::kPlanes[i].facet == state.jobFacet) {
-                    jobPlane = i;
-                    break;
-                }
-            }
-        }
+    if (state.jobActive && isfinite(state.jobAngle) && isfinite(state.jobIndex)) {
+        // The target pose is authoritative. This selects the same physical
+        // face in Static and Dynamic even if source facet numbering differs.
+        float jobTwist = state.jobIndex;
+        if (oppositeApproach(state.jobAngle)) jobTwist += meshResolution * 0.5f;
+        jobPlane = int(nearestPlane(machineTip(state.jobAngle),
+                                    normalizedTwist(jobTwist, meshResolution)));
     }
     selectedPlane_ = jobPlane >= 0
                          ? uint16_t(jobPlane)
@@ -872,7 +867,10 @@ void GemUi::drawHud(const GemTelemetry& state)
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 0 || state.rpmDirection == 2;
     drawRotationArrow(hudCanvas_, 234, 116, clockwise, motorRunning, C_TEXT);
-    snprintf(line, sizeof(line), "%lu rpm", static_cast<unsigned long>(state.rpmActual));
+    const unsigned long shownRpm = motorRunning
+                                       ? static_cast<unsigned long>(state.rpmActual)
+                                       : static_cast<unsigned long>(max(0L, state.rpmSet));
+    snprintf(line, sizeof(line), "%lu rpm", shownRpm);
     textAt(hudCanvas_, line, 313, 116, C_TEXT, 2, MR_DATUM);
 
     drawWaterDrop(hudCanvas_, 234, 143,

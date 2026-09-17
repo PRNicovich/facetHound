@@ -90,7 +90,7 @@ Numeric aliases `0`, `1`, and `2` mean classic, dynamic, and static.
 Open the menu and navigate it through either serial connection:
 
 ```text
-@MENU,1
+@MENU,TOGGLE
 @MENUKEY,UP
 @MENUKEY,DOWN
 @MENUKEY,SELECT
@@ -185,5 +185,9 @@ depth cueing; the lower HUD uses direction, RPM-unit, and flow-unit icons.
 - `WIDX`: machine index-wheel resolution (normalized to the active runtime or
   fallback design).
 - `ZMM`, `RPM`, `RPV`, `DIR`, `FLW`, `FLD`, and force `F`/`N`: lower HUD.
+
+The large RPM readout shows the commanded setpoint while the lap is paused and
+the measured `RPV` value while it is running. Flow is a commanded/calibrated
+setpoint because the current hardware has no independent flow-rate sensor.
 
 All other legacy fields continue to be parsed for classic mode.

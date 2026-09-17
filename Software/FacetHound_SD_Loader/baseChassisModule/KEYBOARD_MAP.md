@@ -31,7 +31,7 @@ The Pico's native USB port is reserved for the optional PC diagnostic console.
 | 2 | 31 | Lap run/pause; double-click direction | Suppressed | `changeMotorDirection()` |
 | 3 | 32 | Lap RPM +1 | Suppressed | `changeMotorSpeed(+1)` |
 | 4 | 33 | Flow −1 | Suppressed | `changeFlowRate(-1)` |
-| 5 | 34 | Pump run/pause; double-click direction | Suppressed | `changeFlowDirection()` |
+| 5 | 34 | Pump run/pause | Suppressed | Immediate `changeFlowDirection(false)`; no reverse gesture |
 | 6 | 35 | Flow +1 | Suppressed | `changeFlowRate(+1)` |
 | 7 | 36 | Z down | Suppressed | `changeZMotorSteps(true)` |
 | 8 | 37 | Cycle Z step | Suppressed | `changeZMultiplier()` |
@@ -47,3 +47,9 @@ table, so the green face is selected from the target tier/facet rather than
 guessed from the live tip encoder. Pavilion/opposite-approach targets include
 the required half-wheel index offset. The display reports its mode at startup
 so this behavior does not replace Classic's editable mark list.
+
+The display owns the Settings open/closed state. The top-left key sends a
+toggle request, and both sides exchange periodic menu-state checks so one lost
+close packet cannot leave all machine keys suppressed. Lap double-click changes
+direction without changing run/pause state; pump control intentionally has no
+double-click reverse action.

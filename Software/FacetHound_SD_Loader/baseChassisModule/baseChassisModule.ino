@@ -1290,6 +1290,12 @@ static void sendUsbState()
     Serial.print(displayTestMode ? "on" : "off");
     Serial.print(",display_loopback=");
     Serial.print(lastDisplayLoopbackMs && millis() - lastDisplayLoopbackMs < 5000 ? "up" : "down");
+    Serial.print(",menu=");
+    Serial.print(settingsMenuOpen ? "open" : "closed");
+    Serial.print(",display_mode=");
+    Serial.print(!displayModeKnown ? "unknown" :
+                 displayVisualMode == 1 ? "dynamic" :
+                 displayVisualMode == 2 ? "static" : "classic");
     Serial.print(",rx_levels=M"); Serial.print(digitalRead(MAST_UART_SWAP_TRIAL ? 3 : 2));
     Serial.print("K"); Serial.print(digitalRead(KEYBOARD_UART_SWAP_TRIAL ? 7 : 6));
     Serial.print("D"); Serial.print(digitalRead(4));
@@ -1485,15 +1491,16 @@ static bool selectAdjacentBuiltin(bool changeTier, bool forward)
 
 static void routeKeyboardKey(uint8_t key)
 {
-    if (!settingsMenuOpen && key == MENU_TOGGLE_KEY)
+    if (key == MENU_TOGGLE_KEY)
     {
-        sendDisplayLine("@MENU,1");
+        // The display is the menu-state authority. Optimistically suppress
+        // motion until its immediate/heartbeat reply confirms OPEN or CLOSED.
+        settingsMenuOpen = true;
+        sendDisplayLine("@MENU,TOGGLE");
     }
     else if (settingsMenuOpen)
     {
-        if (key == MENU_TOGGLE_KEY)
-            sendDisplayLine("@MENUKEY,BACK");
-        else if (key == MENU_DELETE_KEY)
+        if (key == MENU_DELETE_KEY)
             sendDisplayLine("@MENUKEY,DELETE");
         else if (key == MENU_TIER_FINER_KEY)
             sendDisplayLine("@MENUKEY,FINER");
@@ -1930,6 +1937,15 @@ void displayTask()
     {
         sendDisplayLine(displayModeKnown ? "@PING,BASE" : "@MODE,?");
         lastDisplayProbeMs = now;
+    }
+
+    // Menu state is a safety interlock, so repair it continuously instead of
+    // trusting one OPEN/CLOSED packet forever.
+    static uint32_t lastMenuProbeMs = 0;
+    if (now - lastMenuProbeMs >= 1000)
+    {
+        sendDisplayLine("@MENU,?");
+        lastMenuProbeMs = now;
     }
 
     // Establish a genuine request/reply before starting screen telemetry. This

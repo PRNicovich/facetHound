@@ -144,7 +144,7 @@ static const uint32_t DISPLAY_BAUD = 460800;
 static const uint16_t RX_BYTE_BUDGET = 320;
 static const uint8_t RX_LINE_BUDGET = 12;
 static const uint32_t SETTINGS_MAGIC = 0x46484D36; // "FHM6"
-static const char DISPLAY_FIRMWARE_ID[] = "PING512-20260917";
+static const char DISPLAY_FIRMWARE_ID[] = "TARGET-MENU-20260917";
 
 struct PersistedSettings
 {
@@ -422,6 +422,7 @@ static void setRPMSet(float v)
   if (!displayedLongChanged(rpmSetValue, next)) return;
   rpmSetValue = next;
   updateRPMsetValueBool = true;
+  updateRPMValue = true;
 }
 
 static void setRPMDir(float v)
@@ -430,6 +431,7 @@ static void setRPMDir(float v)
   if (!displayedIntChanged(RPM_dir, next)) return;
   RPM_dir = next;
   updateRPMDirBool = true;
+  updateRPMValue = true;
 }
 
 static void setFlow(float v)
@@ -741,12 +743,17 @@ void parseLine(char* line)
       return;
     }
 
-    if (!strcmp(valueText, "1") || !strcasecmp(valueText, "OPEN"))
+    if (!strcasecmp(valueText, "TOGGLE"))
+    {
+      if (settingsMenu.isOpen()) closeSettingsMenu();
+      else openSettingsMenu();
+    }
+    else if (!strcmp(valueText, "1") || !strcasecmp(valueText, "OPEN"))
       openSettingsMenu();
     else if (!strcmp(valueText, "0") || !strcasecmp(valueText, "CLOSE"))
       closeSettingsMenu();
     else
-      sendLineBoth("@ERR,MENU,expected 0|1|OPEN|CLOSE");
+      sendLineBoth("@ERR,MENU,expected TOGGLE|0|1|OPEN|CLOSE");
     return;
   }
 
@@ -1328,7 +1335,8 @@ void updateZSprite()
 void updateRPMSprite()
 {
   stext4.fillSprite(SPRITE_FILL);
-  stext4.drawNumber(RPMValue, 120, 60);
+  const bool running = RPM_dir == 0 || RPM_dir == 2;
+  stext4.drawNumber(running ? RPMValue : rpmSetValue, 120, 60);
   stext4.pushSprite(5, 380);
 }
 
@@ -1586,6 +1594,7 @@ void loop()
   if (millis() - lastDisplayHeartbeat >= 1000)
   {
     baseSerial.println("@HELLO,DISPLAY");
+    baseSerial.println(settingsMenu.isOpen() ? "@MENU,OPEN" : "@MENU,CLOSED");
     lastDisplayHeartbeat = millis();
   }
 
