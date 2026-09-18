@@ -116,6 +116,7 @@ int fillBarWidth = 0;
 
 int32_t encCount = 0;
 int32_t lastEnc = 0;
+uint32_t lastEncoderTxMs = 0;
 float wheelIndex = 96.0f;
 bool updateWheelIndexBool = true;
 
@@ -893,9 +894,15 @@ void sendEncoder()
 
   encCount = encoder.getCount();
 
-  if (encCount != lastEnc)
+  // The legacy display returned the Z encoder on every telemetry poll.  Keep
+  // change-triggered updates responsive, but also publish it periodically so
+  // the base always acquires the initial value and can diagnose a stationary
+  // encoder link.
+  const uint32_t now = millis();
+  if (encCount != lastEnc || now - lastEncoderTxMs >= 250)
   {
     lastEnc = encCount;
+    lastEncoderTxMs = now;
     baseSerial.print("@ZENC,");
     baseSerial.println(encCount);
     Serial.print("@ZENC,");

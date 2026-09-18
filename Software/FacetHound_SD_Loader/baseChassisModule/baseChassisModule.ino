@@ -103,6 +103,7 @@ volatile uint32_t motorPgPulses = 0;
 uint32_t lastRpmSampleMs = 0;
 
 bool zEncoderValid = false;
+uint32_t lastZEncoderRxMs = 0;
 
 void motorPgISR()
 {
@@ -1080,6 +1081,7 @@ void displayRxTask()
 
                 S.zEncoderRaw = int(raw);
                 zEncoderValid = true;
+                lastZEncoderRxMs = millis();
 
                 updateZMillimeters();
             }
@@ -1286,6 +1288,12 @@ static void sendUsbState()
     Serial.print(lastDisplayRxMs ? millis() - lastDisplayRxMs : 0);
     Serial.print(",display_roundtrip=");
     Serial.print(lastDisplayRoundTripMs && millis() - lastDisplayRoundTripMs < 2500 ? "up" : "down");
+    Serial.print(",z_encoder=");
+    Serial.print(lastZEncoderRxMs && millis() - lastZEncoderRxMs < 1000 ? "up" : "down");
+    Serial.print(",z_encoder_age_ms=");
+    Serial.print(lastZEncoderRxMs ? millis() - lastZEncoderRxMs : 0);
+    Serial.print(",z_encoder_raw=");
+    Serial.print(S.zEncoderRaw);
     Serial.print(",display_test=");
     Serial.print(displayTestMode ? "on" : "off");
     Serial.print(",display_loopback=");

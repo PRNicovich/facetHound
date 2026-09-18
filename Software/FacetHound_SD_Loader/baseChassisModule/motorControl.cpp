@@ -452,10 +452,13 @@ void initSteppers()
     twistDriver.enableAutomaticCurrentScaling();
     twistDriver.enableCoolStep();
     twistDriver.setStandstillMode(TMC2209::NORMAL);
-    twistDriver.moveAtVelocity(0);
+    twistDriver.enable();
     twistDriver.moveUsingStepDirInterface();
-    // setHardwareEnablePin() already left EN high.  Keep the configured TOFF
-    // value in the driver, disable through EN, and release this PIO UART.
+    // The original code retained this UART forever, which guaranteed every
+    // configuration datagram reached the driver.  We may release it for the
+    // lap link only after the transmit queue is completely empty.
+    twistSerial.flush();
+    delay(5);
     digitalWrite(TWIST_EN_PIN, HIGH);
     twistSerial.end();
     twistDriverIsEnabled = false;
@@ -467,8 +470,9 @@ void initSteppers()
     zedDriver.enableAutomaticCurrentScaling();
     zedDriver.enableCoolStep();
     zedDriver.setStandstillMode(TMC2209::NORMAL);
-    zedDriver.moveAtVelocity(0);
     zedDriver.moveUsingStepDirInterface();
+    zedSerial.flush();
+    delay(5);
     digitalWrite(ZED_EN_PIN, HIGH);
     zedSerial.end();
     zedDriverIsEnabled = false;
