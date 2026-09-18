@@ -8,7 +8,8 @@ static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
 static SerialPIO pumpSerial (PUMP_TX_PIN, 0xff);
 #if USE_LAP_MOTOR_RS485
-static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN);
+// Match the proven standalone BLD demo's explicit 32-byte SerialPIO queue.
+static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN, 32);
 #endif
 
 TMC2209 twistDriver;
@@ -45,6 +46,7 @@ static LapMotorDiagnostics lapDiagnostics;
 static const uint16_t REG_CONTROL      = 0x8000;
 static const uint16_t REG_COMMAND_RPM  = 0x8005;
 static const uint16_t REG_ACTUAL_SPEED = 0x8018;
+static const uint16_t REG_STATUS       = 0x801B;
 static const uint8_t CONTROL_FORWARD   = 0x09;
 static const uint8_t CONTROL_REVERSE   = 0x0B;
 static const uint8_t CONTROL_BRAKE     = 0x0D;
@@ -91,6 +93,10 @@ static void sendModbusFrame(uint8_t* frame, uint8_t length, uint8_t expectedRepl
         lapMotorSerial.read();
 
     lapMotorSerial.write(frame, length);
+    // Match the standalone demo's synchronous transaction behavior: finish
+    // transmitting, then let the automatic-direction adapter release the bus.
+    lapMotorSerial.flush();
+    delayMicroseconds(200);
     lapDiagnostics.txFrames++;
     lapReplyLength = 0;
     lapExpectedLength = expectedReply;
@@ -112,6 +118,15 @@ static void readLapActualSpeed()
     uint8_t frame[8] = {
         LAP_MOTOR_SLAVE_ID, 0x03,
         uint8_t(REG_ACTUAL_SPEED >> 8), uint8_t(REG_ACTUAL_SPEED), 0x00, 0x01, 0, 0
+    };
+    sendModbusFrame(frame, 6, 7);
+}
+
+static void readLapStatus()
+{
+    uint8_t frame[8] = {
+        LAP_MOTOR_SLAVE_ID, 0x03,
+        uint8_t(REG_STATUS >> 8), uint8_t(REG_STATUS), 0x00, 0x01, 0, 0
     };
     sendModbusFrame(frame, 6, 7);
 }
@@ -151,7 +166,7 @@ static bool collectLapReply(SystemState &S)
 
     if (lapReplyLength < lapExpectedLength)
     {
-        if (millis() - lapRequestStartedMs <= 60)
+        if (millis() - lapRequestStartedMs <= 200)
             return false;
 
         lapDiagnostics.timeouts++;
@@ -185,8 +200,11 @@ static bool collectLapReply(SystemState &S)
         lapReply[0] == LAP_MOTOR_SLAVE_ID && lapReply[1] == 0x03 &&
         lapExpectedLength == 7 && lapReply[2] == 2)
     {
-        uint16_t rawSpeed = (uint16_t(lapReply[3]) << 8) | lapReply[4];
-        S.RPMValue = int((uint32_t(rawSpeed) * 20U) / LAP_MOTOR_POLE_PAIRS);
+        const uint16_t rawValue = (uint16_t(lapReply[3]) << 8) | lapReply[4];
+        if (lapPhase == 3)
+            S.RPMValue = int((uint32_t(rawValue) * 20U) / LAP_MOTOR_POLE_PAIRS);
+        else if (lapPhase == 4)
+            lapDiagnostics.lastFault = uint8_t(rawValue >> 8);
         lapDiagnostics.validReplies++;
         lapDiagnostics.readReplies++;
         lapDiagnostics.lastValidReplyMs = millis();
@@ -230,7 +248,7 @@ static void updateLapMotorRS485(SystemState &S)
         return;
     }
 
-    if (millis() - lapLastFrameMs < 5)
+    if (millis() - lapLastFrameMs < 250)
         return;
 
     // An explicit diagnostic read takes priority over re-sending a failed
@@ -239,8 +257,17 @@ static void updateLapMotorRS485(SystemState &S)
     if (lapProbeRequested)
     {
         lapProbeRequested = false;
-        lapPhase = 3;
-        readLapActualSpeed();
+        lapPhase = 4;
+        readLapStatus();
+        return;
+    }
+
+    // The proven demo establishes the link with a read-only status request
+    // before it writes configuration or motion commands.
+    if (lapDiagnostics.validReplies == 0)
+    {
+        lapPhase = 4;
+        readLapStatus();
         return;
     }
 

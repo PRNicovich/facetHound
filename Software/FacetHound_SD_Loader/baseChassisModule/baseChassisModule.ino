@@ -104,6 +104,7 @@ uint32_t lastRpmSampleMs = 0;
 
 bool zEncoderValid = false;
 uint32_t lastZEncoderRxMs = 0;
+uint8_t zEncoderInputBits = 0;
 
 void motorPgISR()
 {
@@ -1085,6 +1086,12 @@ void displayRxTask()
 
                 updateZMillimeters();
             }
+            else if (!strcmp(key, "ZIO"))
+            {
+                long bits = 0;
+                if (parseStrictLong(valueText, &bits))
+                    zEncoderInputBits = uint8_t(bits) & 0x03u;
+            }
             else if (!strcmp(key, "MENU"))
             {
                 settingsMenuOpen = !strcasecmp(valueText, "OPEN") ||
@@ -1210,6 +1217,7 @@ static void sendUsbMotorStatus()
     Serial.print(d.lastValidReplyMs ? millis() - d.lastValidReplyMs : 0);
     Serial.print(",last_fn=0x"); printHexByte(d.lastFunction);
     Serial.print(",last_exception=0x"); printHexByte(d.lastException);
+    Serial.print(",fault=0x"); printHexByte(d.lastFault);
     Serial.print(",last=");
     if (!d.lastReplyLength)
         Serial.print("none");
@@ -1291,11 +1299,17 @@ static void sendUsbState()
     Serial.print(",display_roundtrip=");
     Serial.print(lastDisplayRoundTripMs && millis() - lastDisplayRoundTripMs < 2500 ? "up" : "down");
     Serial.print(",z_encoder=");
-    Serial.print(lastZEncoderRxMs && millis() - lastZEncoderRxMs < 1000 ? "up" : "down");
+    // The display can spend around two seconds inside a full render.  Use the
+    // same health window as its UART link so valid stationary Z reports are
+    // not mislabeled down between frames.
+    Serial.print(lastZEncoderRxMs && millis() - lastZEncoderRxMs < 3500 ? "up" : "down");
     Serial.print(",z_encoder_age_ms=");
     Serial.print(lastZEncoderRxMs ? millis() - lastZEncoderRxMs : 0);
     Serial.print(",z_encoder_raw=");
     Serial.print(S.zEncoderRaw);
+    Serial.print(",z_encoder_ab=");
+    Serial.print((zEncoderInputBits & 0x01u) ? '1' : '0');
+    Serial.print((zEncoderInputBits & 0x02u) ? '1' : '0');
     Serial.print(",display_test=");
     Serial.print(displayTestMode ? "on" : "off");
     Serial.print(",display_loopback=");

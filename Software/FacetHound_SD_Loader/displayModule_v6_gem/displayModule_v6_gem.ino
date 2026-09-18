@@ -801,6 +801,9 @@ void parseLine(char* line)
     lastEncoderTxMs = millis();
     baseSerial.print("@ZENC,");
     baseSerial.println(encCount);
+    baseSerial.print("@ZIO,");
+    baseSerial.println((digitalRead(10) ? 1 : 0) |
+                       (digitalRead(11) ? 2 : 0));
     if (Serial)
     {
       Serial.print("@PONG,");

@@ -128,6 +128,7 @@ struct LapMotorDiagnostics
     uint32_t lastRxByteMs = 0;
     uint8_t lastFunction = 0;
     uint8_t lastException = 0;
+    uint8_t lastFault = 0;
     uint8_t lastReply[8] = {};
     uint8_t lastReplyLength = 0;
 };
