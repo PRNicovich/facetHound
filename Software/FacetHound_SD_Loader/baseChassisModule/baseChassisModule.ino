@@ -1276,6 +1276,8 @@ static void sendUsbState()
     Serial.print(lastMastRxMs && millis() - lastMastRxMs < 3500 ? "up" : "down");
     Serial.print(",mast_age_ms=");
     Serial.print(lastMastRxMs ? millis() - lastMastRxMs : 0);
+    Serial.print(",tip_encoder_raw="); Serial.print(S.tipEncoder);
+    Serial.print(",index_encoder_raw="); Serial.print(S.twistEncoderRaw);
     Serial.print(",key_rx="); Serial.print(keyRxCount);
     Serial.print(",keyboard_link=");
     Serial.print(lastKeyboardRxMs && millis() - lastKeyboardRxMs < 2500 ? "up" : "down");

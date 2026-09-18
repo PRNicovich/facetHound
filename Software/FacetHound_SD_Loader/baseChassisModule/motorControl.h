@@ -53,10 +53,10 @@
 #define TWIST_MICROSTEPS     256
 // These are STEP pulse rates, not index units.  The previous 200 kHz ceiling
 // was unsafe when a TMC2208 came up at its strap-selected microstep setting.
-// 3.6 kHz is about the peak previously reached by a three-index-unit move.
-// The lower acceleration makes that the top speed at roughly ten units away.
-#define TWIST_MAX_SPEED     3600.0f
-#define TWIST_ACCEL         2500.0f
+// The former mid-speed is now the absolute ceiling.  This acceleration makes
+// a ten-index-unit correction just reach that ceiling before slowing down.
+#define TWIST_MAX_SPEED     1800.0f
+#define TWIST_ACCEL          650.0f
 #define TWIST_STEP_SPEED    2500.0f
 
 #define ZED_RMS_CURRENT      800
