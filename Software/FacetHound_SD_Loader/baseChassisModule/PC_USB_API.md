@@ -155,8 +155,10 @@ the three on-board stepper-driver configuration links; it is not the lap-motor
 RS-485 link.
 
 `@SD` reports card initialization attempts separately from root-directory
-readability. Automatic retries while a card is missing are throttled to once
-per second. `SD RETRY` bypasses that delay for an explicit bench test.
+readability. STATUS, STREAM and settings readiness queries use cached state;
+they never retry card initialization. After inserting a card use `SD RETRY`.
+Explicit file operations can also attempt initialization, throttled to once
+per second while the card is missing. These operations can block on SD timeouts.
 
 `@KEY,<hid>` is emitted whenever a key arrives from the physical keyboard
 UART. It allows a PC supervisory application to observe operator input without

@@ -364,7 +364,11 @@ bool beginGemSd()
     return reopenCard(true);
 }
 
-bool gemSdReady() { return reopenCard(); }
+// A status query must never initialize hardware. SD.begin() can block for
+// seconds with no card, starving UART consumers and STEP generation whenever
+// STATUS, STREAM or a settings snapshot asks whether the card is ready.
+// Initialization remains explicit at boot, SD RETRY, and file operations.
+bool gemSdReady() { return sdReady; }
 
 bool retryGemSd()
 {

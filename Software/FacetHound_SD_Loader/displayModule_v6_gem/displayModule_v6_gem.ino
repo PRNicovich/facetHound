@@ -11,6 +11,7 @@
 #include <math.h>
 #include <strings.h>
 #include "pio_encoder.h"
+#include "hardware/gpio.h"
 
 #include "display_mode.h"
 #include "gem_data.h"
@@ -1585,6 +1586,11 @@ void setup()
   }
 
   encoder.begin();
+  // PioEncoder enables internal pull-ups. They load the PCB's 100k/200k
+  // dividers enough to prevent encoder lows reaching a valid logic low.
+  // Disable pulls after begin(), which otherwise re-enables them.
+  gpio_disable_pulls(10);
+  gpio_disable_pulls(11);
   delay(50);
 
   systemReady = true;
