@@ -57,11 +57,11 @@ static uint16_t readEncoderBitBang(uint8_t csPin, uint8_t clockPin,
   delayMicroseconds(20);
   digitalWrite(csPin, HIGH);
 
-  // AMT23 SSI frames begin with two parity/check bits. In 14-bit mode the
-  // position occupies the low 14 bits directly. In 12-bit mode the position
-  // occupies bits 13..2 and the low two bits are padding.
+  // Preserve the exact decoding used by the original working mast firmware.
+  // Both configured AMT232B modes return their position above the two low
+  // status/padding bits; the 12-bit mode additionally masks the top checks.
   if (dataBits == 12) return uint16_t((word & 0x3FFFu) >> 2);
-  if (dataBits == 14) return uint16_t(word & 0x3FFFu);
+  if (dataBits == 14) return uint16_t(word >> 2);
   return 0;
 }
 

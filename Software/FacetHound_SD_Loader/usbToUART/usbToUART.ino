@@ -29,17 +29,9 @@ queue_t heartbeatQueue;
 uint32_t lastCoreHeartbeatMs = 0;
 uint32_t lastHeartbeatSentMs = 0;
 uint32_t lastBaseHeartbeatMs = 0;
-hid_keyboard_report_t previousKeyboardReport = {};
 
 static void usbHostCore();
 static void restartUsbHostCore();
-
-static bool reportContains(const hid_keyboard_report_t& report, uint8_t keycode)
-{
-  for (uint8_t i = 0; i < 6; ++i)
-    if (report.keycode[i] == keycode) return true;
-  return false;
-}
 
 static void sendKeyToBase(uint8_t keycode)
 {
@@ -50,16 +42,16 @@ static void sendKeyToBase(uint8_t keycode)
 
 static void processKeyboardReport(const hid_keyboard_report_t& report)
 {
-  // Emit only transitions from released to pressed. HID reports include every
-  // held key, so forwarding the entire report would repeat old keys whenever
-  // another key is pressed or released.
+  // This dedicated programmable keypad worked with the original bridge by
+  // forwarding every nonzero usage in each received report.  Do not require
+  // boot-keyboard classification or retain a previous report: some firmware
+  // revisions expose a generic HID interface and rotary pulses can repeat the
+  // same usage without a separately observed release packet.
   for (uint8_t i = 0; i < 6; ++i)
   {
     const uint8_t keycode = report.keycode[i];
-    if (keycode && !reportContains(previousKeyboardReport, keycode))
-      sendKeyToBase(keycode);
+    if (keycode) sendKeyToBase(keycode);
   }
-  previousKeyboardReport = report;
 }
 
 static void sendCoreHeartbeat()
@@ -124,7 +116,6 @@ static void usbHostCore()
 static void restartUsbHostCore()
 {
   multicore_reset_core1();
-  memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
   multicore_launch_core1(usbHostCore);
 }
 
@@ -133,7 +124,6 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance,
 {
   (void)descriptor;
   (void)descriptorLength;
-  memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
   tuh_hid_receive_report(dev_addr, instance);
 }
 
@@ -141,15 +131,15 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
 {
   (void)dev_addr;
   (void)instance;
-  memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
                                 uint8_t const* report, uint16_t length)
 {
-  if (tuh_hid_interface_protocol(dev_addr, instance) ==
-          HID_ITF_PROTOCOL_KEYBOARD &&
-      length >= sizeof(hid_keyboard_report_t))
+  // The mini-keyboard can enumerate as generic HID rather than reporting the
+  // boot-keyboard protocol.  It still sends the standard eight-byte keyboard
+  // report used by the original known-working bridge.
+  if (length >= sizeof(hid_keyboard_report_t))
   {
     processKeyboardReport(
         *reinterpret_cast<hid_keyboard_report_t const*>(report));
