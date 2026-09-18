@@ -1217,7 +1217,7 @@ static void sendUsbMotorStatus()
             if (i) Serial.print('-');
             printHexByte(d.lastReply[i]);
         }
-    Serial.println(",tmc_uart=tx_only");
+    Serial.println(",lap_uart=uart1,tmc_uart=tx_only");
 }
 
 static void sendUsbSdStatus()

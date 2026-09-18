@@ -7,9 +7,6 @@ AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
 static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
 static SerialPIO pumpSerial (PUMP_TX_PIN, 0xff);
-#if USE_LAP_MOTOR_RS485
-static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN);
-#endif
 
 TMC2209 twistDriver;
 TMC2209 zedDriver;
@@ -87,10 +84,10 @@ static void sendModbusFrame(uint8_t* frame, uint8_t length, uint8_t expectedRepl
     frame[length++] = uint8_t(crc);
     frame[length++] = uint8_t(crc >> 8);
 
-    while (lapMotorSerial.available())
-        lapMotorSerial.read();
+    while (Serial2.available())
+        Serial2.read();
 
-    lapMotorSerial.write(frame, length);
+    Serial2.write(frame, length);
     lapDiagnostics.txFrames++;
     lapReplyLength = 0;
     lapExpectedLength = expectedReply;
@@ -118,9 +115,9 @@ static void readLapActualSpeed()
 
 static bool collectLapReply(SystemState &S)
 {
-    while (lapMotorSerial.available() && lapReplyLength < sizeof(lapReply))
+    while (Serial2.available() && lapReplyLength < sizeof(lapReply))
     {
-        lapReply[lapReplyLength++] = uint8_t(lapMotorSerial.read());
+        lapReply[lapReplyLength++] = uint8_t(Serial2.read());
         lapDiagnostics.rxBytes++;
         lapDiagnostics.lastRxByteMs = millis();
     }
@@ -276,11 +273,10 @@ void setTwistDriverEnabled(bool enabled)
         return;
 
     twistDriverIsEnabled = enabled;
-
-    if (enabled)
-        twistDriver.enable();
-    else
-        twistDriver.disable();
+    // Twist is configured over UART once at boot, then uses STEP/DIR and the
+    // active-low hardware enable pin.  Do not retain a PIO UART just to toggle
+    // the output stage.
+    digitalWrite(TWIST_EN_PIN, enabled ? LOW : HIGH);
 }
 
 void setZedDriverEnabled(bool enabled)
@@ -289,11 +285,8 @@ void setZedDriverEnabled(bool enabled)
         return;
 
     zedDriverIsEnabled = enabled;
-
-    if (enabled)
-        zedDriver.enable();
-    else
-        zedDriver.disable();
+    // Z is also STEP/DIR after its one-time UART configuration.
+    digitalWrite(ZED_EN_PIN, enabled ? LOW : HIGH);
 }
 
 float shortestArcPath(float target, float current, float wheelIndex)
@@ -458,7 +451,10 @@ void initSteppers()
     twistDriver.setStandstillMode(TMC2209::NORMAL);
     twistDriver.moveAtVelocity(0);
     twistDriver.moveUsingStepDirInterface();
-    twistDriver.disable();
+    // setHardwareEnablePin() already left EN high.  Keep the configured TOFF
+    // value in the driver, disable through EN, and release this PIO UART.
+    digitalWrite(TWIST_EN_PIN, HIGH);
+    twistSerial.end();
     twistDriverIsEnabled = false;
 
     zedDriver.setup(zedSerial, TMC2209_BAUD);
@@ -470,7 +466,8 @@ void initSteppers()
     zedDriver.setStandstillMode(TMC2209::NORMAL);
     zedDriver.moveAtVelocity(0);
     zedDriver.moveUsingStepDirInterface();
-    zedDriver.disable();
+    digitalWrite(ZED_EN_PIN, HIGH);
+    zedSerial.end();
     zedDriverIsEnabled = false;
 
     pumpDriver.setup(pumpSerial, TMC2209_BAUD);
@@ -503,7 +500,12 @@ void initESCMotor()
 #if USE_LAP_MOTOR_RS485
     lapDiagnostics = LapMotorDiagnostics{};
     lapDiagnostics.enabled = true;
-    lapMotorSerial.begin(LAP_MOTOR_BAUD);
+    // GP8/GP9 are UART1 TX/RX on RP2040/RP2350.  Keep the lap link off
+    // SerialPIO so the display, mast, keyboard, TMC UARTs, and SD SoftwareSPI
+    // do not exhaust the Pico 2's PIO state machines.
+    Serial2.setTX(LAP_MOTOR_TX_PIN);
+    Serial2.setRX(LAP_MOTOR_RX_PIN);
+    Serial2.begin(LAP_MOTOR_BAUD, SERIAL_8N1);
 #else
     pinMode(motorALMpin, OUTPUT);
     digitalWrite(motorALMpin, HIGH);

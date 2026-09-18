@@ -16,7 +16,7 @@ All UART logic must be 3.3 V TTL and every module needs a common ground.
 | Display UART RX | 4 | Display to base, 460800 baud |
 | Mast UART TX | 3 | Base to mast, 115200 baud |
 | Mast UART RX | 2 | Mast to base, 115200 baud |
-| Lap TTL TX / RX | 8 / 9 | v9 `ESC.TTL` header to external automatic-direction RS-485 module; BLD-510B, 9600 baud |
+| Lap TTL TX / RX | 8 / 9 | Hardware UART1 at the v9 `ESC.TTL` header; external automatic-direction RS-485 module; BLD-510B, 9600 8N1 |
 | SD CS | 10 | v9 microSD header pin 2; PIO-backed software SPI |
 | SD SCK | 11 | v9 microSD header pin 3; PIO-backed software SPI |
 | SD MOSI | 12 | v9 microSD header pin 4; PIO-backed software SPI |
@@ -88,12 +88,27 @@ Modbus replies, CRC errors, exceptions, timeouts, byte counts, and the last raw
 reply. `STATUS` includes the same `@MOTOR` record. A valid Modbus exception
 proves the electrical link even though it indicates a rejected request.
 
+The v9 `ESC.TTL` header is pin 1 GND, pin 2 GP9/RX, pin 3 GP8/TX, pin 4
+3.3 V. On automatic-direction converter boards whose UART pins are labelled
+from the converter's perspective, connect converter `TXD` to header pin 2
+(Pico RX) and converter `RXD` to header pin 3 (Pico TX). Do not connect the
+two transmitters label-to-label. The lap port uses the Pico's native UART1 so
+it does not consume two additional PIO state machines.
+
 The v9 schematic ties both PDN/UART pads of each TMC2208-compatible carrier
 together, then connects that node through 1 kΩ to one Pico GPIO (twist GP28,
 Z GP15, pump GP19). The electrical routing therefore supports single-wire
-half-duplex UART. Current firmware still configures `SerialPIO` as TX-only and
-reports `tmc_uart=tx_only`; it does not claim TMC readback until a tested
-single-pin turnaround implementation is added.
+half-duplex UART. Twist and Z release their transmit-only `SerialPIO` links
+after startup configuration and run through STEP/DIR plus hardware EN. The
+pump retains its transmit-only UART because its velocity and direction are
+changed through TMC registers at runtime. Firmware does not claim TMC readback
+until a tested single-pin turnaround implementation is added.
+
+Genuine SilentStepStick-compatible carriers expose PDN/UART on the header and
+need no carrier modification with this PCB. Some clone carriers require their
+on-board UART solder jumper to be bridged. Verify continuity from the carrier's
+PDN/UART connection to the PCB-side 1 kOhm UART resistor before modifying it;
+the required jumper is carrier-specific.
 
 Use `SD RETRY` after inserting a card, `SD STATUS` to inspect initialization,
 and `SD LIST` to verify that the root directory and supported `.asc`/`.fct`
