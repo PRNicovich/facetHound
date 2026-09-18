@@ -1301,6 +1301,9 @@ static void sendUsbState()
     Serial.print(",flow="); Serial.print(S.flowSetpoint, 2);
     Serial.print(",force="); Serial.print(S.forceValue, 1);
     Serial.print(",twist_lock="); Serial.print(S.twistLock);
+    Serial.print(",twist_ready="); Serial.print(S.twistReady);
+    Serial.print(",index_fault_latched="); Serial.print(indexMotionFaultLatched());
+    Serial.print(",tip_servo="); Serial.print(S.spinServoIdx);
     Serial.print(",z_lock="); Serial.print(S.zLock);
     Serial.print(",motor_dir="); Serial.print(S.motorDir);
     Serial.print(",flow_dir="); Serial.print(S.flow_dir);

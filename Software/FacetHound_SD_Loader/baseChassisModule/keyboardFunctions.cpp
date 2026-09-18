@@ -113,6 +113,7 @@ void checkServoStatus(SystemState* S)
             S->twistLock = 0;
             firstCrossServoThreshold = false;
             hardStopTwist(*S);
+            Serial.println("@INDEX,RELEASED,TIP_SERVO_ABOVE_120");
         }
     }
     else if (S->tipDegrees < servoCapture)
@@ -122,7 +123,7 @@ void checkServoStatus(SystemState* S)
             S->twistLock = 1;
             firstCrossServoThreshold = true;
             notifyTwistTargetChanged();
-            twistDriver.enable();
+            setTwistDriverEnabled(true);
         }
     }
 }
@@ -162,7 +163,7 @@ void changeTiltAngle(SystemState* S, bool directSet)
     notifyTwistTargetChanged();
 
     if (S->twistLock)
-        twistDriver.enable();
+        setTwistDriverEnabled(true);
 
     S->dirty = true;
 }
@@ -187,7 +188,7 @@ void toggleTiltLock(SystemState* S)
             S->targetValid = true;
         }
 
-        twistDriver.enable();
+        setTwistDriverEnabled(true);
     }
     else
     {

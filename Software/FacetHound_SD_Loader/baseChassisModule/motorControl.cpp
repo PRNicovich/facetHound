@@ -623,6 +623,8 @@ void faultHoldTwist(SystemState &S)
     setTwistDriverEnabled(S.twistLock != 0);
 }
 
+bool indexMotionFaultLatched() { return twistFaultLatched; }
+
 void requestLapLoopback()
 {
 #if USE_LAP_MOTOR_RS485

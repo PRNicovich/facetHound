@@ -13,9 +13,14 @@ are retried up to three times; bad data never becomes a position measurement.
 The AMT23 datasheet requires MODE to be left open in normal operation and
 the shaft stationary during its 200 ms startup. Releasing GPIO26/27 does NOT
 disconnect the board's TXB0108 from MODE. If a cold power cycle still produces
-encoder_fault=3 until reseating, with power OFF isolate encoder pin 2 (MODE)
-on both encoder cables, leaving the other five connections intact. Confirm
-pin numbering against the connector drawing, not wire color. Do not hot-plug.
+encoder_fault=3 until reseating, with power OFF reversibly isolate the MODE
+conductor on both encoder cables, leaving the other five connections intact.
+IMPORTANT: MODE is pin 5 at the AMT232 encoder, but pin 2 at the v8 mast PCB
+J5/J2 connectors. These numbering systems are reversed; do not confuse them.
+Confirm continuity before removing a contact: J5.2 -> U2 B7 -> A7 -> GP26;
+J2.2 -> U2 B8 -> A8 -> GP27 (the translator is not a direct continuity path).
+Remove/insulate a connector contact to test first; do not cut traces yet.
+Pin 2 AT THE ENCODER is DATA and must remain connected. Do not hot-plug.
 Test a full cold start with shafts stationary, before engaging motor locks.
 
 Reference: https://www.sameskydevices.com/product/resource/amt23.pdf
@@ -56,3 +61,20 @@ not claim the silent drive is fixed; it produces a discriminating next result.
 
 SD remains reported missing; no SD or pin-assignment changes are part of this
 trial. These edits were source-reviewed, not hardware-verified or IDE-compiled.
+
+## Index seek/hold and loopback follow-up
+
+Index lock means seek the selected target then maintain holding torque; it
+does not mean simply stop wherever the axis happens to be. With menu closed,
+L (`KEY 15`) toggles it. A state with twist_lock=0 explicitly disables seeking.
+If tip-servo is enabled it releases index above 120 degrees, recaptures below
+105 degrees. For a manual index test turn Servo OFF in Settings. New STATUS
+fields twist_ready, index_fault_latched, tip_servo distinguish the motion gates.
+Runtime keyboard/servo paths now use hardware EN only, never the released
+one-time TMC configuration UART. Sustained faults still require unlock/relock.
+
+After a passing loopback remove the GP8/GP9 jumper with power off, reconnect
+the adapter, then power up and run MOTOR DEMOPROBE. An echoed 8-byte request
+01-03-80-1B-00-01-DD-CD is NOT a drive response. The normal parser expects a
+7-byte response, so loopback requests appearing there produce CRC failures;
+this alone does not indicate wrong CRC generation or a BLD fault.

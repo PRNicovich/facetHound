@@ -3,6 +3,7 @@
 // Stop pulses but retain powered holding torque; unlock to re-arm motion.
 struct SystemState;
 void faultHoldTwist(SystemState &S);
+bool indexMotionFaultLatched();
 void requestLapLoopback();
 
 #include <Arduino.h>
