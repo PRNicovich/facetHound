@@ -31,6 +31,7 @@ int zMult[3] = {
 static int  nLocks = 0;
 static bool twistSettled = false;
 static bool twistMoving = false;
+static bool twistFaultLatched = false;
 static bool zMoving = false;
 static float lastTwistTarget = NAN;
 static float twistLegStartError = 0.0f;
@@ -382,6 +383,7 @@ static void stopTwistKeepLock()
 
 void hardStopTwist(SystemState &S)
 {
+    twistFaultLatched = false;
     S.indexSpinRpm = 0.0f;
     S.twistLock = 0;
     S.twistReady = false;
@@ -519,6 +521,7 @@ void initSteppers()
     zedDriver.enableAutomaticCurrentScaling();
     zedDriver.enableCoolStep();
     zedDriver.setStandstillMode(TMC2209::NORMAL);
+    zedDriver.enable(); // Restore software TOFF before releasing config UART.
     zedDriver.moveUsingStepDirInterface();
     zedSerial.flush();
     delay(5);
@@ -612,8 +615,58 @@ bool lapMotorLinkUp()
 #endif
 }
 
+void faultHoldTwist(SystemState &S)
+{
+    cancelTwistMoveKeepLock(S);
+    S.indexSpinRpm = 0.0f;
+    twistFaultLatched = true;
+    setTwistDriverEnabled(S.twistLock != 0);
+}
+
+void requestLapLoopback()
+{
+#if USE_LAP_MOTOR_RS485
+    // Adapter must be disconnected; jumper base GP8 to GP9 for this test.
+    // The transmitted frame is read-only in case the adapter is left attached.
+    lapExpectedLength = 0;
+    while (lapMotorSerial.available()) lapMotorSerial.read();
+    uint8_t frame[8] = {LAP_MOTOR_SLAVE_ID, 3, 0x80, 0x1B, 0, 1, 0, 0};
+    const uint16_t crc = modbusCRC(frame, 6);
+    frame[6] = uint8_t(crc); frame[7] = uint8_t(crc >> 8);
+    lapMotorSerial.write(frame, sizeof(frame));
+    lapMotorSerial.flush();
+    uint8_t rx[16]; unsigned n = 0;
+    const uint32_t started = millis();
+    while (millis() - started < 100) {
+        if (lapMotorSerial.available()) {
+            const uint8_t b = uint8_t(lapMotorSerial.read());
+            if (n < sizeof(rx)) rx[n++] = b;
+        }
+    }
+    bool match = n == sizeof(frame);
+    for (unsigned i = 0; i < n && i < sizeof(frame); ++i)
+        match = match && rx[i] == frame[i];
+    Serial.print("@BLD_LOOPBACK,match="); Serial.print(match);
+    Serial.print(",rx_bytes="); Serial.print(n);
+    Serial.print(",hex=");
+    for (unsigned i = 0; i < n; ++i) {
+        if (i) Serial.print('-');
+        if (rx[i] < 16) Serial.print('0');
+        Serial.print(rx[i], HEX);
+    }
+    Serial.println();
+    lapLastFrameMs = millis();
+#endif
+}
+
 static void updateTwistMotor(SystemState &S)
 {
+    if (!S.twistLock) twistFaultLatched = false;
+    if (twistFaultLatched) {
+        stopTwistKeepLock();
+        setTwistDriverEnabled(true);
+        return;
+    }
     if (fabsf(S.indexSpinRpm) > 0.0001f)
     {
         if (millis() - S.indexSpinLastCommandMs > 1500)
@@ -648,8 +701,7 @@ static void updateTwistMotor(SystemState &S)
         twistSettled = false;
         stopTwistKeepLock();
 
-        if (!S.twistLock)
-            setTwistDriverEnabled(false);
+        setTwistDriverEnabled(S.twistLock != 0);
 
         return;
     }
@@ -687,7 +739,9 @@ static void updateTwistMotor(SystemState &S)
 
     lastTwistControlMs = now;
 
-    if (nLocks > TWIST_SETTLE_FRAMES)
+    const float positionTolerance = max(POSITION_ERROR_TOL, 1.01f * S.wheelIndex / 4096.0f);
+    if (nLocks > TWIST_SETTLE_FRAMES &&
+        fabsf(shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex)) <= positionTolerance)
     {
         twistSettled = true;
         twistDirStep.move(0);
@@ -710,25 +764,25 @@ static void updateTwistMotor(SystemState &S)
     {
         if (absErr > fabsf(twistLegStartError) + 0.5f)
         {
-            hardStopTwist(S);
+            faultHoldTwist(S);
             Serial.println("@FAULT,INDEX,MOVING_AWAY_FROM_TARGET");
             return;
         }
-        if (absErr <= POSITION_ERROR_TOL || err * twistLegStartError <= 0.0f)
+        if (absErr <= positionTolerance || err * twistLegStartError <= 0.0f)
         {
             // Discard the remaining open-loop pulses when feedback reaches
             // or passes the target. Never finish a stale correction segment.
             stopTwistKeepLock();
-            if (absErr > POSITION_ERROR_TOL)
+            if (absErr > positionTolerance)
             {
-                hardStopTwist(S);
+                faultHoldTwist(S);
                 Serial.println("@FAULT,INDEX,OVERSHOOT");
             }
             return;
         }
     }
 
-    if (absErr > POSITION_ERROR_TOL)
+    if (absErr > positionTolerance)
     {
         nLocks = 0;
         twistSettled = false;

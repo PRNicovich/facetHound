@@ -2,6 +2,7 @@
 #include <RunningAverage.h>
 #include <SerialPIO.h>
 #include <math.h>
+#include <hardware/gpio.h>
 
 // Mast sensors.
 constexpr uint8_t FORCE_PIN = 28;
@@ -96,6 +97,18 @@ static void sendTelemetryLine(const char* key, long value)
   }
 }
 
+static uint16_t readEncoderChecked(uint8_t cs, uint8_t clock, uint8_t data, uint8_t bits)
+{
+  // Retry a corrupt transaction with CS released, without publishing it or
+  // treating old data as a new measurement. Preserve the legacy clock edges.
+  for (uint8_t attempt = 0; attempt < 3; ++attempt) {
+    const uint16_t value = readEncoderBitBang(cs, clock, data, bits);
+    if (value != 0xFFFFu) return value;
+    delayMicroseconds(100);
+  }
+  return 0xFFFFu;
+}
+
 static void publishTelemetry()
 {
   // These names and units are the current baseChassisModule mast contract.
@@ -109,9 +122,9 @@ static void publishTelemetry()
 static void sampleSensors()
 {
   const uint16_t forceSample = analogRead(FORCE_PIN);
-  const uint16_t tipSample = readEncoderBitBang(
+  const uint16_t tipSample = readEncoderChecked(
       TIP_CS_PIN, TIP_CLOCK_PIN, TIP_DATA_PIN, 14);
-  const uint16_t twistSample = readEncoderBitBang(
+  const uint16_t twistSample = readEncoderChecked(
       TWIST_CS_PIN, TWIST_CLOCK_PIN, TWIST_DATA_PIN, 12);
   const bool tipWasValid = tipSampleValid;
   const bool twistWasValid = twistSampleValid;
@@ -151,6 +164,14 @@ static void sampleSensors()
 
 void setup()
 {
+  // MODE is not an SSI signal. Release the two translator inputs before
+  // peripheral startup; never pull MODE low or send a zero-setting command.
+  pinMode(26, INPUT);
+  pinMode(27, INPUT);
+  gpio_disable_pulls(26);
+  gpio_disable_pulls(27);
+  digitalWrite(TIP_CS_PIN, HIGH);
+  digitalWrite(TWIST_CS_PIN, HIGH);
   Serial.begin(115200); // Optional diagnostics only; never awaited.
 
   // Mirror telemetry only for an actively opened mast USB CDC session. USB
@@ -167,6 +188,8 @@ void setup()
 
   pinMode(TWIST_CS_PIN, OUTPUT);
   pinMode(TWIST_DATA_PIN, INPUT);
+  gpio_disable_pulls(TIP_DATA_PIN);
+  gpio_disable_pulls(TWIST_DATA_PIN);
   pinMode(TWIST_CLOCK_PIN, OUTPUT);
   digitalWrite(TWIST_CS_PIN, HIGH);
   digitalWrite(TWIST_CLOCK_PIN, LOW);

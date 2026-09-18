@@ -279,9 +279,11 @@ void mastTask()
                 mastEncoderFault = int(val);
                 if (mastEncoderFault & 2)
                 {
-                    if (S.twistLock || twistMotionActive())
-                        Serial.println("@FAULT,INDEX,ENCODER_CHECKSUM");
-                    hardStopTwist(S);
+                    // Stop pulses immediately, but keep holding torque. A
+                    // fresh valid sample resumes; sustained loss is latched
+                    // by the watchdog instead of dropping the user's lock.
+                    cancelTwistMoveKeepLock(S);
+                    S.twistReady = false;
                 }
                 validMastRecord = true;
             }
@@ -382,7 +384,10 @@ void twistWatchdogTask()
                        now - lastTwistChangeMs > 750;
     if (stale || stuck)
     {
-        hardStopTwist(S);
+        static uint32_t lastFaultPrint = 0;
+        faultHoldTwist(S);
+        if (now - lastFaultPrint < 1000) return;
+        lastFaultPrint = now;
         Serial.println(stale ? "@FAULT,INDEX,STALE_FEEDBACK" :
                                "@FAULT,INDEX,NO_ENCODER_MOVEMENT");
     }
@@ -1375,7 +1380,7 @@ static void printUsbHelp()
 {
     Serial.println("@HELP,STATUS | STREAM ON [ms] | STREAM OFF");
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
-    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE | FLOW <0..750>");
+    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
     Serial.println("@HELP,SD STATUS|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
 }
@@ -1819,6 +1824,17 @@ static void handleUsbCommand(char* line)
                 Serial.println("@ACK,MOTOR,PROBE");
                 return;
             }
+            else if (!strcasecmp(mode, "LOOPBACK"))
+            {
+                if (S.twistLock || S.zLock || S.indexSpinRpm != 0.0f ||
+                    S.motorDir == 1 || S.motorDir == 3)
+                {
+                    Serial.println("@ERR,MOTOR,stop lap and unlock index/Z before LOOPBACK");
+                    return;
+                }
+                requestLapLoopback();
+                return;
+            }
             else if (!strcasecmp(mode, "DEMOPROBE"))
             {
                 if (twistMotionActive() || S.zLock || S.indexSpinRpm != 0.0f ||
@@ -1831,7 +1847,7 @@ static void handleUsbCommand(char* line)
                 Serial.println("@ACK,MOTOR,DEMOPROBE");
                 return;
             }
-            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF|STATUS|PROBE|DEMOPROBE"); return; }
+            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK"); return; }
             Serial.println("@ACK,MOTOR");
         }
         else

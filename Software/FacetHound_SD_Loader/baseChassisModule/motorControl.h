@@ -1,5 +1,10 @@
 #pragma once
 
+// Stop pulses but retain powered holding torque; unlock to re-arm motion.
+struct SystemState;
+void faultHoldTwist(SystemState &S);
+void requestLapLoopback();
+
 #include <Arduino.h>
 #include <AccelStepper.h>
 #include <TMC2209.h>

@@ -46,6 +46,7 @@ unknown lines for forward compatibility.
 | `MOTOR OFF` | Set lap RPM command to zero | `@ACK,MOTOR` |
 | `MOTOR PROBE` | Queue a non-motion Modbus read of lap fault/status | `@ACK,MOTOR,PROBE` |
 | `MOTOR DEMOPROBE` | One read-only status request using the exact uiReno BLD510B library; stop motion and unlock Z first | `@ACK,MOTOR,DEMOPROBE`, then `@BLD_DEMO,ok=...,error=...,fault=...,run=...` |
+| `MOTOR LOOPBACK` | Adapter disconnected, GP8 TX jumpered to GP9 RX; lap paused and index/Z unlocked; see `../INTEGRATION_ENCODER_BLD.md` | `@BLD_LOOPBACK,match=0/1,rx_bytes=...,hex=...` |
 | `MOTOR STATUS` | Report Modbus validation counters and last raw reply | `@MOTOR,...` |
 | `SD STATUS` | Report SD initialization and root-directory state | `@SD,...` |
 | `SD RETRY` | Force SD reinitialization after insertion/wiring changes | `@ACK,SD,RETRY,READY/MISSING` |
