@@ -149,8 +149,8 @@ a time so the result is unambiguous.
 `@MOTOR` distinguishes a stopped motor from a dead Modbus link. `lap=up`
 requires a correctly addressed, CRC-valid reply within 1.5 seconds. The record
 also reports transmit count, received bytes, timeouts, CRC failures, Modbus
-exceptions, and the last reply in hexadecimal. `lap_uart=uart1` confirms the
-BLD-510B is on the native GP8/GP9 hardware UART; `tmc_uart=tx_only` describes
+exceptions, and the last reply in hexadecimal. `lap_uart=pio` confirms the
+BLD-510B is on the proven GP8/GP9 SerialPIO link; `tmc_uart=setup_only` describes
 the three on-board stepper-driver configuration links; it is not the lap-motor
 RS-485 link.
 

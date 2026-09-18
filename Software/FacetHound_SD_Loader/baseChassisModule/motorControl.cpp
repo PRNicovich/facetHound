@@ -7,6 +7,9 @@ AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
 static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
 static SerialPIO pumpSerial (PUMP_TX_PIN, 0xff);
+#if USE_LAP_MOTOR_RS485
+static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN);
+#endif
 
 TMC2209 twistDriver;
 TMC2209 zedDriver;
@@ -84,10 +87,10 @@ static void sendModbusFrame(uint8_t* frame, uint8_t length, uint8_t expectedRepl
     frame[length++] = uint8_t(crc);
     frame[length++] = uint8_t(crc >> 8);
 
-    while (Serial2.available())
-        Serial2.read();
+    while (lapMotorSerial.available())
+        lapMotorSerial.read();
 
-    Serial2.write(frame, length);
+    lapMotorSerial.write(frame, length);
     lapDiagnostics.txFrames++;
     lapReplyLength = 0;
     lapExpectedLength = expectedReply;
@@ -115,9 +118,9 @@ static void readLapActualSpeed()
 
 static bool collectLapReply(SystemState &S)
 {
-    while (Serial2.available() && lapReplyLength < sizeof(lapReply))
+    while (lapMotorSerial.available() && lapReplyLength < sizeof(lapReply))
     {
-        lapReply[lapReplyLength++] = uint8_t(Serial2.read());
+        lapReply[lapReplyLength++] = uint8_t(lapMotorSerial.read());
         lapDiagnostics.rxBytes++;
         lapDiagnostics.lastRxByteMs = millis();
     }
@@ -500,12 +503,10 @@ void initESCMotor()
 #if USE_LAP_MOTOR_RS485
     lapDiagnostics = LapMotorDiagnostics{};
     lapDiagnostics.enabled = true;
-    // GP8/GP9 are UART1 TX/RX on RP2040/RP2350.  Keep the lap link off
-    // SerialPIO so the display, mast, keyboard, TMC UARTs, and SD SoftwareSPI
-    // do not exhaust the Pico 2's PIO state machines.
-    Serial2.setTX(LAP_MOTOR_TX_PIN);
-    Serial2.setRX(LAP_MOTOR_RX_PIN);
-    Serial2.begin(LAP_MOTOR_BAUD, SERIAL_8N1);
+    // This is the implementation used during the earlier successful RS-485
+    // trials.  Twist and Z release their one-time configuration UARTs above,
+    // leaving sufficient PIO resources for this full-duplex lap link.
+    lapMotorSerial.begin(LAP_MOTOR_BAUD);
 #else
     pinMode(motorALMpin, OUTPUT);
     digitalWrite(motorALMpin, HIGH);

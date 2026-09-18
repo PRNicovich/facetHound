@@ -1335,8 +1335,9 @@ void updateZSprite()
 void updateRPMSprite()
 {
   stext4.fillSprite(SPRITE_FILL);
-  const bool running = RPM_dir == 1 || RPM_dir == 3;
-  stext4.drawNumber(running ? RPMValue : rpmSetValue, 120, 60);
+  // The large field is measured RPM.  The separate small field below is the
+  // requested RPM and remains visible in both moving and paused states.
+  stext4.drawNumber(RPMValue, 120, 60);
   stext4.pushSprite(5, 380);
 }
 
@@ -1396,10 +1397,10 @@ void updateRPMDirSprite()
 
   switch (RPM_dir)
   {
-    case 0: stext10.drawString("L", 20, 30); break;
-    case 1: stext10.drawString("r", 20, 30); break;
-    case 2: stext10.drawString("R", 20, 30); break;
-    case 3: stext10.drawString("l", 20, 30); break;
+    case 0: stext10.drawString("l", 20, 30); break; // left, paused
+    case 1: stext10.drawString("R", 20, 30); break; // right, moving
+    case 2: stext10.drawString("r", 20, 30); break; // right, paused
+    case 3: stext10.drawString("L", 20, 30); break; // left, moving
   }
 
   stext10.pushSprite(10, 447);

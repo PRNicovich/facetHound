@@ -1217,7 +1217,7 @@ static void sendUsbMotorStatus()
             if (i) Serial.print('-');
             printHexByte(d.lastReply[i]);
         }
-    Serial.println(",lap_uart=uart1,tmc_uart=tx_only");
+    Serial.println(",lap_uart=pio,tmc_uart=setup_only");
 }
 
 static void sendUsbSdStatus()
@@ -2122,6 +2122,15 @@ void setup()
 
     initSteppers();
     delay(100);
+
+    // Preserve the proven hardware power-up sequence.  On the first cold boot
+    // the Pico can configure the TMC2208/2209s before their motor supply is
+    // stable.  The original controller deliberately restarted once after that
+    // attempt; the second boot then programs microstepping and current into
+    // already-powered drivers.  A software restart is not a power-on reset, so
+    // this executes only once per cold start.
+    if (rp2040.getResetReason() == 1)
+        rp2040.restart();
 
     initESCMotor();
 
