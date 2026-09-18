@@ -793,6 +793,14 @@ void parseLine(char* line)
     // the token so unsolicited display traffic cannot fake a round trip.
     baseSerial.print("@PONG,");
     baseSerial.println(valueText);
+    // Return the Z encoder in the same request/response cycle.  Rendering can
+    // make loop-driven periodic reports irregular, but every base probe now
+    // carries a fresh encoder sample back with it.
+    encCount = encoder.getCount();
+    lastEnc = encCount;
+    lastEncoderTxMs = millis();
+    baseSerial.print("@ZENC,");
+    baseSerial.println(encCount);
     if (Serial)
     {
       Serial.print("@PONG,");

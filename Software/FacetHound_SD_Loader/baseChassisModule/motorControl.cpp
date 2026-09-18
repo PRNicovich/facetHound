@@ -655,7 +655,13 @@ static void updateTwistMotor(SystemState &S)
         nLocks = 0;
         twistSettled = false;
 
-        long totalSteps = lroundf(err * tiltStepsPerIndexUnit) *
+        // Never schedule more than ten index units in one correction.  A
+        // large target jump therefore cannot accelerate harder/faster than a
+        // ten-unit error; the encoder is sampled again before the next leg.
+        const float limitedErr = constrain(err,
+                                           -TWIST_CORRECTION_LIMIT,
+                                            TWIST_CORRECTION_LIMIT);
+        long totalSteps = lroundf(limitedErr * tiltStepsPerIndexUnit) *
                           TWIST_MOTOR_SIGN * S.indexSign;
         long steps = lroundf(float(totalSteps) * TWIST_CORRECTION_GAIN);
 

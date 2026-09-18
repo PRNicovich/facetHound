@@ -51,15 +51,21 @@
 
 #define TWIST_RMS_CURRENT   1000
 #define TWIST_MICROSTEPS     256
-#define TWIST_MAX_SPEED   200000.0f
-#define TWIST_ACCEL       100000.0f
+// These are STEP pulse rates, not index units.  The previous 200 kHz ceiling
+// was unsafe when a TMC2208 came up at its strap-selected microstep setting.
+// 3.6 kHz is about the peak previously reached by a three-index-unit move.
+// The lower acceleration makes that the top speed at roughly ten units away.
+#define TWIST_MAX_SPEED     3600.0f
+#define TWIST_ACCEL         2500.0f
 #define TWIST_STEP_SPEED    2500.0f
 
 #define ZED_RMS_CURRENT      800
 #define ZED_MICROSTEPS       128
-#define ZED_MAX_SPEED     400000.0f
-#define ZED_STEP_SPEED     10000.0f
-#define ZED_ACCEL         100000.0f
+// Z jogs are deliberately conservative during integration.  AccelStepper's
+// run() uses MAX_SPEED and ACCEL; STEP_SPEED is retained for compatibility.
+#define ZED_MAX_SPEED       2500.0f
+#define ZED_STEP_SPEED      2500.0f
+#define ZED_ACCEL           4000.0f
 #define PUMP_RMS_CURRENT    1100
 #define PUMP_MICROSTEPS        4
 
@@ -76,6 +82,7 @@
 #define TWIST_SETTLE_FRAMES     3
 #define TWIST_CONTROL_INTERVAL_MS 5
 #define TWIST_CORRECTION_GAIN   1.0f
+#define TWIST_CORRECTION_LIMIT 10.0f
 
 // Change to -1 only if twist moves away from target.
 #define TWIST_MOTOR_SIGN        1
