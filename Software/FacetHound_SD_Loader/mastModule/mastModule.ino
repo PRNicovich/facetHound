@@ -119,17 +119,9 @@ static void sampleSensors()
 void setup()
 {
   Serial.begin(115200); // Optional diagnostics only; never awaited.
-  baseSerial.begin(BASE_BAUD);
 
   // Mirror telemetry only for an actively opened mast USB CDC session. USB
   // power alone does not change normal instrument behavior.
-  const uint32_t usbDetectStarted = millis();
-  while (!Serial && millis() - usbDetectStarted < 750)
-  {
-    delay(5);
-    yield();
-  }
-  usbDiagnosticMode = bool(Serial);
 
   analogReadResolution(12);
   pinMode(FORCE_PIN, INPUT);
@@ -145,6 +137,13 @@ void setup()
   pinMode(TWIST_CLOCK_PIN, OUTPUT);
   digitalWrite(TWIST_CS_PIN, HIGH);
   digitalWrite(TWIST_CLOCK_PIN, LOW);
+
+  // Restore legacy order: establish both SSI idle states before UART startup,
+  // then leave them idle for 500 ms before the first encoder transaction.
+  baseSerial.begin(BASE_BAUD);
+  baseSerial.flush();
+  delay(500);
+  usbDiagnosticMode = bool(Serial);
 
   twistCosAverage.clear();
   twistSinAverage.clear();

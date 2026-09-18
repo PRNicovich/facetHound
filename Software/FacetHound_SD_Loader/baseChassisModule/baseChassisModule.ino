@@ -1348,7 +1348,7 @@ static void printUsbHelp()
 {
     Serial.println("@HELP,STATUS | STREAM ON [ms] | STREAM OFF");
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
-    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE | FLOW <0..750>");
+    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
     Serial.println("@HELP,SD STATUS|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
 }
@@ -1792,7 +1792,19 @@ static void handleUsbCommand(char* line)
                 Serial.println("@ACK,MOTOR,PROBE");
                 return;
             }
-            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF|STATUS|PROBE"); return; }
+            else if (!strcasecmp(mode, "DEMOPROBE"))
+            {
+                if (twistMotionActive() || S.zLock || S.indexSpinRpm != 0.0f ||
+                    S.motorDir == 1 || S.motorDir == 3)
+                {
+                    Serial.println("@ERR,MOTOR,stop motion before DEMOPROBE");
+                    return;
+                }
+                requestLapDemoProbe();
+                Serial.println("@ACK,MOTOR,DEMOPROBE");
+                return;
+            }
+            else { Serial.println("@ERR,MOTOR,expected CW|CCW|OFF|STATUS|PROBE|DEMOPROBE"); return; }
             Serial.println("@ACK,MOTOR");
         }
         else

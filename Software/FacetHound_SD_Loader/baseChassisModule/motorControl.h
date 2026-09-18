@@ -66,6 +66,7 @@
 #define ZED_MAX_SPEED       2500.0f
 #define ZED_STEP_SPEED      2500.0f
 #define ZED_ACCEL           4000.0f
+#define ZED_COARSE_SPEED    7500.0f
 #define PUMP_RMS_CURRENT    1100
 #define PUMP_MICROSTEPS        4
 
@@ -88,11 +89,10 @@
 #define TWIST_MOTOR_SIGN        1
 
 // Z step sizing.
-// 20,000 pulses/mm gives:
-// zIdx 0 = 0.100 mm = 2000 pulses
-// zIdx 1 = 0.010 mm = 200 pulses
-// zIdx 2 = 0.001 mm = 20 pulses
-#define Z_STEPS_PER_MM          20000.0f
+// Provisional bench calibration: old 10-pulse fine jog measured about 5 um.
+// zIdx 0 = 1 mm / 2000 pulses; 1 = 50 um / 100; 2 = 1 um / 2.
+// Verify against measured travel; driver microstep changes affect this scale.
+#define Z_STEPS_PER_MM           2000.0f
 
 #define RPM_LIMIT_LOW     0
 #define RPM_LIMIT_HIGH  200
@@ -150,4 +150,5 @@ bool requestZMove(long steps);
 bool twistMotionActive();
 const LapMotorDiagnostics& lapMotorDiagnostics();
 void requestLapMotorProbe();
+void requestLapDemoProbe();
 bool lapMotorLinkUp();

@@ -1,5 +1,6 @@
 #include "motorControl.h"
 #include <math.h>
+#include "BLD510B.h"
 
 AccelStepper twistDirStep(AccelStepper::DRIVER, TWIST_STEP_PIN, TWIST_DIR_PIN);
 AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
@@ -24,7 +25,7 @@ float zConversionFactor     = ZED_INDEX_INITS_PER_TURN /
 int zMult[3] = {
     int(lroundf(Z_STEPS_PER_MM)),
     int(lroundf(0.0500f * Z_STEPS_PER_MM)),
-    int(lroundf(0.0005f * Z_STEPS_PER_MM))
+    int(lroundf(0.0010f * Z_STEPS_PER_MM))
 };
 
 static int  nLocks = 0;
@@ -60,6 +61,7 @@ static uint32_t lapLastFrameMs = 0;
 static int lapSentRpm = -1;
 static uint8_t lapSentControl = 0xff;
 static bool lapProbeRequested = false;
+static bool lapDemoProbeRequested = false;
 
 static void rememberLapReply(uint8_t length)
 {
@@ -251,6 +253,23 @@ static void updateLapMotorRS485(SystemState &S)
     if (millis() - lapLastFrameMs < 250)
         return;
 
+    if (lapDemoProbeRequested)
+    {
+        lapDemoProbeRequested = false;
+        // Exact uiReno library; one read-only diagnostic transaction. This
+        // deliberately blocks for up to 200 ms, only when explicitly asked.
+        BLD510B demo(lapMotorSerial, LAP_MOTOR_SLAVE_ID, -1);
+        demo.begin(LAP_MOTOR_POLE_PAIRS);
+        uint8_t fault = 0, run = 0;
+        const bool ok = demo.readStatus(fault, run);
+        lapLastFrameMs = millis();
+        Serial.print("@BLD_DEMO,ok="); Serial.print(ok ? 1 : 0);
+        Serial.print(",error="); Serial.print(demo.lastError());
+        Serial.print(",fault="); Serial.print(fault);
+        Serial.print(",run="); Serial.println(run);
+        return;
+    }
+
     // An explicit diagnostic read takes priority over re-sending a failed
     // setpoint write, so a disconnected or misconfigured controller still
     // produces a useful probe result.
@@ -418,6 +437,8 @@ bool requestZMove(long steps)
         return false;
 
     setZedDriverEnabled(true);
+    zedDirStep.setMaxSpeed(labs(steps) >= zMult[0]
+                          ? ZED_COARSE_SPEED : ZED_MAX_SPEED);
     zedDirStep.move(steps);
     zMoving = true;
     return true;
@@ -570,6 +591,13 @@ void requestLapMotorProbe()
 {
 #if USE_LAP_MOTOR_RS485
     lapProbeRequested = true;
+#endif
+}
+
+void requestLapDemoProbe()
+{
+#if USE_LAP_MOTOR_RS485
+    lapDemoProbeRequested = true;
 #endif
 }
 
