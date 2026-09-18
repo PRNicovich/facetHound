@@ -766,6 +766,11 @@ static void updateTwistMotor(SystemState &S)
     {
         if (absErr > fabsf(twistLegStartError) + 0.5f)
         {
+            Serial.print("@INDEX_DIAG,target="); Serial.print(S.targetTwist, 4);
+            Serial.print(",actual="); Serial.print(S.actualTwist, 4);
+            Serial.print(",start_error="); Serial.print(twistLegStartError, 4);
+            Serial.print(",error="); Serial.print(err, 4);
+            Serial.print(",motor_sign="); Serial.println(TWIST_MOTOR_SIGN);
             faultHoldTwist(S);
             Serial.println("@FAULT,INDEX,MOVING_AWAY_FROM_TARGET");
             return;

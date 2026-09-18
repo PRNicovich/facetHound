@@ -91,8 +91,10 @@ void requestLapLoopback();
 #define TWIST_CORRECTION_GAIN   1.0f
 #define TWIST_CORRECTION_LIMIT 10.0f
 
-// Change to -1 only if twist moves away from target.
-#define TWIST_MOTOR_SIGN        1
+// Installed motor/encoder pair reports increasing error with +1 (bench
+// MOVING_AWAY_FROM_TARGET fault). Reverse motor polarity, not index numbering.
+// Retain the feedback guard; verify with a small jog before a full seek.
+#define TWIST_MOTOR_SIGN       -1
 
 // Z step sizing.
 // Provisional bench calibration: old 10-pulse fine jog measured about 5 um.
