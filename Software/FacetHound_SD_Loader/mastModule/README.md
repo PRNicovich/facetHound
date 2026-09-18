@@ -29,8 +29,17 @@ The current base consumes newline-terminated ASCII records:
 @force,3200
 ```
 
-The mast streams all three records every 20 ms. A received `?` also produces
-an immediate complete snapshot for compatibility with the older polling base.
+The mast reports every 20 ms. A received `?` also requests an immediate snapshot.
+`@encfault` is a bit mask: 0 = both checksums good, 1 = tip invalid,
+2 = index invalid, 3 = both invalid. Invalid encoder readings are omitted;
+old averaged values are not reissued as fresh feedback. The base disarms
+index lock on invalid index feedback. `encoder_fault=-1` in base STATUS means
+the mast has not yet supplied this health record.
+
+After upgrading from the legacy tip decoder, re-zero the tip at a known
+reference: the old decoder included checksum bits in its position value.
+
+The immediate snapshot preserves compatibility with the older polling base.
 The active base does not need to poll.
 
 | Record | Mast range | Base expectation | Result |

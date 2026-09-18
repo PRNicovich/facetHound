@@ -33,6 +33,7 @@ static bool twistSettled = false;
 static bool twistMoving = false;
 static bool zMoving = false;
 static float lastTwistTarget = NAN;
+static float twistLegStartError = 0.0f;
 static uint32_t lastTwistControlMs = 0;
 
 static int lastEscDir = -1;
@@ -705,6 +706,28 @@ static void updateTwistMotor(SystemState &S)
 
     S.twistError = err;
 
+    if (twistDirStep.distanceToGo() != 0)
+    {
+        if (absErr > fabsf(twistLegStartError) + 0.5f)
+        {
+            hardStopTwist(S);
+            Serial.println("@FAULT,INDEX,MOVING_AWAY_FROM_TARGET");
+            return;
+        }
+        if (absErr <= POSITION_ERROR_TOL || err * twistLegStartError <= 0.0f)
+        {
+            // Discard the remaining open-loop pulses when feedback reaches
+            // or passes the target. Never finish a stale correction segment.
+            stopTwistKeepLock();
+            if (absErr > POSITION_ERROR_TOL)
+            {
+                hardStopTwist(S);
+                Serial.println("@FAULT,INDEX,OVERSHOOT");
+            }
+            return;
+        }
+    }
+
     if (absErr > POSITION_ERROR_TOL)
     {
         nLocks = 0;
@@ -727,7 +750,10 @@ static void updateTwistMotor(SystemState &S)
         twistDirStep.setAcceleration(TWIST_ACCEL);
 
         if (steps != 0 && twistDirStep.distanceToGo() == 0)
+        {
+            twistLegStartError = err;
             twistDirStep.move(steps);
+        }
 
         if (twistDirStep.distanceToGo() != 0)
             twistDirStep.run();

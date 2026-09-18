@@ -103,6 +103,7 @@ volatile uint32_t motorPgPulses = 0;
 uint32_t lastRpmSampleMs = 0;
 
 bool zEncoderValid = false;
+int mastEncoderFault = -1; // -1 until a checksum-aware mast reports health.
 uint32_t lastZEncoderRxMs = 0;
 uint8_t zEncoderInputBits = 0;
 
@@ -273,7 +274,18 @@ void mastTask()
             if (!parseStrictFloat(valueText, &val))
                 continue;
 
-            if (!strcmp(key, "tip"))
+            if (!strcmp(key, "encfault"))
+            {
+                mastEncoderFault = int(val);
+                if (mastEncoderFault & 2)
+                {
+                    if (S.twistLock || twistMotionActive())
+                        Serial.println("@FAULT,INDEX,ENCODER_CHECKSUM");
+                    hardStopTwist(S);
+                }
+                validMastRecord = true;
+            }
+            else if (!strcmp(key, "tip"))
             {
                 S.tipEncoder = int(val);
 
@@ -358,8 +370,22 @@ void mastTask()
 
 void twistWatchdogTask()
 {
-    // Classic motion never cancelled twist moves based on serial timing.
-    // Keep this task inert so encoder/display cadence cannot starve motion.
+    static bool wasMoving = false;
+    static uint32_t motionStarted = 0;
+    const bool moving = twistMotionActive();
+    if (moving && !wasMoving) motionStarted = millis();
+    wasMoving = moving;
+    if (!S.twistLock) return;
+    const uint32_t now = millis();
+    const bool stale = !twistRxEver || now - lastTwistRxMs > 750;
+    const bool stuck = moving && now - motionStarted > 750 &&
+                       now - lastTwistChangeMs > 750;
+    if (stale || stuck)
+    {
+        hardStopTwist(S);
+        Serial.println(stale ? "@FAULT,INDEX,STALE_FEEDBACK" :
+                               "@FAULT,INDEX,NO_ENCODER_MOVEMENT");
+    }
 }
 
 static void sendDisplayLine(const char* line)
@@ -1286,6 +1312,7 @@ static void sendUsbState()
     Serial.print(lastMastRxMs ? millis() - lastMastRxMs : 0);
     Serial.print(",tip_encoder_raw="); Serial.print(S.tipEncoder);
     Serial.print(",index_encoder_raw="); Serial.print(S.twistEncoderRaw);
+    Serial.print(",encoder_fault="); Serial.print(mastEncoderFault);
     Serial.print(",key_rx="); Serial.print(keyRxCount);
     Serial.print(",keyboard_link=");
     Serial.print(lastKeyboardRxMs && millis() - lastKeyboardRxMs < 2500 ? "up" : "down");

@@ -36,6 +36,21 @@ long tipRawAveraged = 0;
 long twistRawAveraged = 0;
 long forceRawAveraged = 0;
 bool usbDiagnosticMode = false;
+bool tipSampleValid = false;
+bool twistSampleValid = false;
+
+static bool validEncoderWord(uint16_t word)
+{
+  // AMT23: odd parity independently over even and odd positions, including
+  // check bits K0 (14) and K1 (15). All-high and all-low both fail.
+  uint8_t even = 0, odd = 0;
+  for (uint8_t bit = 0; bit < 16; bit += 2)
+  {
+    even ^= (word >> bit) & 1u;
+    odd ^= (word >> (bit + 1)) & 1u;
+  }
+  return even == 1 && odd == 1;
+}
 
 static uint16_t readEncoderBitBang(uint8_t csPin, uint8_t clockPin,
                                    uint8_t dataPin, uint8_t dataBits)
@@ -57,11 +72,11 @@ static uint16_t readEncoderBitBang(uint8_t csPin, uint8_t clockPin,
   delayMicroseconds(20);
   digitalWrite(csPin, HIGH);
 
-  // Preserve the exact decoding used by the original working mast firmware.
-  // Both configured AMT232B modes return their position above the two low
-  // status/padding bits; the 12-bit mode additionally masks the top checks.
+  if (!validEncoderWord(word)) return 0xFFFFu;
+  // Both B encoders are 14-bit. Twist stays normalized to the existing
+  // 4096-count wire contract; tip retains all 14 position bits.
   if (dataBits == 12) return uint16_t((word & 0x3FFFu) >> 2);
-  if (dataBits == 14) return uint16_t(word >> 2);
+  if (dataBits == 14) return uint16_t(word & 0x3FFFu);
   return 0;
 }
 
@@ -84,8 +99,10 @@ static void sendTelemetryLine(const char* key, long value)
 static void publishTelemetry()
 {
   // These names and units are the current baseChassisModule mast contract.
-  sendTelemetryLine("tip", tipRawAveraged);       // 14-bit count * 8
-  sendTelemetryLine("twist", twistRawAveraged); // normalized 12-bit count
+  sendTelemetryLine("encfault", (tipSampleValid ? 0 : 1) |
+                                (twistSampleValid ? 0 : 2));
+  if (tipSampleValid) sendTelemetryLine("tip", tipRawAveraged);
+  if (twistSampleValid) sendTelemetryLine("twist", twistRawAveraged);
   sendTelemetryLine("force", forceRawAveraged); // 12-bit ADC count * 32
 }
 
@@ -96,9 +113,21 @@ static void sampleSensors()
       TIP_CS_PIN, TIP_CLOCK_PIN, TIP_DATA_PIN, 14);
   const uint16_t twistSample = readEncoderBitBang(
       TWIST_CS_PIN, TWIST_CLOCK_PIN, TWIST_DATA_PIN, 12);
+  const bool tipWasValid = tipSampleValid;
+  const bool twistWasValid = twistSampleValid;
+  tipSampleValid = tipSample != 0xFFFFu;
+  twistSampleValid = twistSample != 0xFFFFu;
+  if (!tipWasValid) tipAverage.clear();
+  if (!twistWasValid)
+  {
+    twistCosAverage.clear();
+    twistSinAverage.clear();
+  }
 
   // Circular averaging prevents the twist reading from jumping through the
   // middle of the wheel when samples straddle the 4095 -> 0 rollover.
+  if (twistSampleValid)
+  {
   const float phase = TWO_PI * float(twistSample) / TWIST_ENCODER_COUNTS;
   twistCosAverage.addValue(cosf(phase));
   twistSinAverage.addValue(sinf(phase));
@@ -107,12 +136,16 @@ static void sampleSensors()
   if (averagedPhase < 0.0f) averagedPhase += TWO_PI;
   twistRawAveraged = lroundf(
       averagedPhase * TWIST_ENCODER_COUNTS / TWO_PI) & 0x0FFF;
+  }
 
   // Preserve the classic oversampled ranges used by base calibration and the
   // existing default tip zero (approximately 0..131071 for both channels).
-  tipAverage.addValue(long(tipSample) * TIP_AVERAGE_SAMPLES);
+  if (tipSampleValid)
+  {
+    tipAverage.addValue(long(tipSample) * TIP_AVERAGE_SAMPLES);
+    tipRawAveraged = lroundf(tipAverage.getFastAverage());
+  }
   forceAverage.addValue(long(forceSample) * FORCE_AVERAGE_SAMPLES);
-  tipRawAveraged = lroundf(tipAverage.getFastAverage());
   forceRawAveraged = lroundf(forceAverage.getFastAverage());
 }
 
