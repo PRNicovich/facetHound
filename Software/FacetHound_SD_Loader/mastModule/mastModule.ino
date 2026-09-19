@@ -35,7 +35,7 @@ RunningAverage forceAverage(FORCE_AVERAGE_SAMPLES);
 
 uint32_t lastTelemetryMs = 0;
 long tipRawAveraged = 0;
-long twistRawAveraged = 0;
+float twistRawAveraged = 0.0f;
 long forceRawAveraged = 0;
 bool usbDiagnosticMode = false;
 bool tipSampleValid = false;
@@ -118,10 +118,10 @@ static void publishTelemetry()
   if (tipSampleValid) sendTelemetryLine("tip", tipRawAveraged);
   if (twistSampleValid) {
     // Keep the established 4096-units/revolution protocol scale, but retain
-    // the B encoder's lower two bits as quarter-count fractional values.
-    baseSerial.print("@twist,"); baseSerial.println(float(twistRawAveraged) / 4.0f, 2);
+    // both the native 14-bit resolution and fractional circular-average result.
+    baseSerial.print("@twist,"); baseSerial.println(twistRawAveraged / 4.0f, 5);
     if (usbDiagnosticMode && Serial) {
-      Serial.print("@twist,"); Serial.println(float(twistRawAveraged) / 4.0f, 2);
+      Serial.print("@twist,"); Serial.println(twistRawAveraged / 4.0f, 5);
     }
   }
   sendTelemetryLine("force", forceRawAveraged); // 12-bit ADC count * 32
@@ -158,8 +158,9 @@ static void sampleSensors()
   float averagedPhase = atan2f(twistSinAverage.getFastAverage(),
                                twistCosAverage.getFastAverage());
   if (averagedPhase < 0.0f) averagedPhase += TWO_PI;
-  twistRawAveraged = lroundf(
-      averagedPhase * TWIST_ENCODER_COUNTS / TWO_PI) & 0x3FFF;
+  // Do not round the filtered value back to a whole native encoder count.
+  twistRawAveraged = fmodf(averagedPhase * TWIST_ENCODER_COUNTS / TWO_PI,
+                         TWIST_ENCODER_COUNTS);
   }
 
   // Preserve the classic oversampled ranges used by base calibration and the

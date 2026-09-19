@@ -477,12 +477,6 @@ void GemUi::updatePose(const GemTelemetry& state)
         state.wheelIndex
     );
 
-    // No second simulated motor: show live index on the next rendered frame.
-    // Physical tip remains HUD telemetry, never a model-pose input.
-    displayedTip_ = targetTip;
-    displayedTwist_ = targetTwist;
-    poseInitialized_ = true;
-
     int jobPlane = -1;
     if (state.jobActive) {
         if (runtimeGemMesh().active()) {
@@ -495,6 +489,20 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
     // No matching identity => no highlight, never guess from sensor values.
     selectedPlane_ = jobPlane >= 0 ? uint16_t(jobPlane) : UINT16_MAX;
+
+    // Selection is always live. Unlocked means highlight-only: freeze the
+    // rendered orientation, including any unfinished interpolation. Seed the
+    // first frame once so startup still has a meaningful view.
+    if (orientationInitialized_ && !state.indexEngaged) {
+        lastPoseMs_ = millis();
+        return;
+    }
+    // Locked: actual index drives rotation; selected tier drives inclination.
+    // Convert machine wheel units to the mesh's index resolution.
+    displayedTip_ = targetTip;
+    displayedTwist_ = state.wheelIndex > 0.0f
+        ? targetTwist * meshResolution / state.wheelIndex : 0.0f;
+    poseInitialized_ = true;
 
     float storedSelectedTip = 0.0f;
     const RuntimeGemMesh& runtime = runtimeGemMesh();

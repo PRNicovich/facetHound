@@ -1,5 +1,42 @@
 # HUD, exact selection and card trial
 
+## Locked-only model motion and averaging follow-up
+
+Upload display and mast for this follow-up (base still needs the preceding
+3926f00 fractional-index conversion and 0.009 tolerance).
+Unlocked: exact facet highlight/name changes, but rendered orientation freezes,
+including an interpolation already in progress. Locked: actual index controls
+rotation and selected tier controls tilt. Physical tip does not drive the model.
+The first frame initializes once even if unlocked. Machine-wheel units are
+converted to mesh index units before rendering.
+
+Index averaging was NOT removed: it still uses 16 circular samples; tip uses 8.
+However the final index average was rounded to one native encoder count.
+It now stays floating point and @twist prints five decimal places in the same
+4096-units/revolution scale. This preserves fractional sample estimates; it
+does not prove sub-LSB accuracy in the absence of noise/dither and calibration.
+
+Do not erase the populated SD card. Previous failures are at the command/read
+layer, not evidence that formatting is needed. Back up before any later format.
+
+Lap phase-matching trial: leave all Hall wires and drive settings fixed. Label
+the three MOTOR-side phase leads A/B/C by their current MA/MB/MC connections,
+not by assumed colors. Record baseline and test distinct MA/MB/MC assignments:
+ABC, ACB, BAC, BCA, CAB, CBA. Disconnect 24 V and wait for the drive supply to
+discharge before EVERY connector change; never hot-swap motor leads. Secure
+the motor, preferably uncoupled from the lap, insulate all bullet connectors,
+keep hands clear and have STOP/power isolation immediately available. Use the
+same modest setpoint/direction each time; abort immediately on shudder, stall,
+unexpected speed, fault or excessive current. Do not dwell stalled or raise
+current limits. A candidate must start smoothly and then work in the opposite
+commanded direction after a complete stop; rotation alone is not proof of a
+correct match (incorrect timing can run with poor torque/high current). If no
+combination is smooth, stop permutations and verify Hall state sequence and
+Hall supply under load, controller outputs and mechanical load. Do not cycle
+through Hall power-wire arrangements. Near-zero winding readings on a normal
+meter can reflect low winding resistance; OL/open is a different failure.
+Reference: https://e2e.ti.com/support/motor-drivers-group/motor-drivers/f/motor-drivers-forum/1102147/mct8316z-motor-lock-error-detected-everytime
+
 ## Full-resolution index / dedicated-SPI trial
 
 Upload mast, base and display together for this trial. Mast now retains all
