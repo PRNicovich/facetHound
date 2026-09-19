@@ -469,47 +469,30 @@ void GemUi::updatePose(const GemTelemetry& state)
     const float meshResolution = runtimeGemMesh().active()
                                      ? runtimeGemMesh().indexResolution()
                                      : float(GemData::kIndexResolution);
-    float targetTip = isfinite(state.tipDegrees) ? state.tipDegrees : 0.0f;
+    float targetTip = state.jobActive && isfinite(state.jobAngle)
+                          ? machineTip(state.jobAngle) : 45.0f;
     float targetTwist = normalizedTwist(
         state.targetTwist + state.twistError, state.wheelIndex
     );
 
-    if (!poseInitialized_)
-    {
-        displayedTip_ = targetTip;
-        displayedTwist_ = targetTwist;
-        poseInitialized_ = true;
-    }
-    else
-    {
-        const float tipDelta = targetTip - displayedTip_;
-        const float tipGain = 0.38f + 0.42f * constrain(
-            fabsf(tipDelta) / 35.0f, 0.0f, 1.0f);
-        displayedTip_ += constrain(tipDelta * tipGain, -4.5f, 4.5f);
-        const float twistDelta = wrappedDelta(
-            targetTwist, displayedTwist_, meshResolution);
-        const float twistGain = 0.38f + 0.42f * constrain(
-            fabsf(twistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
-        const float maxTwistStep = meshResolution * 0.035f;
-        displayedTwist_ += constrain(twistDelta * twistGain,
-                                     -maxTwistStep, maxTwistStep);
-        displayedTwist_ = normalizedTwist(displayedTwist_, meshResolution);
-    }
+    // No second simulated motor: show live index on the next rendered frame.
+    // Physical tip remains HUD telemetry, never a model-pose input.
+    displayedTip_ = targetTip;
+    displayedTwist_ = targetTwist;
+    poseInitialized_ = true;
 
     int jobPlane = -1;
-    if (state.jobActive && isfinite(state.jobAngle) && isfinite(state.jobIndex)) {
-        // The target pose is authoritative. This selects the same physical
-        // face in Static and Dynamic even if source facet numbering differs.
-        float jobTwist = state.jobIndex;
-        if (oppositeApproach(state.jobAngle)) jobTwist += meshResolution * 0.5f;
-        jobPlane = int(nearestPlane(machineTip(state.jobAngle),
-                                    normalizedTwist(jobTwist, meshResolution)));
+    if (state.jobActive) {
+        if (runtimeGemMesh().active()) {
+            jobPlane = runtimeGemMesh().findPlane(state.jobTier, state.jobFacet);
+        } else {
+            for (uint16_t i = 0; i < GemData::kPlaneCount; ++i)
+                if (GemData::kPlanes[i].tier == state.jobTier &&
+                    GemData::kPlanes[i].facet == state.jobFacet) { jobPlane = i; break; }
+        }
     }
-    selectedPlane_ = jobPlane >= 0
-                         ? uint16_t(jobPlane)
-                         : nearestPlane(targetTip, normalizedTwist(
-                                                       state.targetTwist,
-                                                       state.wheelIndex));
+    // No matching identity => no highlight, never guess from sensor values.
+    selectedPlane_ = jobPlane >= 0 ? uint16_t(jobPlane) : UINT16_MAX;
 
     float storedSelectedTip = 0.0f;
     const RuntimeGemMesh& runtime = runtimeGemMesh();
@@ -529,26 +512,9 @@ void GemUi::updatePose(const GemTelemetry& state)
     const float renderTwistTarget = normalizedTwist(
         displayedTwist_ + (reverseView ? meshResolution * 0.5f : 0.0f),
         meshResolution);
-    if (!orientationInitialized_) {
-        displayedRenderTip_ = renderTipTarget;
-        displayedRenderTwist_ = renderTwistTarget;
-        orientationInitialized_ = true;
-    } else {
-        float tipDelta = fmodf(renderTipTarget - displayedRenderTip_ + 540.0f, 360.0f) - 180.0f;
-        const float renderTipGain = 0.42f + 0.40f * constrain(
-            fabsf(tipDelta) / 45.0f, 0.0f, 1.0f);
-        displayedRenderTip_ += constrain(tipDelta * renderTipGain,
-                                         -5.0f, 5.0f);
-        const float renderTwistDelta = wrappedDelta(
-            renderTwistTarget, displayedRenderTwist_, meshResolution);
-        const float renderTwistGain = 0.42f + 0.40f * constrain(
-            fabsf(renderTwistDelta) / (meshResolution * 0.25f), 0.0f, 1.0f);
-        const float maxRenderTwistStep = meshResolution * 0.03f;
-        displayedRenderTwist_ += constrain(
-            renderTwistDelta * renderTwistGain,
-            -maxRenderTwistStep, maxRenderTwistStep);
-        displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_, meshResolution);
-    }
+    displayedRenderTip_ = renderTipTarget;
+    displayedRenderTwist_ = renderTwistTarget;
+    orientationInitialized_ = true;
 }
 
 void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
@@ -832,6 +798,10 @@ void GemUi::drawHud(const GemTelemetry& state)
 {
     hudCanvas_.fillSprite(C_BG);
     hudCanvas_.drawFastHLine(8, 0, 304, C_PANEL);
+    textAt(hudCanvas_, state.indexEngaged ? "I LOCK" : "I FREE", 8, 3,
+           state.indexEngaged ? C_CYAN : C_DIM, 1, TL_DATUM);
+    textAt(hudCanvas_, state.zEngaged ? "Z LOCK" : "Z FREE", 65, 3,
+           state.zEngaged ? C_MAGENTA : C_DIM, 1, TL_DATUM);
 
     char line[64];
     const float targetTip = selectedTargetTip(state);
@@ -873,10 +843,11 @@ void GemUi::drawHud(const GemTelemetry& state)
     snprintf(line, sizeof(line), "%lu rpm", shownRpm);
     textAt(hudCanvas_, line, 313, 116, C_TEXT, 2, MR_DATUM);
 
-    drawWaterDrop(hudCanvas_, 234, 143,
-                  fabsf(state.flow) > 0.01f ? C_CYAN : C_DIM);
+    const bool flowRunning = state.flowDirection == 0 || state.flowDirection == 2;
+    const uint16_t flowColor = flowRunning ? TFT_BLUE : C_DIM;
+    drawWaterDrop(hudCanvas_, 234, 143, flowColor);
     snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
-    textAt(hudCanvas_, line, 313, 143, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 313, 143, flowColor, 2, MR_DATUM);
 
     drawSmallAxisSymbol(hudCanvas_, 14, 34, true, C_YELLOW);
     drawSmallAxisSymbol(hudCanvas_, 14, 85, false, C_CYAN);

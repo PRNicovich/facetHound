@@ -1257,6 +1257,9 @@ static void sendUsbMotorStatus()
     Serial.print(",last_fn=0x"); printHexByte(d.lastFunction);
     Serial.print(",last_exception=0x"); printHexByte(d.lastException);
     Serial.print(",fault=0x"); printHexByte(d.lastFault);
+    Serial.print(",speed_raw="); Serial.print(d.lastSpeedRaw);
+    Serial.print(",speed_raw_swapped="); Serial.print(uint16_t((d.lastSpeedRaw << 8) | (d.lastSpeedRaw >> 8)));
+    Serial.print(",pole_pairs="); Serial.print(LAP_MOTOR_POLE_PAIRS);
     Serial.print(",last=");
     if (!d.lastReplyLength)
         Serial.print("none");
@@ -1393,7 +1396,7 @@ static void printUsbHelp()
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
     Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
-    Serial.println("@HELP,SD STATUS|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
+    Serial.println("@HELP,SD STATUS|PROBE|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
     Serial.println("@HELP,GEM LOAD <SD-file-index> | MODE CLASSIC|STATIC|DYNAMIC");
 }
 
@@ -1437,6 +1440,14 @@ static bool selectAdjacentGemTier(bool forward)
         {
             lowestIndex = S.markPoints[i];
             selected = i;
+        }
+    }
+    float nearestDistance = 1.0001f;
+    if (S.twistReady && isfinite(S.actualTwist)) {
+        for (size_t i = 0; i < count; ++i) {
+            if (activeGemDesign.cuts[i].tier != targetTier) continue;
+            const float distance = fabsf(shortestArcPath(S.markPoints[i], S.actualTwist, S.wheelIndex));
+            if (distance < nearestDistance) { nearestDistance = distance; selected = i; }
         }
     }
     S.markIdx = int(selected);
@@ -1551,6 +1562,17 @@ static bool selectAdjacentBuiltin(bool changeTier, bool forward)
         }
     }
 
+    if (changeTier && S.twistReady && isfinite(S.actualTwist)) {
+        float nearestDistance = 1.0001f;
+        for (uint16_t i = 0; i < BuiltinGem::kCutCount; ++i) {
+            const BuiltinGem::Cut& candidate = BuiltinGem::kCuts[i];
+            if (candidate.tier != targetTier) continue;
+            const float index = machineIndexForFacet(candidate.rawIndex, candidate.storedTipDegrees,
+                                                     BuiltinGem::kWheelIndex);
+            const float distance = fabsf(shortestArcPath(index, S.actualTwist, S.wheelIndex));
+            if (distance < nearestDistance) { nearestDistance = distance; selected = i; }
+        }
+    }
     builtinCutIndex = selected;
     targetBuiltinCut();
     sendActiveCut(true);
@@ -1757,6 +1779,16 @@ static void handleUsbCommand(char* line)
         {
             sendUsbSdStatus();
         }
+        else if (!strcasecmp(mode, "PROBE"))
+        {
+            if (S.twistLock || S.zLock || S.indexSpinRpm != 0.0f ||
+                S.motorDir == 1 || S.motorDir == 3) {
+                Serial.println("@ERR,SD,stop motion before PROBE"); return;
+            }
+            const uint8_t response = probeGemSdCommand0();
+            Serial.print("@SD_PROBE,cmd0_r1=0x"); printHexByte(response);
+            Serial.println(",expected=0x01,next=SD RETRY");
+        }
         else if (!strcasecmp(mode, "RETRY"))
         {
             const bool ready = retryGemSd();
@@ -1770,7 +1802,7 @@ static void handleUsbCommand(char* line)
         }
         else
         {
-            Serial.println("@ERR,SD,expected STATUS|RETRY|LIST");
+            Serial.println("@ERR,SD,expected STATUS|PROBE|RETRY|LIST");
         }
         return;
     }

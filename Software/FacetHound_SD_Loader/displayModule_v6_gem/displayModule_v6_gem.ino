@@ -1516,6 +1516,8 @@ static GemTelemetry currentGemTelemetry()
   state.flowDirection = Flow_dir;
   state.indexStep = tiltStepIndex;
   state.zStep = zedStepIndex;
+  state.indexEngaged = tiltLock != 0;
+  state.zEngaged = zedLock != 0;
   state.jobActive = jobActive;
   state.jobTitle = jobTitle;
   state.jobFacetName = jobFacetName;

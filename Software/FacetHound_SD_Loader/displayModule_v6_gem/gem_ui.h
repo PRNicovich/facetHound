@@ -21,6 +21,8 @@ struct GemTelemetry
     int flowDirection = 1;
     int indexStep = 1;
     int zStep = 0;
+    bool indexEngaged = false;
+    bool zEngaged = false;
     bool jobActive = false;
     const char* jobTitle = nullptr;
     const char* jobFacetName = nullptr;

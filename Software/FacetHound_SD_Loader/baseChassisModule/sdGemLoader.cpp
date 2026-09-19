@@ -386,6 +386,31 @@ const GemSdDiagnostics& gemSdDiagnostics()
     return sdDiagnostics;
 }
 
+uint8_t probeGemSdCommand0()
+{
+    // Explicit electrical/SPI diagnostic, not a filesystem or format operation.
+    // Reset the card to idle; caller must use SD RETRY before loading a file.
+    SD.end(false);
+    sdReady = false;
+    sdDiagnostics.ready = false;
+    sdDiagnostics.rootChecked = false;
+    digitalWrite(GEM_SD_CS_PIN, HIGH);
+    gemSdSpi.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
+    for (uint8_t i = 0; i < 10; ++i) gemSdSpi.transfer(uint8_t(0xFF));
+    digitalWrite(GEM_SD_CS_PIN, LOW);
+    const uint8_t command[6] = {0x40, 0, 0, 0, 0, 0x95};
+    for (uint8_t b : command) gemSdSpi.transfer(b);
+    uint8_t response = 0xFF;
+    for (uint8_t i = 0; i < 16; ++i) {
+        response = gemSdSpi.transfer(uint8_t(0xFF));
+        if (!(response & 0x80)) break;
+    }
+    digitalWrite(GEM_SD_CS_PIN, HIGH);
+    gemSdSpi.transfer(uint8_t(0xFF));
+    gemSdSpi.endTransaction();
+    return response;
+}
+
 size_t gemSdFileCount()
 {
     File root = openRoot();

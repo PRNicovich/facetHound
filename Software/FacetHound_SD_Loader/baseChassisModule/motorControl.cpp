@@ -206,7 +206,10 @@ static bool collectLapReply(SystemState &S)
     {
         const uint16_t rawValue = (uint16_t(lapReply[3]) << 8) | lapReply[4];
         if (lapPhase == 3)
+        {
+            lapDiagnostics.lastSpeedRaw = rawValue;
             S.RPMValue = int((uint32_t(rawValue) * 20U) / LAP_MOTOR_POLE_PAIRS);
+        }
         else if (lapPhase == 4)
             lapDiagnostics.lastFault = uint8_t(rawValue >> 8);
         lapDiagnostics.validReplies++;
