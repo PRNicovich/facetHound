@@ -1625,7 +1625,7 @@ void updateForceBarSprite()
     tierError.drawString(tipAngle>=target ? "+" : "-",15,40);
     tierError.drawCircle(106,10,2,0xEF00);
     tierError.pushSprite(210,205);
-    sBar1.pushSprite(10,245);
+    sBar1.pushSprite(10,255);
     return;
   }
   int lastFillBarWidth = fillBarWidth;
