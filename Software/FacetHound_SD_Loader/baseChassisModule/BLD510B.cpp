@@ -175,6 +175,9 @@ bool BLD510B::setBrakingForce(uint16_t force0to1023) {
 bool BLD510B::readActualSpeedRPM(int32_t &rpmOut) {
   uint16_t raw;
   if (!readRegisters(0x8018, 1, &raw)) return false;
+  // Speed register only: installed BLD returns low byte first. Keep generic
+  // register/status decoding unchanged (faults occupy the status high byte).
+  raw = uint16_t((raw >> 8) | (raw << 8));
   // Unconfirmed scaling -- see header comment. If this looks wrong on
   // your bench (e.g. off by ~pole-pair-count or ~20x), that's the first
   // thing to adjust. Fall back to raw value if in doubt:

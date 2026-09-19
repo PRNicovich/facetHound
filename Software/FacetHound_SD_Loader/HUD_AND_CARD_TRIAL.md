@@ -1,5 +1,12 @@
 # HUD, exact selection and card trial
 
+RPM follow-up: hand-spin reports of 51200 and 66560 match the speed-register
+byte-order error exactly (wire 14 00 / 1A 00). Register 0x8018 is now decoded
+low-byte-first, producing 200 / 260 RPM under the existing 20/pole-pairs scale.
+Raw diagnostic fields remain unchanged. Status/fault register byte order is NOT
+swapped. Absolute scale still needs a tachometer check; motor shudder is not
+fixed merely by correcting the display reading.
+
 Upload baseChassisModule and displayModule_v6_gem. Mast is unchanged.
 
 - Static/dynamic highlight uses the JOB tier/facet identity, not the nearest

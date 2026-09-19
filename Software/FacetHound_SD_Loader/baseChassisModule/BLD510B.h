@@ -29,10 +29,10 @@
       pole count for a related speed value; I've applied that here but
       you should sanity check readActualSpeedRPM() against a tachometer
       or the vendor's Windows config tool before trusting it.
-    - Whether the 0x8018 *read* response is byte-swapped like the 0x8005
-      *write* is. I've implemented it as normal big-endian (standard
-      Modbus). If readActualSpeedRPM() looks like nonsense multiply by
-      256 too high/low, that's the first thing to try flipping.
+    - Bench follow-up: hand-spin readings of 51200/66560 identified speed
+      byte order as low-byte-first (14 00 / 1A 00). Only readActualSpeedRPM
+      swaps this register, giving 200/260 with the existing scale. Verify
+      absolute scale with a tachometer; generic register reads stay big-endian.
 
   This is a from-scratch minimal implementation, not a wrapper around a
   generic Modbus library, specifically because of the byte-swap quirk on

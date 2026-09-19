@@ -212,7 +212,11 @@ static bool collectLapReply(SystemState &S)
         if (lapPhase == 3)
         {
             lapDiagnostics.lastSpeedRaw = rawValue;
-            S.RPMValue = int((uint32_t(rawValue) * 20U) / LAP_MOTOR_POLE_PAIRS);
+            // This drive returns speed low byte first, like its speed write.
+            // 14 00 / 1A 00 were displayed as 51200 / 66560 during hand spin.
+            const uint16_t speedCounts = uint16_t(lapReply[3]) |
+                                         (uint16_t(lapReply[4]) << 8);
+            S.RPMValue = int((uint32_t(speedCounts) * 20U) / LAP_MOTOR_POLE_PAIRS);
         }
         else if (lapPhase == 4)
             lapDiagnostics.lastFault = uint8_t(rawValue >> 8);
