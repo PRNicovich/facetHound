@@ -580,17 +580,38 @@ static void retryMeshTransfer(const char* reason)
 
 static void sendActiveMesh()
 {
-    meshSendStage = 1;
+    meshSendStage = 9;
     meshSendIndex = 0;
     meshBeginAttempts = 0;
     meshRestartCount = 0;
     meshRowRetries = 0;
     meshSendLastMs = millis();
+    uint64_t hash=14695981039346656037ULL;
+    auto add=[&](const auto& value) {
+        const uint8_t* p=reinterpret_cast<const uint8_t*>(&value);
+        for (size_t i=0;i<sizeof(value);++i) { hash^=p[i]; hash*=1099511628211ULL; }
+    };
+    add(activeGemDesign.wheelIndex); add(activeGemDesign.designIndexSign);
+    add(activeGemGeometry.radius);
+    for (const auto& v:activeGemGeometry.vertices) { add(v.x); add(v.y); add(v.z); }
+    for (const auto& e:activeGemGeometry.edges) {
+        add(e.a); add(e.b); add(e.supportCount);
+        for(unsigned i=0;i<e.supportCount;++i) add(e.supportPlanes[i]);
+    }
+    for (const auto& p:activeGemGeometry.planes) {
+        add(p.angleDegrees); add(p.index); add(p.tier); add(p.facet); add(p.name);
+    }
+    char key[40]; snprintf(key,sizeof(key),"@MESHCACHE,%016llx",(unsigned long long)hash);
+    if (activeGemLoaded) sendDisplayLine(key); else meshSendStage=1;
 }
 
 static void meshTransferTask()
 {
     if (!meshSendStage) return;
+    if (meshSendStage==9) {
+        if (millis()-meshSendLastMs>1000) meshSendStage=1;
+        return;
+    }
     if (meshSendStage == 8) {
         if (millis() - meshSendLastMs > 350) {
             if (++meshRowRetries <= 3) {
@@ -1228,6 +1249,13 @@ void displayRxTask()
             }
 
             if (!strcmp(key, "MESHACK")) {
+                if (!strcmp(valueText,"CACHE_MISS") && meshSendStage==9) meshSendStage=1;
+                if (!strcmp(valueText,"CACHE_HIT") && meshSendStage==9) {
+                    meshSendStage=0;
+                    Serial.println("@GEM,DISPLAY_CACHE_HIT");
+                    sendCfgText("SD_ACTIVE",activeGemDesign.title);
+                    sendActiveCut(true);
+                }
                 if (meshSendStage == 8 && valueText[1] == ',' &&
                     valueText[0] == (meshRowStage == 3 ? 'V' : meshRowStage == 4 ? 'E' : 'P') &&
                     strtoul(valueText + 2, nullptr, 10) + 1 == meshSendIndex) {
@@ -2549,7 +2577,7 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
-    Serial.println("@BUILD,BASE,GEM-NORMAL-HOME-20260918");
+    Serial.println("@BUILD,BASE,DISPLAY-CACHE-20260918");
     Serial.print("KEYBOARD UART MAP: ");
     Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");
     Serial.print("MAST UART MAP: ");

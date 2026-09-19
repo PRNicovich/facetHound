@@ -13,10 +13,28 @@
   pauses; there is no automatic repeated stall retry or current-limit increase.
 - Geometry is built in RAM without saving an automatic cache. Existing valid
   PC-prebuilt caches are accepted. Only the tiny last-selected filename is saved.
-- Loading beyond the initial splash is text-only with the progress bar.
+- The initial splash continues rotating during loading. The separate text-only
+  loading card uses the splash's smooth title font and cyan/magenta treatment.
+
+## Display-cache and orientation follow-up
+
+The base fingerprints mesh geometry and facet metadata before transfer and sends
+`@MESHCACHE,<64-bit-hex-id>`. The display responds with `@MESHACK,CACHE_HIT` or
+`@MESHACK,CACHE_MISS`. A hit swaps in the resident model and skips all mesh rows;
+USB reports `@GEM,DISPLAY_CACHE_HIT`. A miss (or timeout) uses the normal transfer.
+The display holds up to two previous small models in addition to the active one,
+with a combined 24 KiB cache budget and eviction to leave room for an incoming
+model and UI. Oversized models are not retained; all entries disappear at reset.
+This is RAM only, not display flash or another SD write.
+
+Crown facets add an interpolated 180-degree screen roll: the selected normal
+still faces the viewer, but the culet is down. Static T/B visibility now uses
+supporting face normals, not whether an edge lies above z=0. Vertical girdle
+boundaries appear in both cap views. Regression checks reconstruct Backgammon,
+verify all four projected bounds, and verify its 44 girdle edges in T and B.
 
 Upload both `baseChassisModule` and `displayModule_v6_gem`. No mast or keyboard
-firmware change is required. Both report build `GEM-NORMAL-HOME-20260918`.
+firmware change is required. Both report build `DISPLAY-CACHE-20260918`.
 
 ## Operator checks
 

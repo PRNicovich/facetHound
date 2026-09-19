@@ -62,6 +62,7 @@ private:
     float displayedTip_ = 0.0f;
     float poseTierTip_ = 0.0f;
     float runtimeTipTarget_ = 0.0f, runtimeTwistOffset_ = 0.0f;
+    float runtimeRollTarget_ = 0.0f, displayedRoll_ = 0.0f;
     float displayedTwist_ = 0.0f;
     float displayedRenderTip_ = 0.0f;
     float displayedRenderTwist_ = 0.0f;

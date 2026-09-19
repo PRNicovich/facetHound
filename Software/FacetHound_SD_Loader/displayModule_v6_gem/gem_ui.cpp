@@ -271,15 +271,6 @@ bool GemUi::edgeSelected(uint16_t edgeIndex, uint16_t plane) const
 void GemUi::fillSelectedProjection(uint16_t edgeCount, uint8_t panel)
 {
     const RuntimeGemMesh& runtime = runtimeGemMesh();
-    float zTolerance = 0.0f;
-    if (runtime.active() && panel < 2) {
-        float zMin = INFINITY, zMax = -INFINITY;
-        for (const RuntimeMeshVertex& point : runtime.vertices()) {
-            zMin = min(zMin, point.z);
-            zMax = max(zMax, point.z);
-        }
-        zTolerance = max(1.0e-7f, 0.025f * (zMax - zMin));
-    }
     uint16_t vertices[64] = {};
     float angles[64] = {};
     uint8_t count = 0;
@@ -288,15 +279,7 @@ void GemUi::fillSelectedProjection(uint16_t edgeCount, uint8_t panel)
         if (!edgeSelected(i, selectedPlane_)) continue;
         if (panel < 2) {
             if (runtime.active()) {
-                const RuntimeMeshEdge& edge = runtime.edges()[i];
-                const RuntimeMeshVertex& a = runtime.vertices()[edge.a];
-                const RuntimeMeshVertex& b = runtime.vertices()[edge.b];
-                const float zMid = 0.5f * (a.z + b.z);
-                const bool girdle = fabsf(zMid) <= zTolerance ||
-                                    (a.z <= 0.0f && b.z >= 0.0f) ||
-                                    (b.z <= 0.0f && a.z >= 0.0f);
-                if (!girdle && !(panel == 0 ? zMid > 0.0f : zMid < 0.0f))
-                    continue;
+                if (!runtime.edgeVisibleFromCap(i,panel==0)) continue;
             } else if ((GemData::kEdges[i].viewMask & (1u << panel)) == 0) {
                 continue;
             }
@@ -495,19 +478,22 @@ void GemUi::updatePose(const GemTelemetry& state)
         const auto& face = loaded.planes()[selectedPlane_];
         if (!orientationInitialized_ || state.indexEngaged) {
             runtimeTipTarget_ = atan2f(hypotf(face.nx, face.ny), face.nz) / DEG_TO_RAD;
+            runtimeRollTarget_ = face.nz > 0.02f ? 180.0f : 0.0f;
             const float faceAzimuth = atan2f(face.ny, face.nx);
             float machineTarget = selectedTargetTwist(state);
             runtimeTwistOffset_ = (0.25f - faceAzimuth / TWO_PI) * meshResolution +
                 loaded.indexSign() * machineTarget;
         }
-        float actual = state.wheelIndex > 0 ? targetTwist * meshResolution/state.wheelIndex : 0;
+        float actual = targetTwist; // normalizedTwist already converted to mesh units.
         float twistTarget = normalizedTwist(runtimeTwistOffset_ - loaded.indexSign()*actual, meshResolution);
         uint32_t now = millis();
         float gain = 1.0f-expf(-float(min(uint32_t(100), now-lastPoseMs_))/65.0f);
         lastPoseMs_ = now;
         if (!orientationInitialized_) {
             displayedRenderTip_ = runtimeTipTarget_; displayedRenderTwist_ = twistTarget;
+            displayedRoll_ = runtimeRollTarget_;
         } else {
+            displayedRoll_ += wrappedDelta(runtimeRollTarget_,displayedRoll_,360)*gain;
             displayedRenderTip_ += wrappedDelta(runtimeTipTarget_, displayedRenderTip_, 360)*gain;
             displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_ +
                 wrappedDelta(twistTarget, displayedRenderTwist_, meshResolution)*gain, meshResolution);
@@ -602,6 +588,8 @@ void GemUi::drawDynamic(const GemTelemetry& state)
     const float twist = displayedRenderTwist_ * TWO_PI / resolution;
     const float ct = cosf(tip), st = sinf(tip);
     const float cz = cosf(twist), sz = sinf(twist);
+    const float roll = runtime.active() ? displayedRoll_*DEG_TO_RAD : 0.0f;
+    const float cr=cosf(roll), sr=sinf(roll);
     const float scale = 116.0f / (runtime.active() ? runtime.radius() : GemData::kRadius);
     constexpr float centerX = 160.0f;
     constexpr float centerY = 166.0f;
@@ -617,8 +605,8 @@ void GemUi::drawDynamic(const GemTelemetry& state)
         const float y1 = sz * px + cz * py;
         const float y2 = ct * y1 - st * pz;
         const float z2 = st * y1 + ct * pz;
-        screenX_[i] = int16_t(lroundf(centerX + scale * x1));
-        screenY_[i] = int16_t(lroundf(centerY - scale * y2));
+        screenX_[i] = int16_t(lroundf(centerX + scale * (cr*x1-sr*y2)));
+        screenY_[i] = int16_t(lroundf(centerY - scale * (sr*x1+cr*y2)));
         screenDepth_[i] = z2;
     }
 
@@ -757,15 +745,12 @@ void GemUi::drawStatic(const GemTelemetry& state)
 
             fillSelectedProjection(uint16_t(runtime.edges().size()), panel);
 
-            float zMin = INFINITY, zMax = -INFINITY;
             float viewSpan = 0.0f;
             for (const RuntimeMeshVertex& point : runtime.vertices())
             {
-                zMin = min(zMin, point.z); zMax = max(zMax, point.z);
                 float viewValue = panel == 2 ? point.y : point.x;
                 viewSpan = max(viewSpan, fabsf(viewValue));
             }
-            float zTolerance = max(1.0e-7f, 0.025f * (zMax - zMin));
 
             for (uint8_t pass = 0; pass < 2; ++pass)
             {
@@ -777,11 +762,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
                     bool visible = true;
                     if (panel < 2)
                     {
-                        float zMid = 0.5f * (a.z + b.z);
-                        bool girdle = fabsf(zMid) <= zTolerance ||
-                                      (a.z <= 0.0f && b.z >= 0.0f) ||
-                                      (b.z <= 0.0f && a.z >= 0.0f);
-                        visible = girdle || (panel == 0 ? zMid > 0.0f : zMid < 0.0f);
+                        visible = runtime.edgeVisibleFromCap(i,panel==0);
                     }
                     else
                     {

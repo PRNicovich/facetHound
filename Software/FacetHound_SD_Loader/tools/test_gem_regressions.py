@@ -29,6 +29,11 @@ def main():
                 projected = [x, np.cos(pitch)*y-np.sin(pitch)*n[2],
                              np.sin(pitch)*y+np.cos(pitch)*n[2]]
                 np.testing.assert_allclose(projected, [0, 0, 1], atol=1e-6)
+                # Crown roll leaves its normal facing the viewer while putting
+                # the culet below the crown rather than above it.
+                if n[2] > 0.02:
+                    np.testing.assert_allclose([-projected[0], -projected[1], projected[2]],
+                                               [0, 0, 1], atol=1e-6)
                 count += 1
         print(f"{name}: {count} facet normals face viewer at target")
     with contextlib.redirect_stdout(io.StringIO()):
@@ -50,6 +55,25 @@ def main():
             normal = -normal
         np.testing.assert_allclose(normal, expected, atol=1e-6)
     print("Dodecahedron retains crown and pavilion; signed-zero culet OK")
+    with contextlib.redirect_stdout(io.StringIO()):
+        points, supports, edges, planes, *_ = build_gem(str(SOFTWARE / "gemUtils/data/pc04188.asc"))
+    for panel in range(4):
+        uv=points[:, [0, 1] if panel<2 else [0, 2] if panel==2 else [1, 2]].copy()
+        if panel==1:
+            uv[:,1]*=-1
+        center=(uv.min(axis=0)+uv.max(axis=0))/2
+        scale=min(106/np.ptp(uv[:,0]),98/np.ptp(uv[:,1]))
+        screen=(uv-center)*scale+[69,65]
+        assert np.all(screen >= [8,8]) and np.all(screen <= [130,122])
+    girdle_edges=0
+    for a,b in edges:
+        normals=[planes[p][0] for p in set(supports[a]) & set(supports[b])]
+        if any(abs(n[2])<0.02 for n in normals):
+            for top in (True,False):
+                assert any(abs(n[2])<0.02 or (n[2]>0 if top else n[2]<0) for n in normals)
+            girdle_edges+=1
+    assert girdle_edges
+    print(f"Backgammon: all four projections in bounds; {girdle_edges} girdle edges visible in T and B")
 
 
 if __name__ == "__main__":

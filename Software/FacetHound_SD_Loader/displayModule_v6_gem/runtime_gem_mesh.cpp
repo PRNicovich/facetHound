@@ -5,9 +5,56 @@
 namespace
 {
 RuntimeGemMesh mesh;
+RuntimeGemMesh recent[2];
+uint64_t recentId[2] = {}, activeId = 0, pendingId = 0;
+uint8_t nextSlot = 0;
 }
 
 RuntimeGemMesh& runtimeGemMesh() { return mesh; }
+
+size_t RuntimeGemMesh::storageBytes() const {
+    return vertices_.capacity()*sizeof(RuntimeMeshVertex) + edges_.capacity()*sizeof(RuntimeMeshEdge) +
+        planes_.capacity()*sizeof(RuntimeMeshPlane) + edgeSupports_.capacity()*sizeof(uint16_t);
+}
+
+bool selectCachedMesh(uint64_t id) {
+    pendingId = id;
+    if (id && activeId == id && mesh.active()) return true;
+    for (unsigned i=0;i<2;++i) if (id && recentId[i]==id && recent[i].active()) {
+        std::swap(mesh,recent[i]); std::swap(activeId,recentId[i]);
+        if (recent[0].storageBytes()+recent[1].storageBytes()>24*1024) {
+            recent[i]=RuntimeGemMesh(); recentId[i]=0;
+        }
+        return true;
+    }
+    // Keep at most two previous small meshes, 24 KiB total. Moving vectors
+    // costs no extra allocation; large models are simply retransmitted.
+    if (mesh.active() && activeId && mesh.storageBytes() <= 24*1024) {
+        unsigned slot=nextSlot++%2;
+        recent[slot]=std::move(mesh); recentId[slot]=activeId;
+        unsigned other=1-slot;
+        if (recent[0].storageBytes()+recent[1].storageBytes()>24*1024) {
+            recent[other]=RuntimeGemMesh(); recentId[other]=0;
+        }
+        mesh=RuntimeGemMesh();
+    }
+    activeId=0;
+    return false;
+}
+
+void commitCachedMesh() { activeId = mesh.active() ? pendingId : 0; }
+
+bool RuntimeGemMesh::edgeVisibleFromCap(uint16_t id, bool top) const {
+    if (id>=edges_.size()) return false;
+    const auto& e=edges_[id];
+    for (unsigned i=0;i<e.supportCount;++i) {
+        const auto& p=planes_[edgeSupports_[e.supportStart+i]];
+        // Vertical girdle boundaries belong to BOTH cap projections, even
+        // when the ASC places the entire girdle above or below z=0.
+        if (p.normalValid && (fabsf(p.nz)<0.02f || (top ? p.nz>0 : p.nz<0))) return true;
+    }
+    return false;
+}
 
 void RuntimeGemMesh::clear()
 {
@@ -25,6 +72,11 @@ bool RuntimeGemMesh::beginTransfer(uint16_t vertices, uint16_t edges,
                                    float radius)
 {
     clear();
+    const size_t needed=size_t(vertices)*sizeof(RuntimeMeshVertex)+size_t(edges)*sizeof(RuntimeMeshEdge)+
+        size_t(planes)*sizeof(RuntimeMeshPlane)+size_t(edges)*16;
+    for (unsigned i=0;i<2 && rp2040.getFreeHeap()<needed+48000;++i) {
+        recent[i]=RuntimeGemMesh(); recentId[i]=0;
+    }
     if (!vertices || !edges || !planes ||
         vertices > RUNTIME_MESH_MAX_VERTICES ||
         edges > RUNTIME_MESH_MAX_EDGES || planes > RUNTIME_MESH_MAX_PLANES ||

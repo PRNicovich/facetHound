@@ -58,6 +58,8 @@ public:
     const std::vector<RuntimeMeshPlane>& planes() const { return planes_; }
     int findPlane(uint16_t tier, uint16_t facet) const;
     bool edgeHasPlane(uint16_t edge, uint16_t plane) const;
+    size_t storageBytes() const;
+    bool edgeVisibleFromCap(uint16_t edge, bool top) const;
 
 private:
     bool active_ = false;
@@ -75,3 +77,5 @@ private:
 };
 
 RuntimeGemMesh& runtimeGemMesh();
+bool selectCachedMesh(uint64_t id);
+void commitCachedMesh();

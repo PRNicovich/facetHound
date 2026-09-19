@@ -161,9 +161,15 @@ static void drawLoadingProgress(int percent, bool force = false)
   const int y = 382;
   if (!splashActive && force) {
     tft.fillScreen(TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.drawString("FACET HOUND",160,154,4);
+    tft.loadFont(ERRORTEXT);
+    tft.setTextDatum(TL_DATUM);
+    const int width=tft.textWidth("FACET HOUND"), x=(320-width)/2;
+    const uint16_t accent=tft.color565(255,65,195), title=tft.color565(60,230,255);
+    tft.setTextColor(accent,TFT_BLACK); tft.drawString("FACET HOUND",x+1,157);
+    tft.setTextColor(title,TFT_BLACK); tft.drawString("FACET HOUND",x,154);
+    tft.drawFastHLine(x,184,width,accent);
+    tft.fillCircle(x-6,184,2,title); tft.fillCircle(x+width+6,184,2,title);
+    tft.unloadFont();
   }
   tft.fillRect(0, y, 320, 70, TFT_BLACK);
   tft.setTextDatum(MC_DATUM);
@@ -197,7 +203,7 @@ static const uint32_t DISPLAY_BAUD = 460800;
 static const uint16_t RX_BYTE_BUDGET = 2048;
 static const uint8_t RX_LINE_BUDGET = 128;
 static const uint32_t SETTINGS_MAGIC = 0x46484D36; // "FHM6"
-static const char DISPLAY_FIRMWARE_ID[] = "GEM-NORMAL-HOME-20260918";
+static const char DISPLAY_FIRMWARE_ID[] = "DISPLAY-CACHE-20260918";
 
 struct PersistedSettings
 {
@@ -623,6 +629,17 @@ void parseLine(char* line)
   char* valueText = comma + 1;
 
   if (key[0] == 0) return;
+  if (!strcmp(key,"MESHCACHE")) {
+    const bool hit=selectCachedMesh(strtoull(valueText,nullptr,16));
+    if (hit) {
+      meshReceiving=false; meshDisplayFailed=false; bootModelPending=false; loadingDesign=false;
+      closeSettingsMenu(); restoreDisplayPending=true;
+      if (!splashActive && displayMode!=DisplayMode::CLASSIC) gemUi.begin(displayMode);
+      ++telemetryVersion;
+    }
+    sendLineBoth(hit ? "@MESHACK,CACHE_HIT" : "@MESHACK,CACHE_MISS");
+    return;
+  }
   if (!strcmp(key, "GEMLOAD")) {
     char* title = strchr(valueText, ',');
     if (title) { *title++ = 0; snprintf(loadingTitle, sizeof(loadingTitle), "%.42s", title); }
@@ -754,6 +771,7 @@ void parseLine(char* line)
     meshReceiving = false;
     if (runtimeGemMesh().finishTransfer())
     {
+      commitCachedMesh();
       meshDisplayFailed = false;
       bootModelPending = false;
       loadingDesign = false;
@@ -1151,8 +1169,7 @@ void drawSplashScreen()
       const uint16_t gray = uint16_t((level >> 3) << 11) |
                             uint16_t((level >> 2) << 5) |
                             uint16_t(level >> 3);
-      if (elapsed < kTotalMs)
-        splash.drawLine(sx[edge.a], sy[edge.a], sx[edge.b], sy[edge.b], gray);
+      splash.drawLine(sx[edge.a], sy[edge.a], sx[edge.b], sy[edge.b], gray);
     }
 
     if (elapsed >= kGemOnlyMs)
@@ -1689,8 +1706,8 @@ void setup()
 {
   Serial.begin(115200);
   baseSerial.begin(DISPLAY_BAUD);
-  Serial.println("@BUILD,DISPLAY,GEM-NORMAL-HOME-20260918");
-  baseSerial.println("@BUILD,DISPLAY,GEM-NORMAL-HOME-20260918");
+  Serial.println("@BUILD,DISPLAY,DISPLAY-CACHE-20260918");
+  baseSerial.println("@BUILD,DISPLAY,DISPLAY-CACHE-20260918");
 
   // The animated title card is useful on the bench, but it should not hold up
   // an installed display.  Treat USB mode as an actively opened CDC port, not
@@ -1716,9 +1733,7 @@ void setup()
   splashActive = false;
 
   if (bootModelPending || meshReceiving || loadingDesign || meshDisplayFailed) {
-    tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_CYAN,TFT_BLACK);
-    tft.drawString("FACET HOUND",160,180,4);
-    drawLoadingProgress(-1);
+    drawLoadingProgress(-1,true);
     restoreDisplayPending = true;
   }
   else if (displayMode == DisplayMode::CLASSIC)
