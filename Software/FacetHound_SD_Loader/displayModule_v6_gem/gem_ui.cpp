@@ -514,8 +514,19 @@ void GemUi::updatePose(const GemTelemetry& state)
     const float renderTwistTarget = normalizedTwist(
         displayedTwist_ + (reverseView ? meshResolution * 0.5f : 0.0f),
         meshResolution);
-    displayedRenderTip_ = renderTipTarget;
-    displayedRenderTwist_ = renderTwistTarget;
+    const uint32_t now = millis();
+    const float dt = min(uint32_t(100), now - lastPoseMs_);
+    lastPoseMs_ = now;
+    const float gain = 1.0f - expf(-dt / 65.0f);
+    if (!orientationInitialized_) {
+        displayedRenderTip_ = renderTipTarget;
+        displayedRenderTwist_ = renderTwistTarget;
+    } else {
+        displayedRenderTip_ += wrappedDelta(renderTipTarget, displayedRenderTip_, 360.0f) * gain;
+        displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_ +
+            wrappedDelta(renderTwistTarget, displayedRenderTwist_, meshResolution) * gain,
+            meshResolution);
+    }
     orientationInitialized_ = true;
 }
 
@@ -834,31 +845,24 @@ void GemUi::drawHud(const GemTelemetry& state)
 
     const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
     const bool motorRunning = state.rpmDirection == 1 || state.rpmDirection == 3;
-    drawRotationArrow(hudCanvas_, 234, 116, clockwise, motorRunning, C_TEXT);
+    const uint16_t rpmColor = motorRunning ? TFT_WHITE : C_DIM;
+    drawRotationArrow(hudCanvas_, 234, 116, clockwise, motorRunning, rpmColor);
     const unsigned long shownRpm = motorRunning
                                        ? static_cast<unsigned long>(state.rpmActual)
                                        : static_cast<unsigned long>(max(0L, state.rpmSet));
     snprintf(line, sizeof(line), "%lu rpm", shownRpm);
-    textAt(hudCanvas_, line, 313, 116, C_TEXT, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 313, 116, rpmColor, 2, MR_DATUM);
 
     const bool flowRunning = state.flowDirection == 0 || state.flowDirection == 2;
-    const uint16_t flowColor = flowRunning ? TFT_BLUE : C_DIM;
+    const uint16_t flowColor = flowRunning ? C_CYAN : C_DIM;
     drawWaterDrop(hudCanvas_, 234, 143, flowColor);
     snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
-    textAt(hudCanvas_, line, 313, 143, flowColor, 2, MR_DATUM);
+    textAt(hudCanvas_, line, 313, 143, flowRunning ? TFT_WHITE : C_DIM, 2, MR_DATUM);
 
     drawSmallAxisSymbol(hudCanvas_, 14, 34, true, C_YELLOW);
     drawSmallAxisSymbol(hudCanvas_, 14, 85, false, C_CYAN);
-    // Draw last, in each axis' left gutter. Font 2 and geometric lamp remain
-    // visible even with installations that omit the tiny GLCD font.
-    textAt(hudCanvas_, state.indexEngaged ? "L" : "U", 14, 61,
-           state.indexEngaged ? C_CYAN : C_TEXT, 2, MC_DATUM);
-    textAt(hudCanvas_, state.zEngaged ? "L" : "U", 14, 113,
-           state.zEngaged ? C_MAGENTA : C_TEXT, 2, MC_DATUM);
-    if (state.indexEngaged) hudCanvas_.fillCircle(29, 61, 3, C_CYAN);
-    else hudCanvas_.drawCircle(29, 61, 3, C_TEXT);
-    if (state.zEngaged) hudCanvas_.fillCircle(29, 113, 3, C_MAGENTA);
-    else hudCanvas_.drawCircle(29, 113, 3, C_TEXT);
+    hudCanvas_.fillCircle(29, 61, 4, state.indexEngaged ? C_CYAN : C_DIM);
+    hudCanvas_.fillCircle(29, 113, 4, state.zEngaged ? C_MAGENTA : C_DIM);
 }
 
 void GemUi::pushGemCanvas()

@@ -66,6 +66,7 @@ private:
     uint16_t selectedPlane_ = 0;
     uint32_t lastFrameMs_ = 0;
     uint32_t lastHudMs_ = 0;
+    uint32_t lastPoseMs_ = 0;
     uint32_t lastHudVersion_ = UINT32_MAX;
     uint32_t lastStateVersion_ = UINT32_MAX;
     uint32_t lastStaticVersion_ = UINT32_MAX;

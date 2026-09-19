@@ -89,7 +89,7 @@ void requestLapLoopback();
 #define POSITION_ERROR_TOL      0.013f
 #define TWIST_SETTLE_FRAMES     3
 #define TWIST_CONTROL_INTERVAL_MS 5
-#define TWIST_CORRECTION_GAIN   1.0f
+#define TWIST_CORRECTION_GAIN   0.2f
 #define TWIST_CORRECTION_LIMIT 10.0f
 
 // Installed motor/encoder pair reports increasing error with +1 (bench

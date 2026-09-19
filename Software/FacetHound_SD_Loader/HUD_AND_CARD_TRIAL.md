@@ -12,13 +12,16 @@ Upload baseChassisModule and displayModule_v6_gem. Mast is unchanged.
 - Static/dynamic highlight uses the JOB tier/facet identity, not the nearest
   angle/index. Unknown identity has no highlight. All 128 built-in poses/IDs
   were compared between base and display and match.
-- Dynamic rotation follows live index on the next rendered frame (33 ms target,
-  actual rate depends on drawing time), without interpolation lag. Physical tip
+- Dynamic rotation follows live index with short shortest-path easing (65 ms
+  time constant, approximately 95% complete in 195 ms). Physical tip
   only affects HUD values/errors; model inclination comes from the selected tier.
 - Both HUDs show index and Z LOCK/FREE state from existing TLK/ZLK telemetry.
   These are commanded engagement states, not driver electrical feedback.
-- Flow always shows its setpoint. Droplet and value are blue for flow_dir 0/2
-  (running) and grey for 1/3 (paused), regardless of setpoint magnitude.
+- Flow always shows its setpoint. Running: cyan droplet and white text;
+  paused: grey droplet and text. State is flow_dir 0/2 running, 1/3 paused,
+  regardless of setpoint magnitude. RPM text/arrow are white running, grey paused.
+- Animated title card runs every restart, with a 300 ms fade to black at the end.
+  Credit footer remains a separate sprite and only changes during the fade.
 - Tier navigation preserves ordinal position in the source tier list, with
   the first entry as fallback if the new tier is too short. No angle/distance
   matching is used. This applies to SD-loaded and built-in designs. Existing next/previous
@@ -41,11 +44,11 @@ error records can no longer mix across frames to produce a false pose. Until A
 arrives the model holds its index; physical TIP cannot set model orientation.
 Base sends A in the normal telemetry cycle and display-test mode. Other PC
 proxies should send @A,<actual-index> along with T/E. Selected tier sets inclination.
-L/U axis-gutter indicators and filled/empty lamps are drawn last in font 2.
+Axis-gutter indicators are filled dots only: grey unlocked, axis color locked.
 HUD uses its own version counter so a run/pause change remains pending until
-painted. Flow color depends exclusively on FLD (0/2 blue, 1/3 grey), not FLW.
+painted. Flow color depends exclusively on FLD (0/2 cyan, 1/3 grey), not FLW.
 On a flow-state change the display emits @UIFLOW,dir=...,running=... on both
-serial ports; base TRACE ON exposes it. Build banner: SDPIN-ACTUALINDEX-HUD2.
+serial ports; base TRACE ON exposes it. Build banner: SPLASH-FADE-HUD3.
 
 ## Known lap motor and index polarity test
 
@@ -94,10 +97,20 @@ motor documentation. A valid Modbus reply or fault=0 does not prove commutation
 is correct. Do not raise current or bypass Hall protection. The posted snapshot
 is paused with zero RPM, so it does not show the implausible running value.
 
-MOTOR STATUS now adds speed_raw (register 0x8018), speed_raw_swapped (diagnostic
-byte-swapped interpretation only), and pole_pairs. RPM decoding, current limits,
-motor mode and pole-pair configuration are intentionally unchanged pending
-motor identification and a captured abnormal reading.
+MOTOR STATUS includes speed_raw (wire big-endian interpretation of register
+0x8018), speed_raw_swapped (the little-endian value used for RPM), and pole_pairs.
+Current limits, motor mode and pole-pair configuration are unchanged.
+
+## Index settling trial
+
+Circular error now normalizes any number of whole turns, not just one. For the
+reported target 3 / actual 1.9922 on a 96 wheel, error is +1.0078, not a wrap
+ambiguity. The old controller latched on any target crossing beyond one count.
+Correction gain is restored to 0.2. A crossing up to 2 index units may settle
+for 100 ms with coils held, then correct; at most three such corrections are
+allowed per target. Larger crossings/repeated hunting still fault. Wrong-way
+and stale-encoder protections remain enabled. Fault telemetry preserves error.
+Do not change motor polarity blindly: use the guarded INDEX PROBE above.
 
 Source/diff and built-in identity checks performed; no IDE compile, hardware
 upload, panel screenshot verification or physical card access claimed.

@@ -39,6 +39,8 @@ static uint32_t indexProbeSettledMs = 0;
 static bool zMoving = false;
 static float lastTwistTarget = NAN;
 static float twistLegStartError = 0.0f;
+static uint8_t twistOvershootCount = 0;
+static uint32_t twistSettleUntilMs = 0;
 static uint32_t lastTwistControlMs = 0;
 
 static int lastEscDir = -1;
@@ -363,7 +365,7 @@ float shortestArcPath(float target, float current, float wheelIndex)
         return 0.0f;
     }
 
-    float d = target - current;
+    float d = fmodf(target - current, wheelIndex);
 
     if (d > 0.0f)
     {
@@ -634,6 +636,7 @@ bool lapMotorLinkUp()
 void faultHoldTwist(SystemState &S)
 {
     cancelTwistMoveKeepLock(S);
+    S.twistError = shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex);
     S.indexSpinRpm = 0.0f;
     twistFaultLatched = true;
     setTwistDriverEnabled(S.twistLock != 0);
@@ -763,12 +766,18 @@ static void updateTwistMotor(SystemState &S)
         fabsf(shortestArcPath(S.targetTwist, lastTwistTarget, S.wheelIndex)) > 0.0001f)
     {
         lastTwistTarget = S.targetTwist;
+        twistOvershootCount = 0;
+        twistSettleUntilMs = 0;
         nLocks = 0;
         twistSettled = false;
         stopTwistKeepLock();
     }
 
     setTwistDriverEnabled(true);
+
+    if (twistSettleUntilMs && int32_t(millis() - twistSettleUntilMs) < 0)
+        return; // Hold energized, with no queued pulses, before correcting.
+    twistSettleUntilMs = 0;
 
     if (twistDirStep.distanceToGo() != 0)
     {
@@ -833,8 +842,18 @@ static void updateTwistMotor(SystemState &S)
             stopTwistKeepLock();
             if (absErr > positionTolerance)
             {
-                faultHoldTwist(S);
-                Serial.println("@FAULT,INDEX,OVERSHOOT");
+                // Small crossings can settle with a damped reverse correction.
+                // Large crossings or repeated hunting still latch a fault.
+                if (absErr > 2.0f || ++twistOvershootCount > 3)
+                {
+                    faultHoldTwist(S);
+                    Serial.println("@FAULT,INDEX,OVERSHOOT");
+                }
+                else
+                {
+                    twistSettleUntilMs = now + 100;
+                    Serial.println("@INDEX,SETTLING");
+                }
             }
             return;
         }

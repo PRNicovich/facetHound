@@ -999,6 +999,7 @@ void drawSplashScreen()
   while (millis() - started < kTotalMs)
   {
     const uint32_t elapsed = millis() - started;
+    const float brightness = constrain((float(kTotalMs) - float(elapsed)) / 300.0f, 0.0f, 1.0f);
     if (int32_t(millis() - nextFrame) < 0)
     {
       delay(1);
@@ -1038,7 +1039,7 @@ void drawSplashScreen()
       const float normalized = constrain(
           0.5f + 0.5f * (depth[edge.a] + depth[edge.b]) /
                      (2.0f * GemData::kRadius), 0.0f, 1.0f);
-      const uint8_t level = uint8_t(34.0f + normalized * 205.0f);
+      const uint8_t level = uint8_t((34.0f + normalized * 205.0f) * brightness);
       const uint16_t gray = uint16_t((level >> 3) << 11) |
                             uint16_t((level >> 2) << 5) |
                             uint16_t(level >> 3);
@@ -1049,13 +1050,13 @@ void drawSplashScreen()
     {
       const float fade = constrain(float(elapsed - kGemOnlyMs) / 320.0f, 0.0f, 1.0f);
       const uint16_t titleColor = tft.color565(
-          uint8_t(30.0f + 30.0f * fade),
-          uint8_t(80.0f + 150.0f * fade),
-          uint8_t(105.0f + 150.0f * fade));
+          uint8_t((30.0f + 30.0f * fade) * brightness),
+          uint8_t((80.0f + 150.0f * fade) * brightness),
+          uint8_t((105.0f + 150.0f * fade) * brightness));
       const uint16_t accentColor = tft.color565(
-          uint8_t(90.0f + 165.0f * fade),
-          uint8_t(20.0f + 45.0f * fade),
-          uint8_t(75.0f + 120.0f * fade));
+          uint8_t((90.0f + 165.0f * fade) * brightness),
+          uint8_t((20.0f + 45.0f * fade) * brightness),
+          uint8_t((75.0f + 120.0f * fade) * brightness));
 
       // A black keyline and magenta offset keep the cyan title legible over
       // the wireframe without turning it into an opaque card.
@@ -1072,8 +1073,14 @@ void drawSplashScreen()
     }
 
     splash.pushSprite(0, 0);
-    if (elapsed >= kGemOnlyMs && footerReady && !footerShown)
+    if (elapsed >= kGemOnlyMs && footerReady && (!footerShown || brightness < 1.0f))
     {
+      if (brightness < 1.0f) {
+        footer.fillSprite(TFT_BLACK);
+        const uint8_t gray = uint8_t(128.0f * brightness);
+        footer.setTextColor(tft.color565(gray, gray, gray), TFT_BLACK);
+        footer.drawString("A product of Advanced Precision Technologies, LLC", 160, 10);
+      }
       footer.pushSprite(0, 456);
       footerShown = true;
     }
@@ -1082,6 +1089,7 @@ void drawSplashScreen()
   if (footerReady) footer.deleteSprite();
   splash.unloadFont();
   splash.deleteSprite();
+  tft.fillScreen(TFT_BLACK);
 }
 
 void updateTiltSprite();
@@ -1566,8 +1574,8 @@ void setup()
 {
   Serial.begin(115200);
   baseSerial.begin(DISPLAY_BAUD);
-  Serial.println("@BUILD,DISPLAY,SDPIN-ACTUALINDEX-HUD2");
-  baseSerial.println("@BUILD,DISPLAY,SDPIN-ACTUALINDEX-HUD2");
+  Serial.println("@BUILD,DISPLAY,SPLASH-FADE-HUD3");
+  baseSerial.println("@BUILD,DISPLAY,SPLASH-FADE-HUD3");
 
   // The animated title card is useful on the bench, but it should not hold up
   // an installed display.  Treat USB mode as an actively opened CDC port, not
@@ -1586,10 +1594,7 @@ void setup()
 
   tft.init();
   tft.setRotation(2);
-  if (usbDemoMode)
-    drawSplashScreen();
-  else
-    tft.fillScreen(TFT_BLACK);
+  drawSplashScreen(); // Title card on every restart, independent of USB demo mode.
 
   if (displayMode == DisplayMode::CLASSIC)
   {
