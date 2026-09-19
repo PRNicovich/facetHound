@@ -23,15 +23,13 @@
     - Reg 0x8018 = actual motor speed (read-only, function 03)
     - Reg 0x801B = high byte fault flags, low byte run-state flags
 
-  NOT FULLY CONFIRMED (implemented as best guess, verify on your bench):
-    - The exact scale factor from the raw 0x8018 register value to RPM.
-      The manual mentions a note about multiplying by 20 and dividing by
-      pole count for a related speed value; I've applied that here but
-      you should sanity check readActualSpeedRPM() against a tachometer
-      or the vendor's Windows config tool before trusting it.
+  SPEED CONVERSION (validate absolute speed against a tachometer):
+    - Register 0x8018: raw * 20 / motor poles, NOT pole pairs. For the
+      installed four-pole motor, raw 37 means 185 RPM, not 370. Control
+      register 0x8000 still requires two pole pairs; do not change it to four.
     - Bench follow-up: hand-spin readings of 51200/66560 identified speed
       byte order as low-byte-first (14 00 / 1A 00). Only readActualSpeedRPM
-      swaps this register, giving 200/260 with the existing scale. Verify
+      swaps this register, giving 100/130 with the corrected four-pole scale. Verify
       absolute scale with a tachometer; generic register reads stay big-endian.
 
   This is a from-scratch minimal implementation, not a wrapper around a

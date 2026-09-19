@@ -219,7 +219,9 @@ static bool collectLapReply(SystemState &S)
             // 14 00 / 1A 00 were displayed as 51200 / 66560 during hand spin.
             const uint16_t speedCounts = uint16_t(lapReply[3]) |
                                          (uint16_t(lapReply[4]) << 8);
-            S.RPMValue = int((uint32_t(speedCounts) * 20U) / LAP_MOTOR_POLE_PAIRS);
+            // Register 8018 divides by motor POLES, not the pole PAIRS
+            // written to 8000. Four poles: captured 25 00 => 37*20/4=185 RPM.
+            S.RPMValue = int((uint32_t(speedCounts) * 20U) / LAP_MOTOR_POLES);
         }
         else if (lapPhase == 4)
             lapDiagnostics.lastFault = uint8_t(rawValue >> 8);

@@ -178,12 +178,10 @@ bool BLD510B::readActualSpeedRPM(int32_t &rpmOut) {
   // Speed register only: installed BLD returns low byte first. Keep generic
   // register/status decoding unchanged (faults occupy the status high byte).
   raw = uint16_t((raw >> 8) | (raw << 8));
-  // Unconfirmed scaling -- see header comment. If this looks wrong on
-  // your bench (e.g. off by ~pole-pair-count or ~20x), that's the first
-  // thing to adjust. Fall back to raw value if in doubt:
-  //   rpmOut = raw;
+  // Manual 8018 conversion uses physical poles, unlike the control word
+  // which takes pole pairs. Validate absolute shaft speed with a tachometer.
   if (_polePairs == 0) { rpmOut = raw; return true; }
-  rpmOut = ((int32_t)raw * 20) / _polePairs;
+  rpmOut = ((int32_t)raw * 20) / (2 * _polePairs);
   return true;
 }
 

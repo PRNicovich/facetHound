@@ -1261,6 +1261,7 @@ static void sendUsbMotorStatus()
     Serial.print(",speed_raw="); Serial.print(d.lastSpeedRaw);
     Serial.print(",speed_raw_swapped="); Serial.print(uint16_t((d.lastSpeedRaw << 8) | (d.lastSpeedRaw >> 8)));
     Serial.print(",pole_pairs="); Serial.print(LAP_MOTOR_POLE_PAIRS);
+    Serial.print(",rpm_divisor_poles="); Serial.print(LAP_MOTOR_POLES);
     Serial.print(",last=");
     if (!d.lastReplyLength)
         Serial.print("none");

@@ -1,5 +1,19 @@
 # HUD, exact selection and card trial
 
+## RPM factor-of-two correction
+
+Base-only update. Captured reply 01-03-02-25-00-A2-D4 carries little-endian
+speed raw=37. The 8018 manual specifies raw*20 divided by MOTOR POLES.
+The four-pole motor therefore reports 185 RPM, not the previous 370. The
+control word still uses 2 POLE PAIRS. Speed commands, 200 RPM cap, wiring,
+ramp and current settings are unchanged. Both asynchronous telemetry and
+the demo library now use the same conversion. @MOTOR adds rpm_divisor_poles=4.
+At the same physical operating point, the HUD should show about 185..190
+running and 200 paused (setpoint). Below-speed stalling remains a separate
+operating issue; this display correction does not change motor torque/speed.
+Source: https://ae01.alicdn.com/kf/Sdb18dfe1fd7741f7bf6f43a54702a5abB.pdf
+Earlier notes describing raw*20/pole-pairs scaling are superseded here.
+
 ## Locked-only model motion and averaging follow-up
 
 Upload display and mast for this follow-up (base still needs the preceding

@@ -43,6 +43,7 @@ void requestLapLoopback();
 #define LAP_MOTOR_BAUD    9600
 #define LAP_MOTOR_SLAVE_ID   1
 #define LAP_MOTOR_POLE_PAIRS 2
+#define LAP_MOTOR_POLES (2U * LAP_MOTOR_POLE_PAIRS)
 
 // Legacy lap-motor pins
 #define motorALMpin      8
