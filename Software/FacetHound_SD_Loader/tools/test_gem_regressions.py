@@ -17,6 +17,7 @@ def main():
         wheel = abs(design["wheelIndex"])
         sign = -1 if design["wheelIndex"] < 0 else 1
         count = 0
+        machine_indices=[]
         for tier in design["facetList"]:
             for facet in tier["facets"]:
                 az = idx_to_az(facet["value"], wheel, sign, design.get("meridian", 0))
@@ -35,7 +36,17 @@ def main():
                     np.testing.assert_allclose([-projected[0], -projected[1], projected[2]],
                                                [0, 0, 1], atol=1e-6)
                 count += 1
+                value=(facet["value"]+(wheel/2 if tier["angle"]<0 or tier["angle"]>90 else 0))%wheel
+                machine_indices.append(value)
         print(f"{name}: {count} facet normals face viewer at target")
+        unique=[]
+        for value in machine_indices:
+            if not any(abs((value-old+wheel/2)%wheel-wheel/2)<0.0001 for old in unique):
+                unique.append(value)
+        unique.sort()
+        assert all(a<b for a,b in zip(unique,unique[1:]))
+        assert all(any(abs((v-u+wheel/2)%wheel-wheel/2)<0.0001 for u in unique) for v in machine_indices)
+        print(f"  Classic: {len(machine_indices)} cuts -> {len(unique)} unique index marks")
     with contextlib.redirect_stdout(io.StringIO()):
         vertices, support, edges, planes, *_ = build_gem(str(SOFTWARE / "gemUtils/data/pc42011.asc"))
     assert len(edges) > 0

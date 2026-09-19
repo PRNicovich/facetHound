@@ -39,8 +39,13 @@ public:
     void applyConfig(const char* id, const char* value);
     void applyError(const char* id, const char* reason);
     void draw();
+    void setConfigSync(bool active) {
+        configSync_=active;
+        if(!active && open_) refreshVisiblePage();
+    }
 
 private:
+    bool configSync_=false;
     enum class Page : uint8_t
     {
         ROOT,

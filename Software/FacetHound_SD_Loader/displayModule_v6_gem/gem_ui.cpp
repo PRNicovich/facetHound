@@ -930,9 +930,14 @@ void GemUi::tick(const GemTelemetry& state)
         if (selectionChanged || now - lastFrameMs_ >= kFramePeriodMs)
         {
             lastFrameMs_ = now;
+            const float oldTip=displayedRenderTip_,oldTwist=displayedRenderTwist_,oldRoll=displayedRoll_;
             updatePose(state);
-            drawDynamic(state);
-            pushGemCanvas();
+            if(selectionChanged || stateChanged ||
+               fabsf(displayedRenderTip_-oldTip)>0.002f || fabsf(displayedRenderTwist_-oldTwist)>0.002f ||
+               fabsf(displayedRoll_-oldRoll)>0.002f) {
+                drawDynamic(state);
+                pushGemCanvas();
+            }
         }
     }
     else if (mode_ == DisplayMode::STATIC)

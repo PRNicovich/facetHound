@@ -250,7 +250,7 @@ static DisplayMode loadDisplayMode()
   EEPROM.get(0, settings);
 
   if (settings.magic != SETTINGS_MAGIC ||
-      settings.mode > static_cast<uint8_t>(DisplayMode::STATIC))
+      settings.mode > static_cast<uint8_t>(DisplayMode::CLASSIC_TIER))
   {
     return DisplayMode::CLASSIC;
   }
@@ -275,6 +275,8 @@ static bool parseDisplayMode(const char* text, DisplayMode* out)
     *out = DisplayMode::DYNAMIC;
   else if (!strcmp(value, "2") || !strcmp(value, "STATIC"))
     *out = DisplayMode::STATIC;
+  else if (!strcmp(value, "3") || !strcmp(value, "CLASSIC_TIER"))
+    *out = DisplayMode::CLASSIC_TIER;
   else
     return false;
 
@@ -379,7 +381,7 @@ static void saveDisplayModeAndRestart(DisplayMode nextMode)
   EEPROM.put(0, settings);
   EEPROM.commit();
 
-  if (displayMode != DisplayMode::CLASSIC && nextMode != DisplayMode::CLASSIC) {
+  if (!isClassicView(displayMode) && !isClassicView(nextMode)) {
     // Both views share the same resident mesh and sprite dimensions.
     displayMode = nextMode;
     closeSettingsMenu();
@@ -651,7 +653,7 @@ void parseLine(char* line)
       meshReceiving=false; meshDisplayFailed=false; bootModelPending=false; loadingDesign=false;
       closeSettingsMenu(); restoreDisplayPending=true;
       loadingProgress.deleteSprite();
-      if (!splashActive && displayMode!=DisplayMode::CLASSIC) gemUi.begin(displayMode);
+      if (!splashActive && !isClassicView(displayMode)) gemUi.begin(displayMode);
       ++telemetryVersion;
     }
     sendLineBoth(hit ? "@MESHACK,CACHE_HIT" : "@MESHACK,CACHE_MISS");
@@ -795,7 +797,7 @@ void parseLine(char* line)
       closeSettingsMenu();
       restoreDisplayPending = true;
       loadingProgress.deleteSprite();
-      if (!splashActive && displayMode != DisplayMode::CLASSIC) gemUi.begin(displayMode);
+      if (!splashActive && !isClassicView(displayMode)) gemUi.begin(displayMode);
       ++telemetryVersion;
       sendLineBoth("@MESHACK,READY");
     }
@@ -841,7 +843,11 @@ void parseLine(char* line)
   }
 
   if (!strcmp(key, "CFGSYNC"))
+  {
+    if(!strcmp(valueText,"BEGIN")) settingsMenu.setConfigSync(true);
+    else if(!strcmp(valueText,"END")) settingsMenu.setConfigSync(false);
     return;
+  }
 
   if (!strcmp(key, "ZRESET"))
   {
@@ -1324,7 +1330,7 @@ void drawMainScreen(bool initHere)
     stext5.setTextDatum(BR_DATUM);
 
     sBar1.setColorDepth(8);
-    sBar1.createSprite(300, 20);
+    sBar1.createSprite(300, displayMode==DisplayMode::CLASSIC_TIER ? 40 : 20);
 
     stext6.setColorDepth(8);
     stext6.createSprite(110, 40);
@@ -1404,6 +1410,7 @@ void drawMainScreen(bool initHere)
 
 void spriteTickHandler()
 {
+  if(displayMode==DisplayMode::CLASSIC_TIER) updateForceBarSprite();
   if (!updateTipAngle &&
       !updateTiltAngle &&
       !updateTiltError &&
@@ -1534,6 +1541,50 @@ void updateFlowSprite()
 
 void updateForceBarSprite()
 {
+  if(displayMode==DisplayMode::CLASSIC_TIER) {
+    static uint32_t lastCheck=0;
+    if(millis()-lastCheck<100) return;
+    lastCheck=millis();
+    const auto& mesh=runtimeGemMesh();
+    uint16_t tiers[512]={}; const char* names[512]={}; unsigned count=0;
+    const unsigned planeCount=mesh.active()?mesh.planes().size():GemData::kPlaneCount;
+    for(unsigned p=0;p<planeCount;++p) {
+      uint16_t tier=mesh.active()?mesh.planes()[p].tier:GemData::kPlanes[p].tier;
+      bool seen=false; for(unsigned i=0;i<count;++i) if(tiers[i]==tier) seen=true;
+      if(!seen && count<512) {
+        unsigned pos=count;
+        while(pos && tiers[pos-1]>tier) {tiers[pos]=tiers[pos-1];names[pos]=names[pos-1];--pos;}
+        tiers[pos]=tier; names[pos]=mesh.active()?mesh.planes()[p].name:nullptr; ++count;
+      }
+    }
+    if(!count) return;
+    unsigned current=0; for(unsigned i=0;i<count;++i) if(tiers[i]==jobTier) current=i;
+    unsigned left=(current+count-1)%count,right=(current+1)%count;
+    char prev[16],next[16],text[80],error[80];
+    if(names[left] && names[left][0]) snprintf(prev,sizeof(prev),"%.12s",names[left]);
+    else snprintf(prev,sizeof(prev),"T%u",tiers[left]);
+    if(names[right] && names[right][0]) snprintf(next,sizeof(next),"%.12s",names[right]);
+    else snprintf(next,sizeof(next),"T%u",tiers[right]);
+    float target=fabsf(jobAngle); if(target>90) target=180-target;
+    snprintf(text,sizeof(text),"%s  < %u / %u >  %s",prev,current+1,count,next);
+    snprintf(error,sizeof(error),"T%u  %.2f   err %+.2f",tiers[current],target,tipAngle-target);
+    static char previous[160]={}; char combined[160]; snprintf(combined,sizeof(combined),"%s%s",text,error);
+    static uint32_t lastTierDraw=0;
+    if(!strcmp(previous,combined) && millis()-lastTierDraw<500) return;
+    snprintf(previous,sizeof(previous),"%s",combined); lastTierDraw=millis();
+    sBar1.fillSprite(SPRITE_FILL); sBar1.setTextDatum(MC_DATUM);
+    sBar1.setTextColor(TFT_YELLOW,SPRITE_FILL);
+    sBar1.drawString(text,150,9,2);
+    char targetText[32],errorText[24];
+    if(names[current] && names[current][0]) snprintf(targetText,sizeof(targetText),"%.10s %.2f",names[current],target);
+    else snprintf(targetText,sizeof(targetText),"T%u %.2f",tiers[current],target);
+    snprintf(errorText,sizeof(errorText),"%+.2f",tipAngle-target);
+    sBar1.setTextDatum(MR_DATUM);
+    sBar1.drawString(targetText,137,29,2); sBar1.drawCircle(143,23,2,TFT_YELLOW);
+    sBar1.drawString(errorText,277,29,2); sBar1.drawCircle(283,23,2,TFT_YELLOW);
+    sBar1.pushSprite(10,170);
+    return;
+  }
   int lastFillBarWidth = fillBarWidth;
   fillBarWidth = clampInt((forceBar * 280) / 20, 0, 280);
 
@@ -1708,7 +1759,7 @@ static void restoreDisplayAfterSettings()
 {
   restoreDisplayPending = false;
 
-  if (displayMode == DisplayMode::CLASSIC)
+  if (isClassicView(displayMode))
   {
     drawMainScreen(true);
     fillBarWidth = -1;
@@ -1758,7 +1809,7 @@ void setup()
     drawLoadingProgress(-1,true);
     restoreDisplayPending = true;
   }
-  else if (displayMode == DisplayMode::CLASSIC)
+  else if (isClassicView(displayMode))
   {
     drawMainScreen(true);
   }
@@ -1851,7 +1902,7 @@ void loop()
     return;
   }
 
-  if (displayMode == DisplayMode::CLASSIC)
+  if (isClassicView(displayMode))
     spriteTickHandler();
   else
     gemUi.tick(currentGemTelemetry());

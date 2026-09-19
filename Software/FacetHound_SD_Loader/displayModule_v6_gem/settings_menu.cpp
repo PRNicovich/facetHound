@@ -64,6 +64,7 @@ void SettingsMenu::setCommand(MenuResult& result, const char* format, ...)
 void SettingsMenu::open(DisplayMode currentMode)
 {
     open_ = true;
+    configSync_ = false;
     currentMode_ = currentMode;
     rootCursor_ = 0;
     status_[0] = '\0';
@@ -327,7 +328,7 @@ MenuResult SettingsMenu::handle(MenuKey key)
     else
     {
         uint16_t count = 2;
-        if (page_ == Page::DISPLAY_MODE) count = 3;
+        if (page_ == Page::DISPLAY_MODE) count = 4;
         else if (page_ == Page::WHEEL_INDEX) count = kWheelCount;
         else if (page_ == Page::RESET_POSITIONS) count = kResetCount;
         else if (page_ == Page::ENCODER_ZERO) count = 4;
@@ -416,14 +417,14 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
         bool changed = !indexSpinRunning_ || fabsf(indexSpinRpm_ - rpm) > 0.001f;
         indexSpinRunning_ = true;
         indexSpinRpm_ = rpm;
-        if (changed && open_) refreshVisiblePage();
+        if (changed && open_ && !configSync_) refreshVisiblePage();
         return;
     }
     else if (!strcasecmp(id, "INDEX_SPIN_STOP"))
     {
         bool changed = indexSpinRunning_;
         indexSpinRunning_ = false;
-        if (changed && open_) refreshVisiblePage();
+        if (changed && open_ && !configSync_) refreshVisiblePage();
         return;
     }
     else if (!strcasecmp(id, "ZERO_ENCODER"))
@@ -490,7 +491,7 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
             positionValid_[slot] = true;
         }
     }
-    if (open_) refreshVisiblePage();
+    if (open_ && !configSync_) refreshVisiblePage();
 }
 
 void SettingsMenu::applyError(const char* id, const char* reason)
@@ -556,7 +557,7 @@ void SettingsMenu::drawChoices()
 {
     const char* subtitle = "choose value";
     uint16_t count = 2;
-    if (page_ == Page::DISPLAY_MODE) { subtitle = "display mode"; count = 3; }
+    if (page_ == Page::DISPLAY_MODE) { subtitle = "display mode"; count = 4; }
     else if (page_ == Page::INDEX_DIRECTION) subtitle = "positive index direction";
     else if (page_ == Page::TABLE_ADAPTER) subtitle = "subtract 45 degrees from tip";
     else if (page_ == Page::SERVO_ENABLED) subtitle = "automatic spin servo";
@@ -679,7 +680,8 @@ void SettingsMenu::drawChoiceRow(uint16_t index, uint8_t row)
     if (page_ == Page::DISPLAY_MODE)
     {
         snprintf(label, sizeof(label), "%s", displayModeName(static_cast<DisplayMode>(index)));
-        const char* detail[] = {"machine status", "moving gem", "four views"};
+        if(index==3) snprintf(label,sizeof(label),"Classic tier");
+        const char* detail[] = {"machine status", "moving gem", "four views", "tier + index"};
         snprintf(value, sizeof(value), "%s", detail[index]);
     }
     else if (page_ == Page::INDEX_DIRECTION) snprintf(label, sizeof(label), "%s", index ? "CCW" : "CW");

@@ -2,6 +2,7 @@
 #include <math.h>
 #include <strings.h>
 #include <utility>
+#include <algorithm>
 #include <SerialPIO.h>
 
 #include "systemState.h"
@@ -480,6 +481,12 @@ static float machineIndexForFacet(float rawIndex, float storedTipDegrees,
 
 static void targetBuiltinCut()
 {
+    if(displayVisualMode==3) {
+        S.markPoints.clear();
+        for(const auto& c:BuiltinGem::kCuts)
+            S.markPoints.push_back(machineIndexForFacet(c.rawIndex,c.storedTipDegrees,BuiltinGem::kWheelIndex));
+        S.markIdx=builtinCutIndex;
+    }
     builtinCutIndex = constrain(builtinCutIndex, 0,
                                 int(BuiltinGem::kCutCount) - 1);
     const BuiltinGem::Cut& cut = BuiltinGem::kCuts[builtinCutIndex];
@@ -534,14 +541,18 @@ static void sendActiveCut(bool force = false)
     lastJobCutSent = S.markIdx;
 }
 
+static void rebuildLoadedMarksForMode();
 static void setDisplayVisualMode(const char* mode)
 {
     const uint8_t next = !strcasecmp(mode, "DYNAMIC") ? 1 :
-                         !strcasecmp(mode, "STATIC") ? 2 : 0;
+                         !strcasecmp(mode, "STATIC") ? 2 :
+                         !strcasecmp(mode, "CLASSIC_TIER") ? 3 : 0;
+    const bool changed = displayVisualMode != next;
     const bool enteringGemView = displayVisualMode == 0 && next != 0;
     displayVisualMode = next;
     displayModeKnown = true;
-    if (!enteringGemView || activeGemLoaded || savedGemRestorePending) return;
+    if (changed && activeGemLoaded) rebuildLoadedMarksForMode();
+    if ((!enteringGemView && next!=3) || activeGemLoaded || savedGemRestorePending) return;
 
     const uint8_t firstTier = BuiltinGem::kCuts[0].tier;
     float lowestIndex = INFINITY;
@@ -763,6 +774,28 @@ static void sendSdFilePage(size_t start, size_t requested)
     }
 }
 
+static void rebuildLoadedMarksForMode()
+{
+    if (!activeGemLoaded) return;
+    S.markPoints.clear();
+    for (const auto& cut:activeGemDesign.cuts) {
+        const float value=machineIndexForFacet(cut.index,cut.angleDegrees,activeGemDesign.wheelIndex);
+        bool duplicate=false;
+        if(displayVisualMode==0) for(float old:S.markPoints)
+            if(fabsf(shortestArcPath(value,old,S.wheelIndex))<0.0001f) { duplicate=true; break; }
+        if(!duplicate) S.markPoints.push_back(value);
+    }
+    if(displayVisualMode==0) std::sort(S.markPoints.begin(),S.markPoints.end());
+    S.markIdx=0;
+    float nearest=INFINITY;
+    for(size_t i=0;i<S.markPoints.size();++i) {
+        float error=fabsf(shortestArcPath(S.markPoints[i],S.targetTwist,S.wheelIndex));
+        if(error<nearest) { nearest=error; S.markIdx=int(i); }
+    }
+    // Preserve motor target and lock state: changing display mode is not motion.
+    lastJobCutSent=-1; S.dirty=true;
+}
+
 static void applyLoadedGemDesign(GemSdDesign&& design, GemRuntimeGeometry&& geometry)
 {
     hardStopTwist(S);
@@ -788,6 +821,7 @@ static void applyLoadedGemDesign(GemSdDesign&& design, GemRuntimeGeometry&& geom
     activeGemDesign = std::move(design);
     activeGemGeometry = std::move(geometry);
     activeGemLoaded = true;
+    rebuildLoadedMarksForMode();
     lastJobCutSent = -1;
 }
 
@@ -1369,7 +1403,7 @@ void displayRxTask()
             else if (!strcmp(key, "MODE") &&
                      (!strcasecmp(valueText, "CLASSIC") ||
                       !strcasecmp(valueText, "DYNAMIC") ||
-                      !strcasecmp(valueText, "STATIC")))
+                      !strcasecmp(valueText, "STATIC") || !strcasecmp(valueText,"CLASSIC_TIER")))
             {
                 setDisplayVisualMode(valueText);
                 lastDisplayRoundTripMs = millis();
@@ -1551,7 +1585,8 @@ static void sendUsbState()
     Serial.print(",display_mode=");
     Serial.print(!displayModeKnown ? "unknown" :
                  displayVisualMode == 1 ? "dynamic" :
-                 displayVisualMode == 2 ? "static" : "classic");
+                 displayVisualMode == 2 ? "static" :
+                 displayVisualMode == 3 ? "classic_tier" : "classic");
     Serial.print(",rx_levels=M"); Serial.print(digitalRead(MAST_UART_SWAP_TRIAL ? 3 : 2));
     Serial.print("K"); Serial.print(digitalRead(KEYBOARD_UART_SWAP_TRIAL ? 7 : 6));
     Serial.print("D"); Serial.print(digitalRead(4));
@@ -1784,23 +1819,23 @@ static void routeKeyboardKey(uint8_t key)
         const bool useBuiltinGem = !activeGemLoaded && displayVisualMode != 0;
         if (key == 5)
         {
-            if (activeGemLoaded) selectAdjacentGemTier(true);
+            if (activeGemLoaded && displayVisualMode!=0) selectAdjacentGemTier(true);
             else if (useBuiltinGem) selectAdjacentBuiltin(true, true);
         }
         else if (key == 6)
         {
-            if (activeGemLoaded) selectAdjacentGemTier(false);
+            if (activeGemLoaded && displayVisualMode!=0) selectAdjacentGemTier(false);
             else if (useBuiltinGem) selectAdjacentBuiltin(true, false);
         }
         else if (key == 12)
         {
-            if (activeGemLoaded) selectAdjacentGemFacet(true);
+            if (activeGemLoaded && displayVisualMode!=0) selectAdjacentGemFacet(true);
             else if (useBuiltinGem) selectAdjacentBuiltin(false, true);
             else handleKey(&S, key);
         }
         else if (key == 13)
         {
-            if (activeGemLoaded) selectAdjacentGemFacet(false);
+            if (activeGemLoaded && displayVisualMode!=0) selectAdjacentGemFacet(false);
             else if (useBuiltinGem) selectAdjacentBuiltin(false, false);
             else handleKey(&S, key);
         }
@@ -1839,11 +1874,12 @@ static void handleUsbCommand(char* line)
     if (!strcasecmp(command, "MODE")) {
         char* mode = strtok_r(nullptr, " \t", &save);
         if (!mode || (strcasecmp(mode, "CLASSIC") && strcasecmp(mode, "STATIC") &&
-                      strcasecmp(mode, "DYNAMIC"))) {
+                      strcasecmp(mode, "DYNAMIC") && strcasecmp(mode,"CLASSIC_TIER"))) {
             Serial.println("@ERR,MODE,expected CLASSIC|STATIC|DYNAMIC"); return;
         }
         const char* canonical = !strcasecmp(mode, "DYNAMIC") ? "DYNAMIC" :
-                                !strcasecmp(mode, "STATIC") ? "STATIC" : "CLASSIC";
+                                !strcasecmp(mode, "STATIC") ? "STATIC" :
+                                !strcasecmp(mode,"CLASSIC_TIER") ? "CLASSIC_TIER" : "CLASSIC";
         setDisplayVisualMode(canonical);
         dispSerial.print("@MODE,"); dispSerial.println(canonical);
         Serial.print("@ACK,MODE,"); Serial.println(canonical);

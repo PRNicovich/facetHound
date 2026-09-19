@@ -48,8 +48,8 @@ public:
 private:
     static constexpr int kGemHeight = 320;
     static constexpr int kHudHeight = 160;
-    static constexpr uint32_t kFramePeriodMs = 33;
-    static constexpr uint32_t kHudPeriodMs = 80;
+    static constexpr uint32_t kFramePeriodMs = 20; // Up to 50 fps when SPI/render time allows.
+    static constexpr uint32_t kHudPeriodMs = 100;
 
     TFT_eSPI& tft_;
     TFT_eSprite gemCanvas_;
