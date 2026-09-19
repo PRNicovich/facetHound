@@ -1793,6 +1793,7 @@ static void handleUsbCommand(char* line)
             const uint8_t response = probeGemSdCommand0();
             Serial.print("@SD_PROBE,cmd0_r1=0x"); printHexByte(response);
             Serial.println(",expected=0x01,next=SD RETRY");
+            if (response == 0x01) probeGemSdInitialization();
         }
         else if (!strcasecmp(mode, "RETRY"))
         {

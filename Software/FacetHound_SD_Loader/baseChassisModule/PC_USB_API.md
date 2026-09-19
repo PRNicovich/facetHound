@@ -50,7 +50,7 @@ unknown lines for forward compatibility.
 | `MOTOR LOOPBACK` | Adapter disconnected, GP8 TX jumpered to GP9 RX; lap paused and index/Z unlocked; see `../INTEGRATION_ENCODER_BLD.md` | `@BLD_LOOPBACK,match=0/1,rx_bytes=...,hex=...` |
 | `MOTOR STATUS` | Report Modbus validation counters and last raw reply | `@MOTOR,...` |
 | `SD STATUS` | Report SD initialization and root-directory state | `@SD,...` |
-| `SD PROBE` | With axes unlocked and lap paused, send CMD0 at 250 kHz; resets card protocol state without writing data; follow with SD RETRY | `@SD_PROBE,cmd0_r1=0x..,expected=0x01,next=SD RETRY` |
+| `SD PROBE` | With axes unlocked and lap paused, send CMD0 at 250 kHz; on success also test CMD8, CMD55/ACMD41 (up to one second), and CMD58. Resets card protocol state without writing data; follow with SD RETRY | `@SD_PROBE,...` followed by `@SD_INIT,...` stage results |
 | `SD RETRY` | Force SD reinitialization after insertion/wiring changes | `@ACK,SD,RETRY,READY/MISSING` |
 | `SD LIST` | List readable root-level `.asc` and `.fct` files | `@SD_FILE,<index>,<name>` |
 | `GEM LOAD <index>` | Load the index returned by SD LIST using the existing cache/build and mesh-transfer path; axes unlocked and lap paused | `@GEM,LOADED,<path>` or `@CFGNAK,LOAD_SD_FILE,<reason>` |

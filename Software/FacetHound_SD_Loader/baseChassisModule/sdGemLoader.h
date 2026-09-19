@@ -65,6 +65,7 @@ bool beginGemSd();
 bool gemSdReady();
 bool retryGemSd();
 uint8_t probeGemSdCommand0();
+void probeGemSdInitialization();
 const GemSdDiagnostics& gemSdDiagnostics();
 size_t gemSdFileCount();
 bool gemSdFileNameAt(size_t index, char* output, size_t outputSize);

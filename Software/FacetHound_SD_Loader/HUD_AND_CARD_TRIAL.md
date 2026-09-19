@@ -90,6 +90,25 @@ MODE DYNAMIC
 
 Use the desired file's index from SD LIST. Loading remains blocked during motion.
 
+### Staged SD initialization trial
+
+Repeated CMD0=01 with an inserted card and FF with no card establishes that
+the card can answer, but intermittent 7F still means communication is not yet
+reliable. MISSING is a generic mount failure, not a card-detect switch reading.
+SD PROBE now follows a successful CMD0 with CMD8 (expected R1=1, R7=000001AA
+for a v2 card), CMD55/ACMD41 (expected ready R1=0), and CMD58 (expected R1=0,
+OCR printed). Ready polling is capped at one second. A CMD8 illegal-command
+response takes the older SD initialization path. No sector writes or formatting.
+SD RETRY transfer ceiling is reduced from 1 MHz to 250 kHz for this trial;
+the underlying library still controls its own initialization clock.
+If all protocol stages succeed but mounting fails, check filesystem/card
+support and sector-read reliability rather than assuming an open wire.
+
+Hall wiring photo correction: user confirmed red is in the Hall +5V terminal.
+Do not confuse the adjacent logic-bank GND with the Hall-bank terminals.
+The photos do not reliably establish all individual lead-to-terminal mappings;
+do not recommend wire swaps based on those ambiguous images.
+
 ## Lap shudder / implausible RPM
 
 Keep stopped while checking motor phase and Hall wiring against the actual

@@ -49,7 +49,7 @@ bool reopenCard(bool force = false)
     // Conservative transfer rate for the cabled v9 reader, rather than the
     // library's faster default. Does not format or modify the card.
     SD.end(false);
-    sdReady = SD.begin(GEM_SD_CS_PIN, uint32_t(1000000), gemSdSpi);
+    sdReady = SD.begin(GEM_SD_CS_PIN, uint32_t(250000), gemSdSpi);
     sdDiagnostics.ready = sdReady;
     sdDiagnostics.rootChecked = false;
     sdDiagnostics.rootReadable = false;
@@ -409,6 +409,68 @@ uint8_t probeGemSdCommand0()
     gemSdSpi.transfer(uint8_t(0xFF));
     gemSdSpi.endTransaction();
     return response;
+}
+
+void probeGemSdInitialization()
+{
+    // Called only after CMD0 succeeded, with motion stopped. This does not
+    // access sectors or write files. Bound the ready polling to one second.
+    auto command = [](uint8_t cmd, uint32_t arg, uint8_t crc,
+                      uint8_t* tail, uint8_t tailSize) -> uint8_t {
+        digitalWrite(GEM_SD_CS_PIN, HIGH);
+        gemSdSpi.transfer(uint8_t(0xFF));
+        digitalWrite(GEM_SD_CS_PIN, LOW);
+        gemSdSpi.transfer(uint8_t(0xFF));
+        gemSdSpi.transfer(uint8_t(0x40 | cmd));
+        for (int shift = 24; shift >= 0; shift -= 8)
+            gemSdSpi.transfer(uint8_t(arg >> shift));
+        gemSdSpi.transfer(crc);
+        uint8_t r1 = 0xFF;
+        for (uint8_t i = 0; i < 16; ++i) {
+            r1 = gemSdSpi.transfer(uint8_t(0xFF));
+            if (!(r1 & 0x80)) break;
+        }
+        if (r1 <= 1)
+            for (uint8_t i = 0; i < tailSize; ++i)
+                tail[i] = gemSdSpi.transfer(uint8_t(0xFF));
+        digitalWrite(GEM_SD_CS_PIN, HIGH);
+        gemSdSpi.transfer(uint8_t(0xFF));
+        return r1;
+    };
+    gemSdSpi.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
+    uint8_t r7[4] = {};
+    const uint8_t cmd8 = command(8, 0x1AA, 0x87, r7, 4);
+    Serial.print("@SD_INIT,cmd8_r1=0x"); Serial.print(cmd8, HEX);
+    Serial.print(",r7=");
+    for (uint8_t b : r7) { if (b < 16) Serial.print('0'); Serial.print(b, HEX); }
+    Serial.println();
+    const bool v2 = cmd8 == 1 && r7[2] == 1 && r7[3] == 0xAA;
+    if (!v2 && cmd8 != 5) {
+        Serial.println("@SD_INIT,stage=CMD8_FAILED,next=SD RETRY");
+        gemSdSpi.endTransaction();
+        return;
+    }
+    uint8_t cmd55 = 0xFF, acmd41 = 0xFF;
+    const uint32_t started = millis();
+    do {
+        cmd55 = command(55, 0, 1, nullptr, 0);
+        if (cmd55 > 1) break;
+        acmd41 = command(41, v2 ? 0x40000000UL : 0, 1, nullptr, 0);
+        if (acmd41 != 1) break;
+        delay(1);
+    } while (millis() - started < 1000);
+    Serial.print("@SD_INIT,cmd55_r1=0x"); Serial.print(cmd55, HEX);
+    Serial.print(",acmd41_r1=0x"); Serial.print(acmd41, HEX);
+    Serial.print(",elapsed_ms="); Serial.println(millis() - started);
+    if (cmd55 <= 1 && acmd41 == 0) {
+        uint8_t ocr[4] = {};
+        const uint8_t cmd58 = command(58, 0, 1, ocr, 4);
+        Serial.print("@SD_INIT,cmd58_r1=0x"); Serial.print(cmd58, HEX);
+        Serial.print(",ocr=");
+        for (uint8_t b : ocr) { if (b < 16) Serial.print('0'); Serial.print(b, HEX); }
+        Serial.println(",next=SD RETRY");
+    }
+    gemSdSpi.endTransaction();
 }
 
 size_t gemSdFileCount()
