@@ -650,6 +650,7 @@ void parseLine(char* line)
     if (hit) {
       meshReceiving=false; meshDisplayFailed=false; bootModelPending=false; loadingDesign=false;
       closeSettingsMenu(); restoreDisplayPending=true;
+      loadingProgress.deleteSprite();
       if (!splashActive && displayMode!=DisplayMode::CLASSIC) gemUi.begin(displayMode);
       ++telemetryVersion;
     }
@@ -793,6 +794,7 @@ void parseLine(char* line)
       loadingDesign = false;
       closeSettingsMenu();
       restoreDisplayPending = true;
+      loadingProgress.deleteSprite();
       if (!splashActive && displayMode != DisplayMode::CLASSIC) gemUi.begin(displayMode);
       ++telemetryVersion;
       sendLineBoth("@MESHACK,READY");
@@ -1078,9 +1080,9 @@ void drawSplashScreen()
 
   TFT_eSprite splash = TFT_eSprite(&tft);
   splash.setColorDepth(8);
-  // Keep the bottom 24 rows outside the animated framebuffer so the company
-  // credit can be pushed once and remain completely static without flicker.
-  if (!splash.createSprite(320, 456))
+  // Animation ends above the progress region (y=382); neither progress nor
+  // the company footer is ever erased by a subsequent animation frame.
+  if (!splash.createSprite(320, 370))
   {
     // A low-memory boot still gets a recognizable title instead of hanging.
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1161,7 +1163,7 @@ void drawSplashScreen()
     const float cz = cosf(twist), sz = sinf(twist);
     const float scale = 124.0f / GemData::kRadius;
     constexpr float centerX = 160.0f;
-    constexpr float centerY = 238.0f;
+    constexpr float centerY = 202.0f;
 
     for (uint16_t i = 0; i < GemData::kVertexCount; ++i)
     {
@@ -1203,21 +1205,21 @@ void drawSplashScreen()
       // A black keyline and magenta offset keep the cyan title legible over
       // the wireframe without turning it into an opaque card.
       splash.setTextColor(TFT_BLACK);
-      splash.drawString("FACET HOUND", titleX + 2, 158);
-      splash.drawString("FACET HOUND", titleX - 2, 158);
+      splash.drawString("FACET HOUND", titleX + 2, 112);
+      splash.drawString("FACET HOUND", titleX - 2, 112);
       splash.setTextColor(accentColor);
-      splash.drawString("FACET HOUND", titleX + 1, 157);
+      splash.drawString("FACET HOUND", titleX + 1, 111);
       splash.setTextColor(titleColor);
-      splash.drawString("FACET HOUND", titleX, 154);
-      splash.drawFastHLine(titleX, 184, titleWidth, accentColor);
-      splash.fillCircle(titleX - 6, 184, 2, titleColor);
-      splash.fillCircle(titleX + titleWidth + 6, 184, 2, titleColor);
+      splash.drawString("FACET HOUND", titleX, 108);
+      splash.drawFastHLine(titleX, 138, titleWidth, accentColor);
+      splash.fillCircle(titleX - 6, 138, 2, titleColor);
+      splash.fillCircle(titleX + titleWidth + 6, 138, 2, titleColor);
     }
 
     splash.pushSprite(0, 0);
     if (bootModelPending || loadingDesign || meshReceiving)
       drawLoadingProgress(meshReceiving && meshExpectedRows ?
-          int(100UL * meshCompletedRows / meshExpectedRows) : -1, true);
+          int(100UL * meshCompletedRows / meshExpectedRows) : -1);
     if (elapsed >= kGemOnlyMs && footerReady && (!footerShown || brightness < 1.0f))
     {
       if (brightness < 1.0f) {
@@ -1762,6 +1764,7 @@ void setup()
   }
   else
   {
+    loadingProgress.deleteSprite();
     gemUi.begin(displayMode);
     gemUi.tick(currentGemTelemetry());
   }

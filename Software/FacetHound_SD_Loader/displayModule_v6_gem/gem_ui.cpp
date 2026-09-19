@@ -165,6 +165,7 @@ bool GemUi::begin(DisplayMode mode)
     poseInitialized_ = false;
     orientationInitialized_ = false;
     lastStateVersion_ = UINT32_MAX;
+    lastHudVersion_ = UINT32_MAX;
     lastStaticVersion_ = UINT32_MAX;
     lastStaticLinkAlive_ = false;
     lastFrameMs_ = 0;
@@ -181,6 +182,9 @@ bool GemUi::begin(DisplayMode mode)
 
     gemCanvas_.fillSprite(C_BG);
     hudCanvas_.fillSprite(C_BG);
+    hudCanvas_.resetViewport();
+    hudCanvas_.setTextSize(1);
+    hudCanvas_.setTextWrap(false,false);
     return true;
 }
 
@@ -909,6 +913,14 @@ void GemUi::pushHudCanvas()
 void GemUi::tick(const GemTelemetry& state)
 {
     const uint32_t now = millis();
+    if (!gemCanvasReady_ || !hudCanvasReady_) {
+        // A loading sprite may have temporarily exhausted RAM at transition.
+        // Retry after it is released rather than leaving a permanently blank HUD.
+        static uint32_t lastAllocationRetry=0;
+        if(now-lastAllocationRetry<500) return;
+        lastAllocationRetry=now;
+        if(!begin(mode_)) return;
+    }
     const bool stateChanged = state.version != lastStateVersion_;
     const bool selectionChanged = state.jobTier != lastJobTier_ ||
                                   state.jobFacet != lastJobFacet_;
@@ -941,7 +953,7 @@ void GemUi::tick(const GemTelemetry& state)
         lastStaticLinkAlive_ = state.linkAlive;
     }
 
-    if (selectionChanged || (state.version != lastHudVersion_ && now - lastHudMs_ >= kHudPeriodMs) ||
+    if (lastHudVersion_ == UINT32_MAX || selectionChanged || (state.version != lastHudVersion_ && now - lastHudMs_ >= kHudPeriodMs) ||
         now - lastHudMs_ >= 500)
     {
         lastHudMs_ = now;
