@@ -14,7 +14,7 @@ constexpr uint16_t C_SELECT = 0x067F;
 constexpr uint16_t C_SELECT_BG = 0x10E4;
 constexpr uint16_t C_ACTIVE = 0x27E8;
 constexpr uint8_t kVisibleRows = 6;
-constexpr uint8_t kRootItems = 13;
+constexpr uint8_t kRootItems = 14;
 
 const float kWheelIndexes[] = {
     1, 2, 4, 32, 40, 48, 60, 64, 72, 77, 80, 81, 88, 91,
@@ -116,6 +116,7 @@ void SettingsMenu::invalidateSdCache(uint32_t start)
     {
         sdFileValid_[i] = false;
         sdFileNames_[i][0] = '\0';
+        sdFileTitles_[i][0] = '\0';
     }
 }
 
@@ -175,9 +176,16 @@ MenuResult SettingsMenu::handle(MenuKey key)
                     invalidatePositionCache(0);
                     requestPositionWindow(result);
                     break;
+                case 12:
+                    page_=Page::GEM_INFO; choiceCursor_=0;
+                    setCommand(result,"@CFGGET,GEM_INFO"); break;
                 default: close(); result.closed = true; return result;
             }
         }
+    }
+    else if (page_ == Page::GEM_INFO) {
+        if (key==MenuKey::BACK) enterRootPage();
+        else if (key==MenuKey::UP || key==MenuKey::DOWN) choiceCursor_=1-choiceCursor_;
     }
     else if (page_ == Page::POSITIONS)
     {
@@ -308,8 +316,9 @@ MenuResult SettingsMenu::handle(MenuKey key)
             sdCursor_ = (sdCursor_ + 1) % sdFileCount_;
         else if (key == MenuKey::SELECT && sdFileCount_)
         {
-            snprintf(status_, sizeof(status_), "Loading file %lu...",
-                     static_cast<unsigned long>(sdCursor_ + 1));
+            snprintf(status_, sizeof(status_), "Loading %.36s...",
+                     sdCursor_ >= sdCacheStart_ && sdCursor_ < sdCacheStart_+kSdCacheSize ?
+                         sdFileNames_[sdCursor_ - sdCacheStart_] : "design");
             setCommand(result, "@CFGACTION,LOAD_SD_FILE,%lu",
                        static_cast<unsigned long>(sdCursor_));
         }
@@ -427,6 +436,12 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
         else if (!strcasecmp(value, "READY") && !sdFileCount_)
             snprintf(status_, sizeof(status_), "No .asc or .fct files in root");
     }
+    else if (!strcasecmp(id,"GEM_INFO_DONE")) { if (open_ && page_==Page::GEM_INFO) drawGemInfo(); return; }
+    else if (!strncasecmp(id,"GEM_INFO_",9)) {
+        int row=atoi(id+9);
+        if (row>=0 && row<12) snprintf(gemInfo_[row],80,"%s",value);
+        return;
+    }
     else if (!strcasecmp(id, "SD_ACTIVE"))
     {
         snprintf(activeDesign_, sizeof(activeDesign_), "%s", value);
@@ -438,6 +453,12 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
         if (sdFileCount_) snprintf(status_, sizeof(status_), "%lu design file%s",
                                    static_cast<unsigned long>(sdFileCount_),
                                    sdFileCount_ == 1 ? "" : "s");
+    }
+    else if (!strncasecmp(id, "SD_TITLE_", 9))
+    {
+        uint32_t index = strtoul(id+9, nullptr, 10);
+        if (index >= sdCacheStart_ && index < sdCacheStart_+kSdCacheSize)
+            snprintf(sdFileTitles_[index-sdCacheStart_], 48, "%s", value);
     }
     else if (!strncasecmp(id, "SD_FILE_", 8))
     {
@@ -635,7 +656,7 @@ void SettingsMenu::drawRootRow(uint16_t index, uint8_t row)
         "Display mode", "Index direction", "Table adapter", "Servo control",
         "Wheel index", "Z axis polarity", "Flow calibration", "Encoder zero",
         "Special commands", "Reset positions", "Load SD design", "Edit positions",
-        "Close settings"
+        "Loaded gem info", "Close settings"
     };
     char value[20] = {};
     if (index == 0) snprintf(value, sizeof(value), "%s", displayModeName(currentMode_));
@@ -699,7 +720,21 @@ void SettingsMenu::drawSdRow(uint32_t index, uint8_t row)
         snprintf(label, sizeof(label), "%.43s", sdFileNames_[index - sdCacheStart_]);
     else
         snprintf(label, sizeof(label), "loading...");
-    drawRow(82 + row * 56, label, "", sdCursor_ == index);
+    const int y = 82 + row * 56;
+    bool selected = sdCursor_ == index;
+    uint16_t bg = selected ? C_SELECT_BG : C_BG;
+    tft_.fillRoundRect(14, y, 292, 48, 5, bg);
+    if (selected) tft_.fillTriangle(21, y+18, 21, y+30, 28, y+24, C_SELECT);
+    tft_.setTextDatum(TL_DATUM); tft_.setTextFont(2);
+    const char* title = "...";
+    if (index >= sdCacheStart_ && index < sdCacheStart_+kSdCacheSize &&
+        sdFileTitles_[index-sdCacheStart_][0]) title = sdFileTitles_[index-sdCacheStart_];
+    char fit[48]; snprintf(fit,sizeof(fit),"%s",title);
+    while (strlen(fit) && tft_.textWidth(fit)>258) fit[strlen(fit)-1]=0;
+    tft_.setTextColor(selected ? C_SELECT : C_TEXT,bg); tft_.drawString(fit,36,y+5);
+    tft_.setTextFont(1); tft_.setTextColor(C_DIM,bg);
+    while (strlen(label) && tft_.textWidth(label)>258) label[strlen(label)-1]=0;
+    tft_.drawString(label,36,y+30);
 }
 
 void SettingsMenu::redrawAfterInput(Page oldPage, uint16_t oldRoot, uint16_t oldChoice,
@@ -736,7 +771,7 @@ void SettingsMenu::redrawAfterInput(Page oldPage, uint16_t oldRoot, uint16_t old
         return;
     }
     if (oldChoice != choiceCursor_ && page_ != Page::POSITION_EDITOR &&
-        page_ != Page::FLOW_CALIBRATION && page_ != Page::INDEX_SPIN)
+        page_ != Page::FLOW_CALIBRATION && page_ != Page::INDEX_SPIN && page_ != Page::GEM_INFO)
     {
         const uint16_t oldStart = (oldChoice / kVisibleRows) * kVisibleRows;
         const uint16_t newStart = (choiceCursor_ / kVisibleRows) * kVisibleRows;
@@ -757,6 +792,7 @@ void SettingsMenu::refreshVisiblePage()
     else if (page_ == Page::FLOW_CALIBRATION) drawFlowCalibration();
     else if (page_ == Page::INDEX_SPIN) drawIndexSpin();
     else if (page_ == Page::SD_FILES) drawSdFiles();
+    else if (page_ == Page::GEM_INFO) drawGemInfo();
     else drawChoices();
 }
 
@@ -770,5 +806,24 @@ void SettingsMenu::draw()
     else if (page_ == Page::FLOW_CALIBRATION) drawFlowCalibration();
     else if (page_ == Page::INDEX_SPIN) drawIndexSpin();
     else if (page_ == Page::SD_FILES) drawSdFiles();
+    else if (page_ == Page::GEM_INFO) drawGemInfo();
     else drawChoices();
+}
+
+void SettingsMenu::drawGemInfo()
+{
+    static const char* labels[12]={"Name","File","Index","Symmetry","Meridian","Refractive index",
+        "Cut schedule","Geometry","Cache","Format","Notes","Notes continued"};
+    drawTitle(choiceCursor_ ? "loaded gem info 2/2" : "loaded gem info 1/2");
+    for (int row=0;row<6;++row) {
+        int index=int(choiceCursor_)*6+row, y=82+row*56;
+        tft_.fillRect(14,y,292,50,C_BG);
+        tft_.setTextDatum(TL_DATUM); tft_.setTextFont(1); tft_.setTextColor(C_DIM,C_BG);
+        tft_.drawString(labels[index],20,y+2);
+        tft_.setTextFont(2); tft_.setTextColor(C_TEXT,C_BG);
+        char text[80]; snprintf(text,sizeof(text),"%s",gemInfo_[index]);
+        while(strlen(text) && tft_.textWidth(text)>280) text[strlen(text)-1]=0;
+        tft_.drawString(text,20,y+18);
+    }
+    drawFooter("TWIST WHEEL next page   TOP-LEFT back");
 }

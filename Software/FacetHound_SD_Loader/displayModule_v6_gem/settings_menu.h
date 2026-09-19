@@ -58,6 +58,7 @@ private:
         SD_FILES,
         POSITIONS,
         POSITION_EDITOR,
+        GEM_INFO,
     };
 
     static constexpr uint8_t kCacheSize = 8;
@@ -91,10 +92,13 @@ private:
     uint32_t sdCursor_ = 0;
     uint32_t sdCacheStart_ = 0;
     char sdFileNames_[kSdCacheSize][48] = {};
+    char sdFileTitles_[kSdCacheSize][48] = {};
     bool sdFileValid_[kSdCacheSize] = {};
     char sdStatus_[24] = "UNKNOWN";
     char activeDesign_[48] = "NONE";
     char status_[48] = {};
+    char gemInfo_[12][80] = {};
+    void drawGemInfo();
 
     static void setCommand(MenuResult& result, const char* format, ...);
     void invalidatePositionCache(uint32_t start);

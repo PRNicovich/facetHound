@@ -157,6 +157,7 @@ void setZedDriverEnabled(bool enabled);
 float shortestArcPath(float target, float current, float wheelIndex);
 
 void notifyTwistTargetChanged();
+void requestIndexHome(SystemState &S);
 void hardStopTwist(SystemState &S);
 void cancelTwistMoveKeepLock(SystemState &S);
 void hardStopZ();

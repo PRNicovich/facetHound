@@ -60,6 +60,8 @@ private:
     bool poseInitialized_ = false;
     bool orientationInitialized_ = false;
     float displayedTip_ = 0.0f;
+    float poseTierTip_ = 0.0f;
+    float runtimeTipTarget_ = 0.0f, runtimeTwistOffset_ = 0.0f;
     float displayedTwist_ = 0.0f;
     float displayedRenderTip_ = 0.0f;
     float displayedRenderTwist_ = 0.0f;

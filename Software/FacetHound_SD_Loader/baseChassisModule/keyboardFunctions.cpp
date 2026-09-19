@@ -368,6 +368,11 @@ void homeMarkPoint(SystemState* S)
 
     wrapTarget(S);
     notifyTwistTargetChanged();
+    Serial.print("@INDEX,SEEK,target="); Serial.print(S->targetTwist,4);
+    Serial.print(",actual="); Serial.print(S->actualTwist,4);
+    Serial.print(",state=");
+    Serial.println(!S->twistLock ? "UNLOCKED" : !S->twistReady ? "WAIT_FEEDBACK" :
+                   indexMotionFaultLatched() ? "FAULT_LATCHED" : "SEEKING");
 
     S->dirty = true;
 }
@@ -459,6 +464,7 @@ void handleKey(SystemState* S, uint8_t key)
             break;
 
         case 14:
+            requestIndexHome(*S);
             homeMarkPoint(S);
             break;
 

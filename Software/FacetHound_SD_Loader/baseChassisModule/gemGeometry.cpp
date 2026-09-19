@@ -80,6 +80,10 @@ Vec3 normalized(const Vec3& value)
 
 Vec3 planeNormal(const GemCutCoordinate& cut, const GemSdDesign& design)
 {
+    // GemCad encodes a zero-degree pavilion culet with a negative distance
+    // (or signed -0 angle), not with the usual negative nonzero angle.
+    if (fabs(cut.angleDegrees) < 1e-9 &&
+        (cut.gemcadDistance < 0 || signbit(cut.angleDegrees))) return {0, 0, -1};
     const double wheel = design.wheelIndex > 0.0 ? design.wheelIndex : 96.0;
     double indexOffset = fmod(cut.index - design.meridian, wheel);
     if (indexOffset < 0.0) indexOffset += wheel;
@@ -406,7 +410,7 @@ GemGeometryResult buildGemGeometry(const GemSdDesign& design,
         plane.nx = normal.x;
         plane.ny = normal.y;
         plane.nz = normal.z;
-        plane.distance = cut.gemcadDistance;
+        plane.distance = fabs(cut.angleDegrees) < 1e-9 ? fabs(cut.gemcadDistance) : cut.gemcadDistance;
         plane.angleDegrees = float(cut.angleDegrees);
         plane.index = float(cut.index);
         plane.tier = cut.tier;

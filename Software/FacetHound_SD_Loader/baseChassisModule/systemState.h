@@ -9,6 +9,7 @@ struct SystemState
     // Twist / index
     float targetTwist  = 0.0f;
     float actualTwist  = 0.0f;
+    uint32_t twistSampleSequence = 0; // runtime only; accepted encoder frames
     float twistError   = 0.0f;
     int   twistDir     = 1;
     int   indexSign    = 1;        // +1 = CW-positive, -1 = CCW-positive

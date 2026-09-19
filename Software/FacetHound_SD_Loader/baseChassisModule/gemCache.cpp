@@ -7,7 +7,7 @@
 namespace
 {
 constexpr char kMagic[8] = {'F', 'H', 'C', 'A', 'C', 'H', 'E', '1'};
-constexpr uint16_t kVersion = 1;
+constexpr uint16_t kVersion = 2; // Rebuild caches made before the culet-plane fix.
 
 struct __attribute__((packed)) CacheHeader
 {

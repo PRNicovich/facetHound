@@ -143,6 +143,44 @@ uint32_t telemetryVersion = 0;
 bool meshReceiving = false;
 bool meshDisplayFailed = false;
 uint32_t meshLastRxMs = 0;
+uint32_t meshExpectedRows = 0, meshCompletedRows = 0;
+uint16_t meshNextVertex = 0, meshNextEdge = 0, meshNextPlane = 0;
+bool bootModelPending = true;
+bool loadingDesign = false;
+bool splashActive = false;
+static void sendLineBoth(const char* line);
+char loadingTitle[64] = {};
+char loadingStage[40] = "Waiting for base";
+
+static void drawLoadingProgress(int percent, bool force = false)
+{
+  static int previous = -2;
+  static uint32_t lastDraw = 0;
+  if (!force && percent == previous && millis() - lastDraw < 500) return;
+  previous = percent; lastDraw = millis();
+  const int y = 382;
+  tft.fillRect(0, y, 320, 70, TFT_BLACK);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString(loadingTitle, 160, y + 9, 2);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  char label[64];
+  if (percent >= 0) snprintf(label, sizeof(label), "%s %d%%", loadingStage, percent);
+  else snprintf(label, sizeof(label), "%s...", loadingStage);
+  tft.drawString(label, 160, y + 29, 2);
+  tft.drawRect(20, y + 46, 280, 12, TFT_DARKGREY);
+  const int width = percent < 0 ? 40 : constrain(percent, 0, 100) * 276 / 100;
+  const int x = percent < 0 ? int((millis() / 8) % 236) : 0;
+  tft.fillRect(22 + x, y + 48, width, 8, TFT_CYAN);
+}
+
+static void acknowledgeMeshRow(char kind, uint16_t id)
+{
+  if (!splashActive) drawLoadingProgress(meshExpectedRows ?
+      int(100UL * meshCompletedRows / meshExpectedRows) : 0);
+  char ack[40]; snprintf(ack, sizeof(ack), "@MESHACK,%c,%u", kind, unsigned(id));
+  sendLineBoth(ack);
+}
 DisplayMode displayMode = DisplayMode::CLASSIC;
 bool restoreDisplayPending = false;
 bool usbDemoMode = false;
@@ -153,7 +191,7 @@ static const uint32_t DISPLAY_BAUD = 460800;
 static const uint16_t RX_BYTE_BUDGET = 2048;
 static const uint8_t RX_LINE_BUDGET = 128;
 static const uint32_t SETTINGS_MAGIC = 0x46484D36; // "FHM6"
-static const char DISPLAY_FIRMWARE_ID[] = "TARGET-MENU-20260917";
+static const char DISPLAY_FIRMWARE_ID[] = "GEM-NORMAL-HOME-20260918";
 
 struct PersistedSettings
 {
@@ -579,6 +617,15 @@ void parseLine(char* line)
   char* valueText = comma + 1;
 
   if (key[0] == 0) return;
+  if (!strcmp(key, "GEMLOAD")) {
+    char* title = strchr(valueText, ',');
+    if (title) { *title++ = 0; snprintf(loadingTitle, sizeof(loadingTitle), "%.42s", title); }
+    snprintf(loadingStage, sizeof(loadingStage), "%s", valueText);
+    loadingDesign = strcmp(valueText, "ERROR") != 0;
+    if (!loadingDesign) { meshDisplayFailed = true; bootModelPending = false; }
+    if (!splashActive) drawLoadingProgress(-1);
+    return;
+  }
   if (!strncmp(key, "MESH", 4)) meshLastRxMs = millis();
 
   if (!strcmp(key, "MESHCLEAR"))
@@ -586,6 +633,8 @@ void parseLine(char* line)
     runtimeGemMesh().clear();
     meshReceiving = false;
     meshDisplayFailed = false;
+    bootModelPending = false;
+    loadingDesign = false;
     gemUi.invalidate();
     ++telemetryVersion;
     return;
@@ -599,6 +648,7 @@ void parseLine(char* line)
     char* planes = strtok_r(nullptr, ",", &save);
     char* indexResolution = strtok_r(nullptr, ",", &save);
     char* radius = strtok_r(nullptr, ",", &save);
+    char* indexSign = strtok_r(nullptr, ",", &save);
     bool ok = vertices && edges && planes && indexResolution && radius &&
               runtimeGemMesh().beginTransfer(
                   uint16_t(strtoul(vertices, nullptr, 10)),
@@ -606,12 +656,16 @@ void parseLine(char* line)
                   uint16_t(strtoul(planes, nullptr, 10)),
                   strtof(indexResolution, nullptr), strtof(radius, nullptr));
     meshReceiving = ok;
+    runtimeGemMesh().setIndexSign(indexSign ? atoi(indexSign) : 1);
     meshDisplayFailed = !ok;
+    meshExpectedRows = uint32_t(runtimeGemMesh().vertices().size()) +
+                      runtimeGemMesh().edges().size() + runtimeGemMesh().planes().size();
+    meshCompletedRows = 0;
+    meshNextVertex = meshNextEdge = meshNextPlane = 0;
+    snprintf(loadingStage, sizeof(loadingStage), "Receiving model");
     if (!ok) sendLineBoth("@ERR,MESHBEGIN,invalid counts or scale");
     else {
-      tft.fillRect(0, 0, 320, 36, TFT_BLACK);
-      tft.setTextColor(TFT_CYAN, TFT_BLACK);
-      tft.drawString("Loading gem...", 8, 8, 2);
+      if (!splashActive) drawLoadingProgress(0);
       sendLineBoth("@MESHACK,BEGIN");
     }
     return;
@@ -624,11 +678,15 @@ void parseLine(char* line)
     char* x = strtok_r(nullptr, ",", &save);
     char* y = strtok_r(nullptr, ",", &save);
     char* z = strtok_r(nullptr, ",", &save);
+    if (meshReceiving && id && strtoul(id, nullptr, 10) < meshNextVertex) {
+      acknowledgeMeshRow('V', uint16_t(strtoul(id, nullptr, 10))); return;
+    }
     if (!id || !x || !y || !z ||
         !runtimeGemMesh().setVertex(uint16_t(strtoul(id, nullptr, 10)),
                                     strtof(x, nullptr), strtof(y, nullptr),
                                     strtof(z, nullptr)))
-        runtimeGemMesh().clear();
+        { runtimeGemMesh().clear(); sendLineBoth("@ERR,MESHROW,bad vertex"); }
+    else { ++meshNextVertex; ++meshCompletedRows; acknowledgeMeshRow('V', meshNextVertex - 1); }
     return;
   }
 
@@ -639,6 +697,9 @@ void parseLine(char* line)
     char* a = strtok_r(nullptr, ",", &save);
     char* b = strtok_r(nullptr, ",", &save);
     char* count = strtok_r(nullptr, ",", &save);
+    if (meshReceiving && id && strtoul(id, nullptr, 10) < meshNextEdge) {
+      acknowledgeMeshRow('E', uint16_t(strtoul(id, nullptr, 10))); return;
+    }
     uint16_t supportPlanes[RUNTIME_MESH_MAX_EDGE_SUPPORTS] = {};
     uint8_t supportCount = count ? uint8_t(strtoul(count, nullptr, 10)) : 0;
     bool ok = id && a && b && count && supportCount >= 2 &&
@@ -654,7 +715,8 @@ void parseLine(char* line)
                    uint16_t(strtoul(a, nullptr, 10)),
                    uint16_t(strtoul(b, nullptr, 10)), supportCount,
                    supportPlanes))
-      runtimeGemMesh().clear();
+      { runtimeGemMesh().clear(); sendLineBoth("@ERR,MESHROW,bad edge"); }
+    else { ++meshNextEdge; ++meshCompletedRows; acknowledgeMeshRow('E', meshNextEdge - 1); }
     return;
   }
 
@@ -667,24 +729,31 @@ void parseLine(char* line)
       char* tier = strtok_r(nullptr, ",", &save);
       char* facet = strtok_r(nullptr, ",", &save);
       char* name = strtok_r(nullptr, ",", &save);
+      if (meshReceiving && id && strtoul(id, nullptr, 10) < meshNextPlane) {
+        acknowledgeMeshRow('P', uint16_t(strtoul(id, nullptr, 10))); return;
+      }
       if (!id || !tip || !twist || !tier || !facet ||
           !runtimeGemMesh().setPlane(
               uint16_t(strtoul(id, nullptr, 10)), strtof(tip, nullptr),
               strtof(twist, nullptr), uint16_t(strtoul(tier, nullptr, 10)),
               uint16_t(strtoul(facet, nullptr, 10)), name ? name : ""))
-        runtimeGemMesh().clear();
+        { runtimeGemMesh().clear(); sendLineBoth("@ERR,MESHROW,bad plane"); }
+      else { ++meshNextPlane; ++meshCompletedRows; acknowledgeMeshRow('P', meshNextPlane - 1); }
     return;
   }
 
   if (!strcmp(key, "MESHEND"))
   {
+    if (!meshReceiving && runtimeGemMesh().active()) { sendLineBoth("@MESHACK,READY"); return; }
     meshReceiving = false;
     if (runtimeGemMesh().finishTransfer())
     {
       meshDisplayFailed = false;
+      bootModelPending = false;
+      loadingDesign = false;
       closeSettingsMenu();
       restoreDisplayPending = true;
-      if (displayMode != DisplayMode::CLASSIC) gemUi.begin(displayMode);
+      if (!splashActive && displayMode != DisplayMode::CLASSIC) gemUi.begin(displayMode);
       ++telemetryVersion;
       sendLineBoth("@MESHACK,READY");
     }
@@ -1024,11 +1093,15 @@ void drawSplashScreen()
   constexpr uint32_t kTotalMs = 3300;
   constexpr uint32_t kFrameMs = 33;
   bool footerShown = false;
+  uint32_t finishAt = started + kTotalMs;
 
-  while (millis() - started < kTotalMs)
+  while (int32_t(millis() - finishAt) < 0)
   {
+    rxUpdate();
+    if ((bootModelPending || loadingDesign || meshReceiving) && millis()-started < 20000)
+      finishAt = millis() + 350;
     const uint32_t elapsed = millis() - started;
-    const float brightness = constrain((float(kTotalMs) - float(elapsed)) / 300.0f, 0.0f, 1.0f);
+    const float brightness = constrain(float(int32_t(finishAt-millis())) / 300.0f, 0.0f, 1.0f);
     if (int32_t(millis() - nextFrame) < 0)
     {
       delay(1);
@@ -1102,6 +1175,9 @@ void drawSplashScreen()
     }
 
     splash.pushSprite(0, 0);
+    if (bootModelPending || loadingDesign || meshReceiving)
+      drawLoadingProgress(meshReceiving && meshExpectedRows ?
+          int(100UL * meshCompletedRows / meshExpectedRows) : -1, true);
     if (elapsed >= kGemOnlyMs && footerReady && (!footerShown || brightness < 1.0f))
     {
       if (brightness < 1.0f) {
@@ -1521,15 +1597,21 @@ void updateRPMSetValueSprite()
 
 void updateMarkPointsSprite()
 {
-  markSprite.fillSprite(SPRITE_FILL);
+    markSprite.fillSprite(SPRITE_FILL);
+    char counter[32]; snprintf(counter, sizeof(counter), "%d/%d", int(markIdx), int(nMarkIdx));
+    markSprite.setTextDatum(BC_DATUM);
+    if (markSprite.textWidth(counter) > 96) {
+      markSprite.unloadFont();
+      markSprite.setTextFont(2);
+      markSprite.drawString(counter, 155, 30);
+      markSprite.loadFont(LABELS);
+    } else markSprite.drawString(counter, 155, 30);
+    markSprite.setTextDatum(BR_DATUM);
   markSprite.drawFloat(markL, 2, 80, 30);
   markSprite.drawLine(105, 7, 99, 15, 0x07FE);
   markSprite.drawLine(99, 15, 105, 23, 0x07FE);
   markSprite.drawLine(106, 7, 100, 15, 0x07FE);
   markSprite.drawLine(100, 15, 106, 23, 0x07FE);
-  markSprite.drawNumber(markIdx, 145, 30);
-  markSprite.drawString("/", 158, 30);
-  markSprite.drawNumber(nMarkIdx, 190, 30);
   markSprite.drawLine(210, 7, 216, 15, 0x07FE);
   markSprite.drawLine(216, 15, 210, 23, 0x07FE);
   markSprite.drawLine(211, 7, 217, 15, 0x07FE);
@@ -1586,10 +1668,7 @@ static void restoreDisplayAfterSettings()
 
   if (displayMode == DisplayMode::CLASSIC)
   {
-    tft.fillScreen(TFT_BLACK);
-    unitLabels.pushSprite(290, 0);
-    axisLabels.pushSprite(0, 0);
-    downLabels.pushSprite(0, 450);
+    drawMainScreen(true);
     fillBarWidth = -1;
     updateAllSprites();
   }
@@ -1603,8 +1682,8 @@ void setup()
 {
   Serial.begin(115200);
   baseSerial.begin(DISPLAY_BAUD);
-  Serial.println("@BUILD,DISPLAY,SPLASH-FADE-HUD3");
-  baseSerial.println("@BUILD,DISPLAY,SPLASH-FADE-HUD3");
+  Serial.println("@BUILD,DISPLAY,GEM-NORMAL-HOME-20260918");
+  baseSerial.println("@BUILD,DISPLAY,GEM-NORMAL-HOME-20260918");
 
   // The animated title card is useful on the bench, but it should not hold up
   // an installed display.  Treat USB mode as an actively opened CDC port, not
@@ -1623,9 +1702,19 @@ void setup()
 
   tft.init();
   tft.setRotation(2);
+  systemReady = true;
+  splashActive = true;
+  sendLineBoth("@CFGGET,MESH");
   drawSplashScreen(); // Title card on every restart, independent of USB demo mode.
+  splashActive = false;
 
-  if (displayMode == DisplayMode::CLASSIC)
+  if (bootModelPending || meshReceiving || loadingDesign || meshDisplayFailed) {
+    tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.drawString("FACET HOUND",160,180,4);
+    drawLoadingProgress(-1);
+    restoreDisplayPending = true;
+  }
+  else if (displayMode == DisplayMode::CLASSIC)
   {
     drawMainScreen(true);
   }
@@ -1654,7 +1743,7 @@ void setup()
     Serial.println(DISPLAY_FIRMWARE_ID);
     Serial.println("@HELLO,DISPLAY,USB_DEMO");
   }
-  sendLineBoth("@CFGGET,MESH");
+  if (bootModelPending && !meshReceiving) sendLineBoth("@CFGGET,MESH");
 }
 
 void loop()
@@ -1668,7 +1757,9 @@ void loop()
   }
   // Do not spend tens of milliseconds drawing while the mesh is arriving.
   // Never show the built-in mesh with a loaded job's points after a failure.
-  if (meshReceiving || meshDisplayFailed) {
+  if (meshReceiving || meshDisplayFailed || loadingDesign || bootModelPending) {
+    if (!meshDisplayFailed) drawLoadingProgress(meshReceiving && meshExpectedRows ?
+        int(100UL * meshCompletedRows / meshExpectedRows) : -1);
     if (meshDisplayFailed) {
       static uint32_t lastErrorDraw = 0;
       if (millis() - lastErrorDraw > 1000) {

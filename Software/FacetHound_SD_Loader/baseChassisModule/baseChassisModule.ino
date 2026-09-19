@@ -34,6 +34,9 @@ int lastBuiltinCutSent = -1;
 uint8_t displayVisualMode = 0; // 0 classic/unknown, 1 dynamic, 2 static
 bool displayModeKnown = false;
 char activeGemCacheStatus[20] = "NONE";
+int pendingGemLoad = -1;
+bool savedGemRestoreFailed = false;
+uint32_t pendingGemLoadMs = 0;
 
 static const float TWIST_ENCODER_COUNTS = 4096.0f;
 
@@ -319,6 +322,7 @@ void mastTask()
                 }
 
                 S.actualTwist = nextTwist;
+                ++S.twistSampleSequence;
 
                 if (!S.twistReady)
                 {
@@ -434,6 +438,9 @@ static void sendCfgAck(const char* id, const char* value)
 
 static void sendCfgNak(const char* id, const char* reason)
 {
+    if (!strcmp(id, "LOAD_SD_FILE")) {
+        dispSerial.print("@GEMLOAD,ERROR,"); dispSerial.println(reason);
+    }
     dispSerial.print("@CFGNAK,");
     dispSerial.print(id);
     dispSerial.print(",");
@@ -557,26 +564,49 @@ static uint8_t meshSendStage = 0; // begin, wait BEGIN, vertices, edges, planes,
 static size_t meshSendIndex = 0;
 static uint32_t meshSendLastMs = 0;
 static uint8_t meshBeginAttempts = 0;
+static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
+
+static void retryMeshTransfer(const char* reason)
+{
+    Serial.print("@GEM,DISPLAY_RETRY,"); Serial.println(reason);
+    if (++meshRestartCount <= 2) {
+        meshSendStage = 1; meshSendIndex = 0; meshBeginAttempts = 0;
+        meshRowRetries = 0; meshSendLastMs = millis();
+    } else {
+        meshSendStage = 0;
+        Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(reason);
+    }
+}
 
 static void sendActiveMesh()
 {
     meshSendStage = 1;
     meshSendIndex = 0;
     meshBeginAttempts = 0;
+    meshRestartCount = 0;
+    meshRowRetries = 0;
     meshSendLastMs = millis();
 }
 
 static void meshTransferTask()
 {
     if (!meshSendStage) return;
+    if (meshSendStage == 8) {
+        if (millis() - meshSendLastMs > 350) {
+            if (++meshRowRetries <= 3) {
+                --meshSendIndex;
+                meshSendStage = meshRowStage;
+            } else retryMeshTransfer("record acknowledgment timeout");
+        }
+        return;
+    }
     if (meshSendStage == 2 || meshSendStage == 7) {
         if (meshSendStage == 2 && millis() - meshSendLastMs > 1000 && meshBeginAttempts < 3) {
             meshSendStage = 1;
             return;
         }
         if (millis() - meshSendLastMs > 3000) {
-            Serial.println("@GEM,DISPLAY_ERROR,mesh acknowledgment timeout");
-            meshSendStage = 0;
+            retryMeshTransfer("mesh acknowledgment timeout");
         }
         return;
     }
@@ -584,7 +614,7 @@ static void meshTransferTask()
     meshSendLastMs = millis();
     if (!activeGemLoaded || activeGemGeometry.vertices.empty())
     {
-        sendDisplayLine("@MESHCLEAR,0");
+        sendDisplayLine(savedGemRestoreFailed ? "@GEMLOAD,ERROR,Saved gem unavailable" : "@MESHCLEAR,0");
         meshSendStage = 0;
         return;
     }
@@ -600,7 +630,8 @@ static void meshTransferTask()
         dispSerial.print(",");
         dispSerial.print(activeGemDesign.wheelIndex, 4);
         dispSerial.print(",");
-        dispSerial.println(activeGemGeometry.radius, 7);
+        dispSerial.print(activeGemGeometry.radius, 7);
+        dispSerial.print(','); dispSerial.println(activeGemDesign.designIndexSign);
         meshSendStage = 2;
         return;
     }
@@ -620,6 +651,7 @@ static void meshTransferTask()
         dispSerial.print(vertex.y, 7);
         dispSerial.print(",");
         dispSerial.println(vertex.z, 7);
+        meshRowStage = meshSendStage; meshSendStage = 8;
         return;
     }
 
@@ -644,6 +676,7 @@ static void meshTransferTask()
             dispSerial.print(edge.supportPlanes[support]);
         }
         dispSerial.println();
+        meshRowStage = meshSendStage; meshSendStage = 8;
         return;
     }
 
@@ -667,6 +700,7 @@ static void meshTransferTask()
         char name[GEM_SD_FACET_NAME_LENGTH] = {};
         safeProtocolText(plane.name, name, sizeof(name));
         dispSerial.println(name);
+        meshRowStage = meshSendStage; meshSendStage = 8;
         return;
     }
     sendDisplayLine("@MESHEND,1");
@@ -699,6 +733,11 @@ static void sendSdFilePage(size_t start, size_t requested)
         snprintf(id, sizeof(id), "SD_FILE_%lu",
                  static_cast<unsigned long>(start + i));
         sendCfgText(id, safeName);
+        char title[GEM_SD_TITLE_LENGTH] = {};
+        gemSdFileTitleAt(start+i, title, sizeof(title));
+        safeProtocolText(title, safeName, sizeof(safeName));
+        snprintf(id, sizeof(id), "SD_TITLE_%lu", static_cast<unsigned long>(start+i));
+        sendCfgText(id, safeName);
     }
 }
 
@@ -728,6 +767,28 @@ static void applyLoadedGemDesign(GemSdDesign&& design, GemRuntimeGeometry&& geom
     activeGemGeometry = std::move(geometry);
     activeGemLoaded = true;
     lastJobCutSent = -1;
+}
+
+static void sendLoadedGemInfo()
+{
+    char values[12][80] = {};
+    snprintf(values[0],80,"%s",activeGemLoaded ? activeGemDesign.title : "Built-in gem");
+    snprintf(values[1],80,"%s",activeGemLoaded ? activeGemDesign.fileName : "compiled example");
+    snprintf(values[2],80,"%.4g wheel / sign %+d",activeGemDesign.wheelIndex,activeGemDesign.designIndexSign);
+    snprintf(values[3],80,"%d-fold / mirror %s",activeGemDesign.symmetry,activeGemDesign.mirror ? "yes" : "no");
+    snprintf(values[4],80,"%.4g",activeGemDesign.meridian);
+    snprintf(values[5],80,"%.4g",activeGemDesign.refractiveIndex);
+    snprintf(values[6],80,"%u cuts / %u tiers",unsigned(activeGemDesign.cuts.size()),unsigned(activeGemDesign.tierCount));
+    snprintf(values[7],80,"%u vertices / %u edges",unsigned(activeGemGeometry.vertices.size()),unsigned(activeGemGeometry.edges.size()));
+    snprintf(values[8],80,"%s",activeGemCacheStatus);
+    snprintf(values[9],80,"GemCad %s",activeGemDesign.formatVersion);
+    snprintf(values[10],80,"%.38s",activeGemDesign.attribution);
+    snprintf(values[11],80,"%.38s",strlen(activeGemDesign.attribution)>38 ? activeGemDesign.attribution+38 : "");
+    for (int i=0;i<12;++i) {
+        char id[24], safe[80]; snprintf(id,sizeof(id),"GEM_INFO_%d",i);
+        safeProtocolText(values[i],safe,sizeof(safe)); sendCfgText(id,safe);
+    }
+    sendCfgText("GEM_INFO_DONE","1");
 }
 
 static void sendPositionPage(size_t start, size_t requested)
@@ -1046,15 +1107,20 @@ static void applyConfigAction(char* actionText)
     }
     if (!strcmp(action, "LOAD_SD_FILE"))
     {
-        if (S.twistLock || S.zLock || S.indexSpinRpm != 0.0f ||
-            S.motorDir == 1 || S.motorDir == 3) {
-            sendCfgNak(action, "STOP_MOTION_FIRST");
-            return;
-        }
         long index = -1;
         if (!parseStrictLong(value, &index) || index < 0)
         {
             sendCfgNak(action, "BAD_INDEX");
+            return;
+        }
+
+        hardStopTwist(S);
+        S.indexSpinRpm=0; S.twistLock=0; setTwistDriverEnabled(false);
+        hardStopZ(); S.zLock=0; setZedDriverEnabled(false);
+        if (S.motorDir==1 || S.motorDir==3 || S.RPMValue>10) {
+            S.motorDir = S.motorDir==1 || S.motorDir==2 ? 2 : 0;
+            S.dirty=true; pendingGemLoad=int(index); pendingGemLoadMs=millis();
+            sendDisplayLine("@GEMLOAD,Stopping lap,Please wait");
             return;
         }
 
@@ -1064,13 +1130,14 @@ static void applyConfigAction(char* actionText)
             sendCfgNak(action, "OPEN_FAILED");
             return;
         }
-
         GemSdDesign candidate;
         GemRuntimeGeometry candidateGeometry;
+        dispSerial.print("@GEMLOAD,Reading,"); dispSerial.println(sourcePath);
         GemCacheResult cacheResult = loadGemCache(sourcePath, &candidate,
                                                   &candidateGeometry);
         if (cacheResult == GemCacheResult::OK)
         {
+            readGemSdMetadataAt(size_t(index), &candidate);
             snprintf(activeGemCacheStatus, sizeof(activeGemCacheStatus), "LOADED");
         }
         else
@@ -1082,6 +1149,7 @@ static void applyConfigAction(char* actionText)
                 return;
             }
 
+            dispSerial.print("@GEMLOAD,Building geometry,"); dispSerial.println(sourcePath);
             GemGeometryResult geometryResult = buildGemGeometry(candidate,
                                                                  &candidateGeometry);
             if (geometryResult != GemGeometryResult::OK)
@@ -1090,6 +1158,7 @@ static void applyConfigAction(char* actionText)
                 return;
             }
 
+            dispSerial.print("@GEMLOAD,Saving cache,"); dispSerial.println(sourcePath);
             GemCacheResult saveResult = saveGemCache(sourcePath, candidate,
                                                       candidateGeometry);
             snprintf(activeGemCacheStatus, sizeof(activeGemCacheStatus),
@@ -1101,6 +1170,7 @@ static void applyConfigAction(char* actionText)
         }
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));
+        if (!rememberGemSdPath(sourcePath)) Serial.println("@GEM,REMEMBER_FAILED");
         Serial.print("@GEM,LOADED,"); Serial.println(sourcePath);
         Serial.print("@GEM,GEOMETRY,"); Serial.print(activeGemCacheStatus);
         Serial.print(",vertices="); Serial.print(activeGemGeometry.vertices.size());
@@ -1117,6 +1187,7 @@ static void applyConfigAction(char* actionText)
         sendCfgCount("POSITION_COUNT", S.markPoints.size());
         sendActiveCut(true);
         sendActiveMesh();
+        savedGemRestoreFailed = false;
         return;
     }
     sendCfgNak(action, "UNKNOWN_ACTION");
@@ -1163,6 +1234,12 @@ void displayRxTask()
             }
 
             if (!strcmp(key, "MESHACK")) {
+                if (meshSendStage == 8 && valueText[1] == ',' &&
+                    valueText[0] == (meshRowStage == 3 ? 'V' : meshRowStage == 4 ? 'E' : 'P') &&
+                    strtoul(valueText + 2, nullptr, 10) + 1 == meshSendIndex) {
+                    meshSendStage = meshRowStage;
+                    meshRowRetries = 0;
+                }
                 if (!strcmp(valueText, "BEGIN") && meshSendStage == 2) {
                     meshSendStage = 3;
                     meshSendIndex = 0;
@@ -1177,8 +1254,7 @@ void displayRxTask()
                 }
             }
             else if (!strcmp(key, "ERR") && !strncmp(valueText, "MESH", 4)) {
-                meshSendStage = 0;
-                Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(valueText);
+                if (meshSendStage) retryMeshTransfer(valueText);
             }
             else if (!strcmp(key, "ZENC"))
             {
@@ -1213,6 +1289,7 @@ void displayRxTask()
                 {
                     sendConfigSnapshot();
                 }
+                else if (!strcasecmp(valueText, "GEM_INFO")) sendLoadedGemInfo();
                 else if (!strcasecmp(valueText, "MESH"))
                 {
                     sendActiveMesh();
@@ -1696,6 +1773,7 @@ static void routeKeyboardKey(uint8_t key)
         }
         else if (key == 14 && useBuiltinGem)
         {
+            requestIndexHome(S);
             targetBuiltinCut();
             sendActiveCut(true);
         }
@@ -2301,7 +2379,7 @@ void displayTask()
 
 void autoSave()
 {
-    if (!S.dirty)
+    if (!S.dirty || meshSendStage)
         return;
 
     if (millis() - lastSave < SAVE_DEBOUNCE_MS)
@@ -2453,6 +2531,14 @@ void setup()
     }
 
     forceSafeBootState();
+    // Restore the selected file, not a saved mark list paired with the demo mesh.
+    const int restoreGem = lastGemSdIndex();
+    savedGemRestoreFailed = restoreGem == -2;
+    if (restoreGem >= 0) {
+        char action[48]; snprintf(action, sizeof(action), "LOAD_SD_FILE,%d", restoreGem);
+        applyConfigAction(action);
+        savedGemRestoreFailed = !activeGemLoaded;
+    }
 
     hardStopZ();
 
@@ -2469,6 +2555,7 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
+    Serial.println("@BUILD,BASE,GEM-NORMAL-HOME-20260918");
     Serial.print("KEYBOARD UART MAP: ");
     Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");
     Serial.print("MAST UART MAP: ");
@@ -2491,4 +2578,13 @@ void loop()
     meshTransferTask();
     autoSave();
     updateMotors(S);
+    if (pendingGemLoad >= 0) {
+        if (lapMotorDiagnostics().commandedControl == 0x0C && S.RPMValue <= 10) {
+            int index=pendingGemLoad; pendingGemLoad=-1;
+            char action[48]; snprintf(action,sizeof(action),"LOAD_SD_FILE,%d",index);
+            applyConfigAction(action);
+        } else if (millis()-pendingGemLoadMs > 8000) {
+            pendingGemLoad=-1; sendCfgNak("LOAD_SD_FILE","LAP_STOP_NOT_CONFIRMED");
+        }
+    }
 }

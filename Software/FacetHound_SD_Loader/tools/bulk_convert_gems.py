@@ -19,7 +19,7 @@ import numpy as np
 
 
 MAGIC = b"FHCACHE1"
-VERSION = 1
+VERSION = 2
 HEADER = struct.Struct("<8sHHIIddbBHIHHHHf48s64s")
 CUT = struct.Struct("<dddHH12s")
 VERTEX = struct.Struct("<ddd")

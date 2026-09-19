@@ -42,6 +42,7 @@ static float twistLegStartError = 0.0f;
 static uint8_t twistOvershootCount = 0;
 static uint32_t twistSettleUntilMs = 0;
 static uint32_t lastTwistControlMs = 0;
+static uint32_t lastTwistControlSample = 0;
 
 static int lastEscDir = -1;
 static int lastEscRpm = -1;
@@ -238,6 +239,15 @@ static bool collectLapReply(SystemState &S)
         else if (lapPhase == 4) {
             lapDiagnostics.lastFault = uint8_t(rawValue >> 8);
             lapDiagnostics.lastRun = uint8_t(rawValue);
+            if (lapDiagnostics.lastFault && (S.motorDir == 1 || S.motorDir == 3)) {
+                Serial.print("@FAULT,LAP,");
+                Serial.print(lapDiagnostics.lastFault == 1 ? "LOCKED_ROTOR" : "DRIVE_FAULT");
+                Serial.print(",code=0x"); Serial.println(lapDiagnostics.lastFault, HEX);
+                S.motorDir = S.motorDir == 1 ? 2 : 0;
+                S.motorOn = 0; S.dirty = true;
+                lapKickArmed = false;
+                // Explicit restart only. Do not repeatedly energize a stalled rotor.
+            }
         }
         lapDiagnostics.validReplies++;
         lapDiagnostics.readReplies++;
@@ -524,6 +534,19 @@ void notifyTwistTargetChanged()
     lastTwistTarget = NAN;
     lastTwistControlMs = 0;
     stopTwistKeepLock();
+}
+
+void requestIndexHome(SystemState &S)
+{
+    // Explicit operator retry, equivalent to releasing/re-engaging the lock,
+    // without discarding valid feedback. Never automatically retry a fault.
+    stopTwistKeepLock();
+    twistFaultLatched = false;
+    S.indexSpinRpm = 0;
+    S.twistLock = 1;
+    notifyTwistTargetChanged();
+    setTwistDriverEnabled(true);
+    S.dirty = true;
 }
 
 bool requestZMove(long steps)
@@ -882,13 +905,18 @@ static void updateTwistMotor(SystemState &S)
     }
 
     lastTwistControlMs = now;
+    if (lastTwistControlSample == S.twistSampleSequence) return;
+    lastTwistControlSample = S.twistSampleSequence;
 
     const float positionTolerance = POSITION_ERROR_TOL;
     if (fabsf(shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex)) <= positionTolerance)
     {
-        twistSettled = true;
+        const bool wasMoving = twistDirStep.distanceToGo() != 0;
         stopTwistKeepLock();
         setTwistDriverEnabled(true);
+        S.twistError = shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex);
+        if (wasMoving) { nLocks = 0; twistSettleUntilMs = now + 100; }
+        else if (++nLocks >= TWIST_SETTLE_FRAMES) twistSettled = true;
         return;
     }
 
@@ -921,7 +949,8 @@ static void updateTwistMotor(SystemState &S)
             // Discard the remaining open-loop pulses when feedback reaches
             // or passes the target. Never finish a stale correction segment.
             stopTwistKeepLock();
-            if (absErr <= positionTolerance) twistSettled = true;
+            nLocks = 0;
+            if (absErr <= positionTolerance) twistSettleUntilMs = now + 100;
             if (absErr > positionTolerance)
             {
                 // Small crossings can settle with a damped reverse correction.
@@ -954,6 +983,7 @@ static void updateTwistMotor(SystemState &S)
                                             TWIST_CORRECTION_LIMIT);
         long totalSteps = lroundf(limitedErr * tiltStepsPerIndexUnit) *
                           TWIST_MOTOR_SIGN * S.indexSign;
+        if (!totalSteps) totalSteps = (err > 0 ? 1 : -1) * TWIST_MOTOR_SIGN * S.indexSign;
         long steps = lroundf(float(totalSteps) * TWIST_CORRECTION_GAIN);
 
         if (steps == 0 && totalSteps != 0)

@@ -210,6 +210,7 @@ GemSdResult parseAscLine(char* line, GemSdDesign* design, bool* headerSeen,
     if (!*headerSeen)
     {
         if (strncmp(text, "GemCad ", 7)) return GemSdResult::BAD_HEADER;
+        snprintf(design->formatVersion, sizeof(design->formatVersion), "%s", text+7);
         *headerSeen = true;
         return GemSdResult::OK;
     }
@@ -233,6 +234,20 @@ GemSdResult parseAscLine(char* line, GemSdDesign* design, bool* headerSeen,
         char* meridianText = nextToken(&cursor);
         if (meridianText && !parseFloatToken(meridianText, &design->meridian))
             return GemSdResult::BAD_NUMBER;
+    }
+    else if (record == 'y')
+    {
+        char* fold = nextToken(&cursor); char* mirrored = nextToken(&cursor);
+        design->symmetry = fold ? atoi(fold) : 0;
+        design->mirror = mirrored && *mirrored=='y';
+    }
+    else if (record == 'I')
+        design->refractiveIndex = strtod(skipSpace(cursor), nullptr);
+    else if (record == 'H' && design->title[0])
+    {
+        size_t used = strlen(design->attribution);
+        snprintf(design->attribution+used, sizeof(design->attribution)-used,
+                 "%s%s", used ? "; " : "", skipSpace(cursor));
     }
     else if (record == 'H' && !design->title[0])
     {
@@ -563,6 +578,81 @@ bool gemSdFileNameAt(size_t index, char* output, size_t outputSize)
 bool gemSdFilePathAt(size_t index, char* output, size_t outputSize)
 {
     return findFile(index, output, outputSize);
+}
+
+bool gemSdFileTitleAt(size_t index, char* title, size_t size)
+{
+    if (!title || !size) return false;
+    snprintf(title, size, "null");
+    char path[GEM_SD_FILE_NAME_LENGTH] = {};
+    if (!findFile(index, path, sizeof(path))) return false;
+    File file = SD.open(path, FILE_READ);
+    if (!file) return false;
+    bool header = false;
+    char line[192];
+    // Bounded metadata preview: validate header, then find the first title.
+    for (int row = 0; row < 24 && file.available(); ++row) {
+        size_t n = file.readBytesUntil('\n', line, sizeof(line)-1); line[n]=0;
+        char* text = skipSpace(line);
+        size_t len = strlen(text);
+        while (len && (text[len-1]=='\r' || text[len-1]==' ')) text[--len]=0;
+        if (!*text) continue;
+        if (!header) {
+            header = !strncmp(text,"GemCad ",7) || !strncmp(text,"FacetHound 1",12);
+            if (!header) break;
+        } else if (*text=='H') {
+            snprintf(title, size, "%s", skipSpace(text+1)); file.close(); return true;
+        }
+    }
+    file.close(); return header;
+}
+
+bool readGemSdMetadataAt(size_t index, GemSdDesign* design)
+{
+    char path[GEM_SD_FILE_NAME_LENGTH] = {};
+    if (!design || !findFile(index,path,sizeof(path))) return false;
+    File file = SD.open(path, FILE_READ); if (!file) return false;
+    GemSdDesign header; bool seen = false; double angle=0, distance=0;
+    uint16_t tier=0, facet=0;
+    char line[384];
+    for (int row=0; row<32 && file.available(); ++row) {
+        size_t n=file.readBytesUntil('\n',line,sizeof(line)-1); line[n]=0;
+        if (n && line[n-1]=='\r') line[n-1]=0;
+        if (*skipSpace(line)=='a') break;
+        if (parseAscLine(line,&header,&seen,&angle,&distance,&tier,&facet)!=GemSdResult::OK) break;
+    }
+    file.close();
+    if (!seen) return false;
+    design->symmetry=header.symmetry; design->mirror=header.mirror;
+    design->refractiveIndex=header.refractiveIndex;
+    snprintf(design->formatVersion,sizeof(design->formatVersion),"%s",header.formatVersion);
+    snprintf(design->attribution,sizeof(design->attribution),"%s",header.attribution);
+    return true;
+}
+
+bool rememberGemSdPath(const char* path)
+{
+    if (!sdReady || !path || strlen(path) >= GEM_SD_FILE_NAME_LENGTH) return false;
+    File file = SD.open("/facetHound.last", "w");
+    if (!file) return false;
+    bool ok = file.println(path) == strlen(path)+2;
+    file.close(); return ok;
+}
+
+int lastGemSdIndex()
+{
+    if (!sdReady) return -1;
+    File file = SD.open("/facetHound.last", FILE_READ);
+    if (!file) return -1;
+    char wanted[GEM_SD_FILE_NAME_LENGTH] = {};
+    size_t n = file.readBytesUntil('\n', wanted, sizeof(wanted)-1); file.close();
+    while (n && (wanted[n-1]=='\r' || wanted[n-1]=='\n')) wanted[--n]=0;
+    const size_t count = gemSdFileCount();
+    for (size_t i=0; i<count; ++i) {
+        char path[GEM_SD_FILE_NAME_LENGTH] = {};
+        if (findFile(i,path,sizeof(path)) && !strcmp(path,wanted)) return int(i);
+    }
+    return -2; // A remembered selection exists but cannot be restored.
 }
 
 GemSdResult loadGemSdFileAt(size_t index, GemSdDesign* design)

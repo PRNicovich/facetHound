@@ -99,6 +99,29 @@ bool RuntimeGemMesh::finishTransfer()
     }
     receiving_ = false;
     active_ = true;
+    // Derive outward face normals from the transferred geometry itself.
+    // This avoids assuming the compiled example and imported ASC share axes.
+    for (uint16_t p = 0; p < planes_.size(); ++p) {
+        RuntimeMeshVertex anchor; bool haveAnchor = false;
+        float best = 0, nx = 0, ny = 0, nz = 0;
+        for (uint16_t e = 0; e < edges_.size(); ++e) {
+            if (!edgeHasPlane(e, p)) continue;
+            const auto& a = vertices_[edges_[e].a];
+            const auto& b = vertices_[edges_[e].b];
+            if (!haveAnchor) { anchor = a; haveAnchor = true; }
+            float ax = a.x-anchor.x, ay = a.y-anchor.y, az = a.z-anchor.z;
+            float bx = b.x-anchor.x, by = b.y-anchor.y, bz = b.z-anchor.z;
+            float x = ay*bz-az*by, y = az*bx-ax*bz, z = ax*by-ay*bx;
+            float length2 = x*x+y*y+z*z;
+            if (length2 > best) { best = length2; nx=x; ny=y; nz=z; }
+        }
+        if (best > 1e-18f) {
+            float factor = 1.0f/sqrtf(best);
+            if (nx*anchor.x+ny*anchor.y+nz*anchor.z < 0) factor = -factor;
+            planes_[p].nx=nx*factor; planes_[p].ny=ny*factor; planes_[p].nz=nz*factor;
+            planes_[p].normalValid = true;
+        }
+    }
     return true;
 }
 

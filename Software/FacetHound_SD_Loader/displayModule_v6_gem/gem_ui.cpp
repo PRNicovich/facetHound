@@ -489,14 +489,38 @@ void GemUi::updatePose(const GemTelemetry& state)
     }
     // No matching identity => no highlight, never guess from sensor values.
     selectedPlane_ = jobPlane >= 0 ? uint16_t(jobPlane) : UINT16_MAX;
+    const auto& loaded = runtimeGemMesh();
+    if (loaded.active() && selectedPlane_ < loaded.planes().size() &&
+        loaded.planes()[selectedPlane_].normalValid) {
+        const auto& face = loaded.planes()[selectedPlane_];
+        if (!orientationInitialized_ || state.indexEngaged) {
+            runtimeTipTarget_ = atan2f(hypotf(face.nx, face.ny), face.nz) / DEG_TO_RAD;
+            const float faceAzimuth = atan2f(face.ny, face.nx);
+            float machineTarget = selectedTargetTwist(state);
+            runtimeTwistOffset_ = (0.25f - faceAzimuth / TWO_PI) * meshResolution +
+                loaded.indexSign() * machineTarget;
+        }
+        float actual = state.wheelIndex > 0 ? targetTwist * meshResolution/state.wheelIndex : 0;
+        float twistTarget = normalizedTwist(runtimeTwistOffset_ - loaded.indexSign()*actual, meshResolution);
+        uint32_t now = millis();
+        float gain = 1.0f-expf(-float(min(uint32_t(100), now-lastPoseMs_))/65.0f);
+        lastPoseMs_ = now;
+        if (!orientationInitialized_) {
+            displayedRenderTip_ = runtimeTipTarget_; displayedRenderTwist_ = twistTarget;
+        } else {
+            displayedRenderTip_ += wrappedDelta(runtimeTipTarget_, displayedRenderTip_, 360)*gain;
+            displayedRenderTwist_ = normalizedTwist(displayedRenderTwist_ +
+                wrappedDelta(twistTarget, displayedRenderTwist_, meshResolution)*gain, meshResolution);
+        }
+        orientationInitialized_ = true;
+        return;
+    }
 
     // Selection is always live. Unlocked means highlight-only: freeze the
     // rendered orientation, including any unfinished interpolation. Seed the
     // first frame once so startup still has a meaningful view.
-    if (orientationInitialized_ && !state.indexEngaged) {
-        lastPoseMs_ = millis();
-        return;
-    }
+    // Unlocked selection changes only the highlight. Physical encoder motion
+    // remains visible even when unlocked (including continuous index spin).
     // Locked: actual index drives rotation; selected tier drives inclination.
     // Convert machine wheel units to the mesh's index resolution.
     displayedTip_ = targetTip;
@@ -510,6 +534,9 @@ void GemUi::updatePose(const GemTelemetry& state)
         storedSelectedTip = runtime.planes()[selectedPlane_].tipDegrees;
     else if (selectedPlane_ < GemData::kPlaneCount)
         storedSelectedTip = GemData::kPlanes[selectedPlane_].tipDegrees;
+    if (!orientationInitialized_ || state.indexEngaged) poseTierTip_ = storedSelectedTip;
+    storedSelectedTip = poseTierTip_;
+    displayedTip_ = machineTip(storedSelectedTip);
     const bool reverseView = oppositeApproach(storedSelectedTip) ||
                              fabsf(fabsf(storedSelectedTip) - 90.0f) <= 0.05f;
     const float baseRenderTip = displayedTip_ *
@@ -542,7 +569,18 @@ void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
 {
     const char* title = state.jobActive && state.jobTitle && state.jobTitle[0]
                             ? state.jobTitle : GemData::kTitle;
-    textAt(gemCanvas_, title, 7, 5, C_NAME, 1, TL_DATUM);
+    const char* cursor = title;
+    for (int row=0; row<2 && *cursor; ++row) {
+        size_t count = min(size_t(23), strlen(cursor));
+        if (cursor[count] && row==0) {
+            size_t split=count; while (split && cursor[split]!=' ') --split;
+            if (split) count=split;
+        }
+        char line[26] = {}; memcpy(line,cursor,count);
+        if (row==1 && cursor[count] && count>=3) memcpy(line+count-3,"...",3);
+        textAt(gemCanvas_,line,7,5+row*11,C_NAME,1,TL_DATUM);
+        cursor+=count; while (*cursor==' ') ++cursor;
+    }
 
     if (showTier)
     {
@@ -696,8 +734,8 @@ void GemUi::drawStatic(const GemTelemetry& state)
             float centerV = 0.5f * (minV + maxV);
             float spanU = max(maxU - minU, 1.0e-6f);
             float spanV = max(maxV - minV, 1.0e-6f);
-            float scale = 0.88f * min(float(boxes[panel][2]) / spanU,
-                                      float(boxes[panel][3]) / spanV);
+            float scale = min(float(boxes[panel][2] - 32) / spanU,
+                              float(boxes[panel][3] - 32) / spanV);
             float centerX = boxes[panel][0] + 0.5f * boxes[panel][2];
             float centerY = boxes[panel][1] + 0.5f * boxes[panel][3];
 
@@ -707,8 +745,10 @@ void GemUi::drawStatic(const GemTelemetry& state)
                 float u = panel < 2 ? point.x : (panel == 2 ? point.x : point.y);
                 float v = panel < 2 ? point.y : point.z;
                 if (panel == 1) v = -v;
-                screenX_[i] = int16_t(lroundf(centerX + (u - centerU) * scale));
-                screenY_[i] = int16_t(lroundf(centerY - (v - centerV) * scale));
+                screenX_[i] = constrain(int16_t(lroundf(centerX + (u - centerU) * scale)),
+                    int16_t(boxes[panel][0]+8), int16_t(boxes[panel][0]+boxes[panel][2]-8));
+                screenY_[i] = constrain(int16_t(lroundf(centerY - (v - centerV) * scale)),
+                    int16_t(boxes[panel][1]+8), int16_t(boxes[panel][1]+boxes[panel][3]-8));
                 if (panel == 0) screenDepth_[i] = point.z;
                 else if (panel == 1) screenDepth_[i] = -point.z;
                 else if (panel == 2) screenDepth_[i] = -point.y;
@@ -869,8 +909,10 @@ void GemUi::drawHud(const GemTelemetry& state)
 
     drawSmallAxisSymbol(hudCanvas_, 14, 34, true, C_YELLOW);
     drawSmallAxisSymbol(hudCanvas_, 14, 85, false, C_CYAN);
-    hudCanvas_.fillCircle(29, 61, 4, state.indexEngaged ? C_CYAN : C_DIM);
-    hudCanvas_.fillCircle(29, 113, 4, state.zEngaged ? C_MAGENTA : C_DIM);
+    if (state.indexEngaged) hudCanvas_.fillCircle(29,61,4,C_CYAN);
+    else hudCanvas_.drawCircle(29,61,4,C_DIM);
+    if (state.zEngaged) hudCanvas_.fillCircle(29,113,4,C_MAGENTA);
+    else hudCanvas_.drawCircle(29,113,4,C_DIM);
 }
 
 void GemUi::pushGemCanvas()

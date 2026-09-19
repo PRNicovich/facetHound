@@ -14,6 +14,9 @@ def idx_to_az(i, index_res, index_sign=1, meridian=0.0):
 
 
 def plane(tilt_deg, az, d):
+    # GemCad's 0-degree pavilion culet uses negative distance (or -0 angle).
+    if abs(tilt_deg) < 1e-9 and (d < 0 or np.signbit(tilt_deg)):
+        return np.array([0.0, 0.0, -1.0]), abs(d)
     t = np.deg2rad(tilt_deg)
 
     n = np.array([
