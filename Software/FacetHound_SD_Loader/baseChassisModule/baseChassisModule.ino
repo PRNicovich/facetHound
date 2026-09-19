@@ -1158,15 +1158,9 @@ static void applyConfigAction(char* actionText)
                 return;
             }
 
-            dispSerial.print("@GEMLOAD,Saving cache,"); dispSerial.println(sourcePath);
-            GemCacheResult saveResult = saveGemCache(sourcePath, candidate,
-                                                      candidateGeometry);
-            snprintf(activeGemCacheStatus, sizeof(activeGemCacheStatus),
-                     saveResult == GemCacheResult::OK ? "BUILT_SAVED" : "BUILT_ONLY");
-            Serial.print("CACHE ");
-            Serial.print(gemCacheResultText(cacheResult));
-            Serial.print(" -> ");
-            Serial.println(gemCacheResultText(saveResult));
+            // PC-prebuilt caches are still accepted, but construction on the
+            // Pico no longer pays the slow SD geometry-write cost.
+            snprintf(activeGemCacheStatus, sizeof(activeGemCacheStatus), "BUILT_ONLY");
         }
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));

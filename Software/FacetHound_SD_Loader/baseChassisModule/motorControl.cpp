@@ -40,6 +40,7 @@ static bool zMoving = false;
 static float lastTwistTarget = NAN;
 static float twistLegStartError = 0.0f;
 static uint8_t twistOvershootCount = 0;
+static uint32_t twistSeekStartedMs = 0;
 static uint32_t twistSettleUntilMs = 0;
 static uint32_t lastTwistControlMs = 0;
 static uint32_t lastTwistControlSample = 0;
@@ -74,6 +75,9 @@ static bool lapDemoProbeRequested = false;
 static bool lapRampConfigured = false;
 static uint8_t lapRequestEcho[6] = {};
 static bool lapWasRunning = false;
+static bool lapStartPending = false;
+static uint32_t lapStartRequestedMs = 0, lapBrakeAckMs = 0;
+static uint32_t lapSpeedReplyMs = 0, lapStatusReplyMs = 0;
 static bool lapKickArmed = false;
 static bool lapKickStarted = false;
 static uint32_t lapKickStartedMs = 0;
@@ -227,6 +231,7 @@ static bool collectLapReply(SystemState &S)
         const uint16_t rawValue = (uint16_t(lapReply[3]) << 8) | lapReply[4];
         if (lapPhase == 3)
         {
+            lapSpeedReplyMs = millis();
             lapDiagnostics.lastSpeedRaw = rawValue;
             // This drive returns speed low byte first, like its speed write.
             // 14 00 / 1A 00 were displayed as 51200 / 66560 during hand spin.
@@ -237,9 +242,10 @@ static bool collectLapReply(SystemState &S)
             S.RPMValue = int((uint32_t(speedCounts) * 20U) / LAP_MOTOR_POLES);
         }
         else if (lapPhase == 4) {
+            lapStatusReplyMs = millis();
             lapDiagnostics.lastFault = uint8_t(rawValue >> 8);
             lapDiagnostics.lastRun = uint8_t(rawValue);
-            if (lapDiagnostics.lastFault && (S.motorDir == 1 || S.motorDir == 3)) {
+            if (lapDiagnostics.lastFault && !lapStartPending && (S.motorDir == 1 || S.motorDir == 3)) {
                 Serial.print("@FAULT,LAP,");
                 Serial.print(lapDiagnostics.lastFault == 1 ? "LOCKED_ROTOR" : "DRIVE_FAULT");
                 Serial.print(",code=0x"); Serial.println(lapDiagnostics.lastFault, HEX);
@@ -257,6 +263,7 @@ static bool collectLapReply(SystemState &S)
     {
         if (lapPhase == 2) {
             lapDiagnostics.commandedControl = lapReply[4];
+            if (lapStartPending && lapReply[4] == CONTROL_BRAKE) lapBrakeAckMs = millis();
             if (lapKickArmed && !lapKickStarted &&
                 (lapReply[4] == CONTROL_FORWARD || lapReply[4] == CONTROL_REVERSE)) {
                 lapKickStarted = true;
@@ -294,12 +301,18 @@ static void updateLapMotorRS485(SystemState &S)
     bool reverse = S.motorDir == 3;
     bool running = S.RPMSetpoint > 0 && (forward || reverse);
     if (running && !lapWasRunning) {
+        lapStartPending = true;
+        lapStartRequestedMs = millis(); lapBrakeAckMs = 0;
+        lapSentControl = 0xff; // Require a fresh disabled-control acknowledgment.
+        Serial.print("@LAP,START_REQUEST,dir="); Serial.print(forward ? "RIGHT" : "LEFT");
+        Serial.print(",set="); Serial.println(S.RPMSetpoint);
         lapKickArmed = S.RPMSetpoint < LAP_STARTUP_RPM;
         lapKickStarted = false;
         lapKickArmedMs = millis();
     }
     lapWasRunning = running;
-    if (!running || millis() - lapKickArmedMs >= 5000 ||
+    if (!running) lapStartPending = false;
+    if (!running || (!lapStartPending && millis() - lapKickArmedMs >= 5000) ||
         (lapKickStarted && millis() - lapKickStartedMs >= LAP_STARTUP_KICK_MS))
         lapKickArmed = false;
     lapDiagnostics.startupBoost = running && lapKickArmed;
@@ -378,6 +391,36 @@ static void updateLapMotorRS485(SystemState &S)
         writeLapRegister(REG_CONTROL, wantedControl, LAP_MOTOR_POLE_PAIRS);
         lapSentControl = wantedControl;
         return;
+    }
+
+    if (running && lapStartPending) {
+        if (millis() - lapStartRequestedMs > 5000) {
+            S.motorDir = forward ? 2 : 0; S.motorOn = 0; S.dirty = true;
+            lapStartPending = false; lapKickArmed = false;
+            Serial.print("@FAULT,LAP,START_NOT_READY,rpm="); Serial.print(S.RPMValue);
+            Serial.print(",fault=0x"); Serial.println(lapDiagnostics.lastFault, HEX);
+            return;
+        }
+        if (!lapBrakeAckMs) {
+            lapPhase = 2;
+            writeLapRegister(REG_CONTROL, CONTROL_BRAKE, LAP_MOTOR_POLE_PAIRS);
+            lapSentControl = CONTROL_BRAKE;
+            return;
+        }
+        const bool freshSpeed = int32_t(lapSpeedReplyMs-lapBrakeAckMs) > 0;
+        const bool freshStatus = int32_t(lapStatusReplyMs-lapBrakeAckMs) > 0;
+        if (millis()-lapBrakeAckMs >= 500 && freshSpeed && freshStatus &&
+            S.RPMValue <= 10 && lapDiagnostics.lastFault == 0) {
+            lapStartPending = false;
+            lapKickArmedMs = millis();
+            Serial.println("@LAP,START_READY,stopped_fault_clear");
+        } else {
+            static bool statusNext = false;
+            statusNext = !statusNext;
+            lapPhase = statusNext ? 4 : 3;
+            if (statusNext) readLapStatus(); else readLapActualSpeed();
+            return;
+        }
     }
 
     // Restore the working uiReno demo's 2 s ramp, once acknowledged. Never
@@ -864,6 +907,8 @@ static void updateTwistMotor(SystemState &S)
     {
         lastTwistTarget = S.targetTwist;
         twistOvershootCount = 0;
+        twistLegStartError = 0;
+        twistSeekStartedMs = millis();
         twistSettleUntilMs = 0;
         nLocks = 0;
         twistSettled = false;
@@ -883,6 +928,19 @@ static void updateTwistMotor(SystemState &S)
     if (twistSettleUntilMs && int32_t(millis() - twistSettleUntilMs) < 0)
         return; // Hold energized, with no queued pulses, before correcting.
     twistSettleUntilMs = 0;
+
+    if (millis() - twistSeekStartedMs > 30000) {
+        faultHoldTwist(S);
+        Serial.println("@FAULT,INDEX,NO_CONVERGENCE");
+        return;
+    }
+    // Let mechanical motion and the averaged encoder catch up after each leg.
+    // Otherwise stale feedback schedules another leg before the first is seen.
+    if (twistMoving && twistDirStep.distanceToGo() == 0) {
+        twistMoving = false;
+        twistSettleUntilMs = millis() + 100;
+        return;
+    }
 
     if (twistDirStep.distanceToGo() != 0)
     {
@@ -931,9 +989,10 @@ static void updateTwistMotor(SystemState &S)
 
     S.twistError = err;
 
-    if (twistDirStep.distanceToGo() != 0)
+    if (twistDirStep.distanceToGo() != 0 ||
+        (twistLegStartError != 0 && err * twistLegStartError <= 0))
     {
-        if (absErr > fabsf(twistLegStartError) + 0.5f)
+        if (twistDirStep.distanceToGo() != 0 && absErr > fabsf(twistLegStartError) + 0.5f)
         {
             Serial.print("@INDEX_DIAG,target="); Serial.print(S.targetTwist, 4);
             Serial.print(",actual="); Serial.print(S.actualTwist, 4);
@@ -950,20 +1009,23 @@ static void updateTwistMotor(SystemState &S)
             // or passes the target. Never finish a stale correction segment.
             stopTwistKeepLock();
             nLocks = 0;
+            twistLegStartError = 0;
             if (absErr <= positionTolerance) twistSettleUntilMs = now + 100;
             if (absErr > positionTolerance)
             {
                 // Small crossings can settle with a damped reverse correction.
                 // Large crossings or repeated hunting still latch a fault.
-                if (absErr > 2.0f || ++twistOvershootCount > 3)
+                if (absErr > 2.0f)
                 {
                     faultHoldTwist(S);
                     Serial.println("@FAULT,INDEX,OVERSHOOT");
                 }
                 else
                 {
+                    if (twistOvershootCount < 5) ++twistOvershootCount;
                     twistSettleUntilMs = now + 100;
-                    Serial.println("@INDEX,SETTLING");
+                    Serial.print("@INDEX,SETTLING,error="); Serial.print(err,4);
+                    Serial.print(",damping="); Serial.println(twistOvershootCount);
                 }
             }
             return;
@@ -984,20 +1046,22 @@ static void updateTwistMotor(SystemState &S)
         long totalSteps = lroundf(limitedErr * tiltStepsPerIndexUnit) *
                           TWIST_MOTOR_SIGN * S.indexSign;
         if (!totalSteps) totalSteps = (err > 0 ? 1 : -1) * TWIST_MOTOR_SIGN * S.indexSign;
-        long steps = lroundf(float(totalSteps) * TWIST_CORRECTION_GAIN);
+        const float damping = 1.0f / float(1U << twistOvershootCount);
+        long steps = lroundf(float(totalSteps) * TWIST_CORRECTION_GAIN * damping);
 
         if (steps == 0 && totalSteps != 0)
             steps = (totalSteps > 0) ? 1 : -1;
 
         // Slow the final approach; retain the existing upper speed cap.
-        const float approachSpeed = constrain(absErr * 300.0f, 100.0f, TWIST_MAX_SPEED);
+        const float approachSpeed = constrain(absErr * 150.0f * damping, 10.0f, TWIST_MAX_SPEED);
         twistDirStep.setMaxSpeed(approachSpeed);
-        twistDirStep.setAcceleration(TWIST_ACCEL);
+        twistDirStep.setAcceleration(max(30.0f, TWIST_ACCEL * damping));
 
         if (steps != 0 && twistDirStep.distanceToGo() == 0)
         {
             twistLegStartError = err;
             twistDirStep.move(steps);
+            twistMoving = true;
         }
 
         if (twistDirStep.distanceToGo() != 0)

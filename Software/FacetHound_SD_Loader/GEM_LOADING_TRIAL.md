@@ -1,5 +1,20 @@
 # Gem loading and index seek trial — 2026-09-18
 
+## Settling/start follow-up
+
+- Small index crossings now halve correction gain, speed and acceleration, with
+  a 100 ms feedback-settling pause between legs. Three crossings no longer latch
+  OVERSHOOT. Large crossings (>2 units), movement away, invalid feedback and a
+  30-second failure to converge still stop the seek. Settled means within the
+  existing tolerance on fresh samples, followed by energized, non-servo hold.
+- Each lap start now requires a fresh disabled/brake acknowledgment, at least
+  500 ms disabled, and fresh stopped-speed/fault-clear replies. Logs distinguish
+  START_REQUEST, START_READY and START_NOT_READY. A running drive fault still
+  pauses; there is no automatic repeated stall retry or current-limit increase.
+- Geometry is built in RAM without saving an automatic cache. Existing valid
+  PC-prebuilt caches are accepted. Only the tiny last-selected filename is saved.
+- Loading beyond the initial splash is text-only with the progress bar.
+
 Upload both `baseChassisModule` and `displayModule_v6_gem`. No mast or keyboard
 firmware change is required. Both report build `GEM-NORMAL-HOME-20260918`.
 

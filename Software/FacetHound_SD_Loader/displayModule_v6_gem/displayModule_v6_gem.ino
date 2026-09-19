@@ -159,6 +159,12 @@ static void drawLoadingProgress(int percent, bool force = false)
   if (!force && percent == previous && millis() - lastDraw < 500) return;
   previous = percent; lastDraw = millis();
   const int y = 382;
+  if (!splashActive && force) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.drawString("FACET HOUND",160,154,4);
+  }
   tft.fillRect(0, y, 320, 70, TFT_BLACK);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -623,7 +629,7 @@ void parseLine(char* line)
     snprintf(loadingStage, sizeof(loadingStage), "%s", valueText);
     loadingDesign = strcmp(valueText, "ERROR") != 0;
     if (!loadingDesign) { meshDisplayFailed = true; bootModelPending = false; }
-    if (!splashActive) drawLoadingProgress(-1);
+    if (!splashActive) drawLoadingProgress(-1, true);
     return;
   }
   if (!strncmp(key, "MESH", 4)) meshLastRxMs = millis();
@@ -1145,7 +1151,8 @@ void drawSplashScreen()
       const uint16_t gray = uint16_t((level >> 3) << 11) |
                             uint16_t((level >> 2) << 5) |
                             uint16_t(level >> 3);
-      splash.drawLine(sx[edge.a], sy[edge.a], sx[edge.b], sy[edge.b], gray);
+      if (elapsed < kTotalMs)
+        splash.drawLine(sx[edge.a], sy[edge.a], sx[edge.b], sy[edge.b], gray);
     }
 
     if (elapsed >= kGemOnlyMs)
