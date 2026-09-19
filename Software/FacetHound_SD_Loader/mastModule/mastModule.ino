@@ -29,7 +29,8 @@ SerialPIO baseSerial(BASE_TX_PIN, BASE_RX_PIN);
 
 RunningAverage twistCosAverage(TWIST_AVERAGE_SAMPLES);
 RunningAverage twistSinAverage(TWIST_AVERAGE_SAMPLES);
-RunningAverage tipAverage(TIP_AVERAGE_SAMPLES);
+RunningAverage tipCosAverage(TIP_AVERAGE_SAMPLES);
+RunningAverage tipSinAverage(TIP_AVERAGE_SAMPLES);
 RunningAverage forceAverage(FORCE_AVERAGE_SAMPLES);
 
 uint32_t lastTelemetryMs = 0;
@@ -130,7 +131,10 @@ static void sampleSensors()
   const bool twistWasValid = twistSampleValid;
   tipSampleValid = tipSample != 0xFFFFu;
   twistSampleValid = twistSample != 0xFFFFu;
-  if (!tipWasValid) tipAverage.clear();
+  if (!tipWasValid) {
+    tipCosAverage.clear();
+    tipSinAverage.clear();
+  }
   if (!twistWasValid)
   {
     twistCosAverage.clear();
@@ -155,8 +159,15 @@ static void sampleSensors()
   // existing default tip zero (approximately 0..131071 for both channels).
   if (tipSampleValid)
   {
-    tipAverage.addValue(long(tipSample) * TIP_AVERAGE_SAMPLES);
-    tipRawAveraged = lroundf(tipAverage.getFastAverage());
+    const float phase = TWO_PI * float(tipSample) / 16384.0f;
+    tipCosAverage.addValue(cosf(phase));
+    tipSinAverage.addValue(sinf(phase));
+    float averagePhase = atan2f(tipSinAverage.getFastAverage(),
+                                tipCosAverage.getFastAverage());
+    if (averagePhase < 0.0f) averagePhase += TWO_PI;
+    // Keep the existing 131072-count protocol scale, but never average
+    // 16383 and 0 into a false half-revolution position.
+    tipRawAveraged = lroundf(averagePhase * 131072.0f / TWO_PI) & 0x1FFFF;
   }
   forceAverage.addValue(long(forceSample) * FORCE_AVERAGE_SAMPLES);
   forceRawAveraged = lroundf(forceAverage.getFastAverage());
@@ -203,7 +214,8 @@ void setup()
 
   twistCosAverage.clear();
   twistSinAverage.clear();
-  tipAverage.clear();
+  tipCosAverage.clear();
+  tipSinAverage.clear();
   forceAverage.clear();
 
   // Seed every average before the first published frame.

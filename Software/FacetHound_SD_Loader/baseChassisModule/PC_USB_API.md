@@ -51,6 +51,8 @@ unknown lines for forward compatibility.
 | `SD STATUS` | Report SD initialization and root-directory state | `@SD,...` |
 | `SD RETRY` | Force SD reinitialization after insertion/wiring changes | `@ACK,SD,RETRY,READY/MISSING` |
 | `SD LIST` | List readable root-level `.asc` and `.fct` files | `@SD_FILE,<index>,<name>` |
+| `GEM LOAD <index>` | Load the index returned by SD LIST using the existing cache/build and mesh-transfer path; axes unlocked and lap paused | `@GEM,LOADED,<path>` or `@CFGNAK,LOAD_SD_FILE,<reason>` |
+| `MODE CLASSIC\|STATIC\|DYNAMIC` | Select display mode without changing motor locks | `@ACK,MODE,<mode>` |
 | `FLOW <0..750>` | Set raw pump velocity; displayed mL/min uses the configured conversion | `@ACK,FLOW,<value>` |
 | `PUMP FWD` | Set forward pump direction | `@ACK,PUMP` |
 | `PUMP REV` | Set reverse pump direction | `@ACK,PUMP` |

@@ -184,9 +184,10 @@ static void sendKV(const char* key, int v)
 static void updateTipDegreesFromEncoder()
 {
     float countDelta = float(S.tipEncoder - S.tipZeroRaw);
-    if (countDelta > TIP_COUNTS_CLASSIC * 0.5f) countDelta -= TIP_COUNTS_CLASSIC;
-    if (countDelta < -TIP_COUNTS_CLASSIC * 0.5f) countDelta += TIP_COUNTS_CLASSIC;
     float degrees = countDelta * (360.0f / TIP_COUNTS_CLASSIC);
+    // Down=0, horizontal=90, up=180. Keep the wrap outside this workspace.
+    while (degrees < -90.0f) degrees += 360.0f;
+    while (degrees >= 270.0f) degrees -= 360.0f;
     S.tipDegrees = degrees - (S.tableAdapter ? 45.0f : 0.0f);
 }
 
@@ -436,6 +437,7 @@ static void sendCfgNak(const char* id, const char* reason)
     dispSerial.print(id);
     dispSerial.print(",");
     dispSerial.println(reason);
+    Serial.print("@CFGNAK,"); Serial.print(id); Serial.print(','); Serial.println(reason);
 }
 
 static void safeProtocolText(const char* input, char* output, size_t outputSize)
@@ -995,6 +997,11 @@ static void applyConfigAction(char* actionText)
     }
     if (!strcmp(action, "LOAD_SD_FILE"))
     {
+        if (S.twistLock || S.zLock || S.indexSpinRpm != 0.0f ||
+            S.motorDir == 1 || S.motorDir == 3) {
+            sendCfgNak(action, "STOP_MOTION_FIRST");
+            return;
+        }
         long index = -1;
         if (!parseStrictLong(value, &index) || index < 0)
         {
@@ -1045,6 +1052,7 @@ static void applyConfigAction(char* actionText)
         }
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));
+        Serial.print("@GEM,LOADED,"); Serial.println(sourcePath);
         char title[GEM_SD_TITLE_LENGTH] = {};
         safeProtocolText(activeGemDesign.title, title, sizeof(title));
         sendCfgAck(action, title);
@@ -1386,6 +1394,7 @@ static void printUsbHelp()
     Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
     Serial.println("@HELP,SD STATUS|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
+    Serial.println("@HELP,GEM LOAD <SD-file-index> | MODE CLASSIC|STATIC|DYNAMIC");
 }
 
 static bool selectAdjacentGemTier(bool forward)
@@ -1611,6 +1620,31 @@ static void handleUsbCommand(char* line)
     char* save = nullptr;
     char* command = strtok_r(line, " \t", &save);
     if (!command) return;
+
+    if (!strcasecmp(command, "MODE")) {
+        char* mode = strtok_r(nullptr, " \t", &save);
+        if (!mode || (strcasecmp(mode, "CLASSIC") && strcasecmp(mode, "STATIC") &&
+                      strcasecmp(mode, "DYNAMIC"))) {
+            Serial.println("@ERR,MODE,expected CLASSIC|STATIC|DYNAMIC"); return;
+        }
+        const char* canonical = !strcasecmp(mode, "DYNAMIC") ? "DYNAMIC" :
+                                !strcasecmp(mode, "STATIC") ? "STATIC" : "CLASSIC";
+        setDisplayVisualMode(canonical);
+        dispSerial.print("@MODE,"); dispSerial.println(canonical);
+        Serial.print("@ACK,MODE,"); Serial.println(canonical);
+        return;
+    }
+    if (!strcasecmp(command, "GEM")) {
+        char* verb = strtok_r(nullptr, " \t", &save);
+        char* number = strtok_r(nullptr, " \t", &save);
+        long index = -1;
+        if (!verb || strcasecmp(verb, "LOAD") || !parseStrictLong(number, &index) || index < 0) {
+            Serial.println("@ERR,GEM,expected LOAD <file-index-from-SD-LIST>"); return;
+        }
+        char action[48]; snprintf(action, sizeof(action), "LOAD_SD_FILE,%ld", index);
+        applyConfigAction(action);
+        return;
+    }
 
     if (!strcasecmp(command, "HELP"))
     {

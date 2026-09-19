@@ -46,7 +46,10 @@ bool reopenCard(bool force = false)
     digitalWrite(GEM_SD_CS_PIN, HIGH);
     sdDiagnostics.beginAttempts++;
     sdDiagnostics.lastAttemptMs = now;
-    sdReady = SD.begin(GEM_SD_CS_PIN, gemSdSpi);
+    // Conservative transfer rate for the cabled v9 reader, rather than the
+    // library's faster default. Does not format or modify the card.
+    SD.end(false);
+    sdReady = SD.begin(GEM_SD_CS_PIN, uint32_t(1000000), gemSdSpi);
     sdDiagnostics.ready = sdReady;
     sdDiagnostics.rootChecked = false;
     sdDiagnostics.rootReadable = false;

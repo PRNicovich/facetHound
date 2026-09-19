@@ -26,7 +26,7 @@ struct SystemState
 
     // Mast sensors
     int   tipEncoder = 0;
-    int   tipZeroRaw = 47850;
+    int   tipZeroRaw = 82832; // Provisional straight-down zero from bench.
     float tipDegrees = 0.0f;
     bool  tableAdapter = false;    // subtract 45 degrees from calibrated tip
 

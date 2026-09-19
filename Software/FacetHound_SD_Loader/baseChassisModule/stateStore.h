@@ -253,7 +253,8 @@ static void sanitizeState(SystemState& S)
     S.zSign = S.zSign < 0 ? -1 : 1;
     S.tableAdapter = S.tableAdapter ? true : false;
     if (S.twistZeroRaw < 0 || S.twistZeroRaw > 4095) S.twistZeroRaw = 0;
-    if (S.tipZeroRaw < 0 || S.tipZeroRaw >= 131072) S.tipZeroRaw = 47850;
+    if (S.tipZeroRaw < 0 || S.tipZeroRaw >= 131072 || S.tipZeroRaw == 47850)
+        S.tipZeroRaw = 82832; // Migrate obsolete default, preserve custom zeros.
     if (!isfinite(S.flowTicksToMlMin) || S.flowTicksToMlMin < 0.000001f ||
         S.flowTicksToMlMin > 10.0f) S.flowTicksToMlMin = 0.052f;
     S.indexSpinRpm = 0.0f;

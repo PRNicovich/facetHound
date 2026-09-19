@@ -1,5 +1,39 @@
 # Encoder startup, powered hold, and BLD isolation trial
 
+## Latest bench results and trial
+
+- Removing MODE conductors fixed encoder cold start. Leave encoder MODE pin 5
+  permanently unconnected; retain the other five conductors.
+- Replacing the RS485 adapter produced valid BLD reads/writes without CRC errors.
+  Fault 0x04 is Hall value abnormal, NOT current limiting (overcurrent is 0x02).
+  Verify motor Hall +5V/GND and HA/HB/HC against motor documentation, with power
+  off for rewiring. Do not raise current limits or switch to sensorless blindly.
+- Provisional tip down zero is 82832; horizontal sample 115896 yields 90.813 deg.
+  The old default 47850 migrates; custom stored zeros remain. Range wraps at
+  -90/270, outside down=0, horizontal=90, up=180. Table adapter subtracts 45.
+- Paused BLD control now matches the original library's 0x0C brake word instead
+  of 0x0D (enable+brake). Status faults refresh every fourth telemetry poll.
+  The legacy DEMOPROBE `run` field is the status register's low byte; the manual
+  calls this byte reserved, so do not interpret 21 as a running speed/state.
+
+BLD source: https://ae01.alicdn.com/kf/Sdb18dfe1fd7741f7bf6f43a54702a5abB.pdf
+
+SD uses a conservative 1 MHz SPI transfer rate for this trial. From base USB:
+
+```text
+STOP
+SD RETRY
+SD LIST
+GEM LOAD 0
+MODE DYNAMIC
+```
+
+Replace 0 with the desired file index in SD LIST. If RETRY is not READY, stop
+there: firmware cannot load an unmounted card. Report that result and card
+format/capacity; do not format or erase it. Root-level ASC/FCT sources are listed;
+matching FHC caches are loaded automatically, or built/saved when absent. This
+trial does not claim SD hardware success before the user's bench test.
+
 Flash baseChassisModule and mastModule for this trial. Display and keyboard
 firmware are unchanged. No encoder zero-setting or homing command is sent.
 

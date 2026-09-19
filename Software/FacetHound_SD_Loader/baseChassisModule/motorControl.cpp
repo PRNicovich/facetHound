@@ -52,7 +52,7 @@ static const uint16_t REG_ACTUAL_SPEED = 0x8018;
 static const uint16_t REG_STATUS       = 0x801B;
 static const uint8_t CONTROL_FORWARD   = 0x09;
 static const uint8_t CONTROL_REVERSE   = 0x0B;
-static const uint8_t CONTROL_BRAKE     = 0x0D;
+static const uint8_t CONTROL_BRAKE     = 0x0C; // NW + BK, EN clear; exact demo.
 
 static uint8_t lapReply[8];
 static uint8_t lapReplyLength = 0;
@@ -312,8 +312,12 @@ static void updateLapMotorRS485(SystemState &S)
 
     if (millis() - lapLastFrameMs >= 250)
     {
-        lapPhase = 3;
-        readLapActualSpeed();
+        static uint8_t poll = 0;
+        if (++poll >= 4) {
+            poll = 0; lapPhase = 4; readLapStatus();
+        } else {
+            lapPhase = 3; readLapActualSpeed();
+        }
     }
 }
 #endif
