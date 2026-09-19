@@ -151,12 +151,14 @@ bool splashActive = false;
 static void sendLineBoth(const char* line);
 char loadingTitle[64] = {};
 char loadingStage[40] = "Waiting for base";
+TFT_eSprite loadingProgress(&tft);
 
 static void drawLoadingProgress(int percent, bool force = false)
 {
   static int previous = -2;
   static uint32_t lastDraw = 0;
-  if (!force && percent == previous && millis() - lastDraw < 500) return;
+  if (!force && millis() - lastDraw < 100 && percent != 100) return;
+  if (!force && percent == previous && percent >= 0) return;
   previous = percent; lastDraw = millis();
   const int y = 382;
   if (!splashActive && force) {
@@ -171,19 +173,22 @@ static void drawLoadingProgress(int percent, bool force = false)
     tft.fillCircle(x-6,184,2,title); tft.fillCircle(x+width+6,184,2,title);
     tft.unloadFont();
   }
-  tft.fillRect(0, y, 320, 70, TFT_BLACK);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(loadingTitle, 160, y + 9, 2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  loadingProgress.setColorDepth(8);
+  if (!loadingProgress.createSprite(320,70)) return;
+  loadingProgress.fillSprite(TFT_BLACK);
+  loadingProgress.setTextDatum(MC_DATUM);
+  loadingProgress.setTextColor(TFT_WHITE, TFT_BLACK);
+  loadingProgress.drawString(loadingTitle, 160, 9, 2);
+  loadingProgress.setTextColor(TFT_CYAN, TFT_BLACK);
   char label[64];
   if (percent >= 0) snprintf(label, sizeof(label), "%s %d%%", loadingStage, percent);
   else snprintf(label, sizeof(label), "%s...", loadingStage);
-  tft.drawString(label, 160, y + 29, 2);
-  tft.drawRect(20, y + 46, 280, 12, TFT_DARKGREY);
+  loadingProgress.drawString(label, 160, 29, 2);
+  loadingProgress.drawRect(20, 46, 280, 12, TFT_DARKGREY);
   const int width = percent < 0 ? 40 : constrain(percent, 0, 100) * 276 / 100;
   const int x = percent < 0 ? int((millis() / 8) % 236) : 0;
-  tft.fillRect(22 + x, y + 48, width, 8, TFT_CYAN);
+  loadingProgress.fillRect(22 + x, 48, width, 8, TFT_CYAN);
+  loadingProgress.pushSprite(0,y);
 }
 
 static void acknowledgeMeshRow(char kind, uint16_t id)
@@ -203,7 +208,7 @@ static const uint32_t DISPLAY_BAUD = 460800;
 static const uint16_t RX_BYTE_BUDGET = 2048;
 static const uint8_t RX_LINE_BUDGET = 128;
 static const uint32_t SETTINGS_MAGIC = 0x46484D36; // "FHM6"
-static const char DISPLAY_FIRMWARE_ID[] = "DISPLAY-CACHE-20260918";
+static const char DISPLAY_FIRMWARE_ID[] = "INTEGRATION-RELEASE-20260918";
 
 struct PersistedSettings
 {
@@ -373,6 +378,17 @@ static void saveDisplayModeAndRestart(DisplayMode nextMode)
   settings.mode = static_cast<uint8_t>(nextMode);
   EEPROM.put(0, settings);
   EEPROM.commit();
+
+  if (displayMode != DisplayMode::CLASSIC && nextMode != DisplayMode::CLASSIC) {
+    // Both views share the same resident mesh and sprite dimensions.
+    displayMode = nextMode;
+    closeSettingsMenu();
+    gemUi.begin(displayMode);
+    restoreDisplayPending = true;
+    ++telemetryVersion;
+    reportDisplayMode("@MODE,");
+    return;
+  }
 
   Serial.print("@MODE,RESTARTING,");
   Serial.println(displayModeName(nextMode));
@@ -1706,8 +1722,8 @@ void setup()
 {
   Serial.begin(115200);
   baseSerial.begin(DISPLAY_BAUD);
-  Serial.println("@BUILD,DISPLAY,DISPLAY-CACHE-20260918");
-  baseSerial.println("@BUILD,DISPLAY,DISPLAY-CACHE-20260918");
+  Serial.println("@BUILD,DISPLAY,INTEGRATION-RELEASE-20260918");
+  baseSerial.println("@BUILD,DISPLAY,INTEGRATION-RELEASE-20260918");
 
   // The animated title card is useful on the bench, but it should not hold up
   // an installed display.  Treat USB mode as an actively opened CDC port, not
@@ -1727,10 +1743,14 @@ void setup()
   tft.init();
   tft.setRotation(2);
   systemReady = true;
-  splashActive = true;
-  sendLineBoth("@CFGGET,MESH");
-  drawSplashScreen(); // Title card on every restart, independent of USB demo mode.
-  splashActive = false;
+  if (displayMode == DisplayMode::CLASSIC) {
+    bootModelPending=false; // Machine-status mode has no model dependency.
+  } else {
+    splashActive = true;
+    sendLineBoth("@CFGGET,MESH");
+    drawSplashScreen();
+    splashActive = false;
+  }
 
   if (bootModelPending || meshReceiving || loadingDesign || meshDisplayFailed) {
     drawLoadingProgress(-1,true);
@@ -1794,6 +1814,8 @@ void loop()
     yield();
     return;
   }
+
+  loadingProgress.deleteSprite(); // Reclaim temporary receive UI RAM.
 
   // This heartbeat gives the base a continuous, non-motion-dependent way to
   // verify the display-to-base half of the UART.  Encoder traffic alone is not

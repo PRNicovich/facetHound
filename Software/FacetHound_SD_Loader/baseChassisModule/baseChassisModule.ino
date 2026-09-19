@@ -36,6 +36,7 @@ bool displayModeKnown = false;
 char activeGemCacheStatus[20] = "NONE";
 int pendingGemLoad = -1;
 bool savedGemRestoreFailed = false;
+bool savedGemRestorePending = true;
 uint32_t pendingGemLoadMs = 0;
 
 static const float TWIST_ENCODER_COUNTS = 4096.0f;
@@ -540,7 +541,7 @@ static void setDisplayVisualMode(const char* mode)
     const bool enteringGemView = displayVisualMode == 0 && next != 0;
     displayVisualMode = next;
     displayModeKnown = true;
-    if (!enteringGemView || activeGemLoaded) return;
+    if (!enteringGemView || activeGemLoaded || savedGemRestorePending) return;
 
     const uint8_t firstTier = BuiltinGem::kCuts[0].tier;
     float lowestIndex = INFINITY;
@@ -1314,6 +1315,16 @@ void displayRxTask()
                 else if (!strcasecmp(valueText, "GEM_INFO")) sendLoadedGemInfo();
                 else if (!strcasecmp(valueText, "MESH"))
                 {
+                    if (savedGemRestorePending && !activeGemLoaded) {
+                        savedGemRestorePending=false;
+                        const int index=lastGemSdIndex();
+                        savedGemRestoreFailed=index == -2;
+                        if(index>=0) {
+                            char action[48]; snprintf(action,sizeof(action),"LOAD_SD_FILE,%d",index);
+                            applyConfigAction(action);
+                            savedGemRestoreFailed=!activeGemLoaded;
+                        }
+                    }
                     sendActiveMesh();
                 }
                 else if (!strncasecmp(valueText, "POSITIONS,", 10))
@@ -2553,14 +2564,8 @@ void setup()
     }
 
     forceSafeBootState();
-    // Restore the selected file, not a saved mark list paired with the demo mesh.
-    const int restoreGem = lastGemSdIndex();
-    savedGemRestoreFailed = restoreGem == -2;
-    if (restoreGem >= 0) {
-        char action[48]; snprintf(action, sizeof(action), "LOAD_SD_FILE,%d", restoreGem);
-        applyConfigAction(action);
-        savedGemRestoreFailed = !activeGemLoaded;
-    }
+    // Classic boots directly from machine state. Restore geometry only when
+    // a graphical display asks for MESH, not on every base power-on.
 
     hardStopZ();
 
@@ -2577,7 +2582,7 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
-    Serial.println("@BUILD,BASE,DISPLAY-CACHE-20260918");
+    Serial.println("@BUILD,BASE,INTEGRATION-RELEASE-20260918");
     Serial.print("KEYBOARD UART MAP: ");
     Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");
     Serial.print("MAST UART MAP: ");

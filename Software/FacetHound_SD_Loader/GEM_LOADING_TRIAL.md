@@ -1,5 +1,8 @@
 # Gem loading and index seek trial — 2026-09-18
 
+For final Classic startup, mode switching and release behavior, see
+RELEASE_2026-09-18.md; it supersedes the earlier trial notes below.
+
 ## Settling/start follow-up
 
 - Small index crossings now halve correction gain, speed and acceleration, with
