@@ -246,7 +246,7 @@ void toggleFlowPause(SystemState* S)
 
 void changeMotorSpeed(SystemState* S, int delta)
 {
-    S->RPMSetpoint += delta;
+    S->RPMSetpoint += 5 * delta;
 
     if (S->RPMSetpoint < RPM_LIMIT_LOW)
         S->RPMSetpoint = RPM_LIMIT_LOW;

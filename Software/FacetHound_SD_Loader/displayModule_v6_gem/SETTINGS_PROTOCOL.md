@@ -123,9 +123,16 @@ After building a loaded ASC/FCT design, the base streams `MESHBEGIN`, sequential
 `MESHV` vertices, `MESHE` edges, `MESHP` facet poses/names, and `MESHEND`. Edge
 rows contain a compact list of supporting plane ids for facet highlighting.
 Each plane row retains the imported name (`C1`, `P1`, `G2`, `T`, etc.) for the
-tip-angle HUD. Transfer is activated only when every declared row arrives in
-order; otherwise the display clears the incomplete mesh and retains the
-compiled fallback. The display requests recovery with `@CFGGET,MESH` at boot.
+tip-angle HUD. The base waits for `@MESHACK,BEGIN`, then sends one geometry row
+per 5 ms without blocking its main loop. The display suspends rendering during
+receipt. Transfer is activated only when every declared row arrives in order.
+`@MESHACK,READY` closes settings, resets the view pose and redraws the current
+mode with the new mesh. A failed transfer shows a reload error instead of
+rendering the built-in mesh with the loaded job's points. The base reports
+`@GEM,DISPLAY_READY` or `@GEM,DISPLAY_ERROR,...` to USB; `@GEM,LOADED,...`
+alone means the base has loaded/built geometry, not that the display has it.
+The display requests recovery with `@CFGGET,MESH` at boot. Both base and
+display firmware must be updated together for the BEGIN handshake.
 
 Runtime limits are 512 planes, 1,024 vertices, and 2,048 edges.
 

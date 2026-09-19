@@ -71,6 +71,14 @@ static uint8_t lapSentControl = 0xff;
 static bool lapProbeRequested = false;
 static bool lapDemoProbeRequested = false;
 static bool lapRampConfigured = false;
+static uint8_t lapRequestEcho[6] = {};
+static bool lapWasRunning = false;
+static bool lapKickArmed = false;
+static bool lapKickStarted = false;
+static uint32_t lapKickStartedMs = 0;
+static uint32_t lapKickArmedMs = 0;
+static constexpr uint32_t LAP_STARTUP_KICK_MS = 2500; // Includes existing 2 s ramp.
+static constexpr int LAP_STARTUP_RPM = 300;
 
 static void rememberLapReply(uint8_t length)
 {
@@ -96,6 +104,7 @@ static uint16_t modbusCRC(const uint8_t* data, size_t length)
 
 static void sendModbusFrame(uint8_t* frame, uint8_t length, uint8_t expectedReply)
 {
+    memcpy(lapRequestEcho, frame, 6);
     uint16_t crc = modbusCRC(frame, length);
     frame[length++] = uint8_t(crc);
     frame[length++] = uint8_t(crc >> 8);
@@ -171,6 +180,8 @@ static bool collectLapReply(SystemState &S)
             lapDiagnostics.crcErrors++;
         }
         lapExpectedLength = 0;
+        if (lapPhase == 1) lapSentRpm = -1;
+        if (lapPhase == 2) lapSentControl = 0xff;
         lapPhase = 0;
         return true;
     }
@@ -198,7 +209,8 @@ static bool collectLapReply(SystemState &S)
 
     bool validCRC = receivedCRC == modbusCRC(lapReply, lapExpectedLength - 2);
     bool validWriteEcho = validCRC && lapExpectedLength == 8 &&
-                          lapReply[0] == LAP_MOTOR_SLAVE_ID && lapReply[1] == 0x06;
+                          lapReply[0] == LAP_MOTOR_SLAVE_ID && lapReply[1] == 0x06 &&
+                          memcmp(lapReply, lapRequestEcho, 6) == 0;
 
     rememberLapReply(lapExpectedLength);
     lapDiagnostics.lastFunction = lapReply[1];
@@ -223,14 +235,26 @@ static bool collectLapReply(SystemState &S)
             // written to 8000. Four poles: captured 25 00 => 37*20/4=185 RPM.
             S.RPMValue = int((uint32_t(speedCounts) * 20U) / LAP_MOTOR_POLES);
         }
-        else if (lapPhase == 4)
+        else if (lapPhase == 4) {
             lapDiagnostics.lastFault = uint8_t(rawValue >> 8);
+            lapDiagnostics.lastRun = uint8_t(rawValue);
+        }
         lapDiagnostics.validReplies++;
         lapDiagnostics.readReplies++;
         lapDiagnostics.lastValidReplyMs = millis();
     }
     else if (validWriteEcho)
     {
+        if (lapPhase == 2) {
+            lapDiagnostics.commandedControl = lapReply[4];
+            if (lapKickArmed && !lapKickStarted &&
+                (lapReply[4] == CONTROL_FORWARD || lapReply[4] == CONTROL_REVERSE)) {
+                lapKickStarted = true;
+                lapKickStartedMs = millis();
+            }
+        }
+        if (lapPhase == 1)
+            lapDiagnostics.commandedRpm = int(lapReply[4]) | (int(lapReply[5]) << 8);
         if (lapPhase == 5 && lapReply[2] == 0x80 && lapReply[3] == 0x03 &&
             lapReply[4] == 20 && lapReply[5] == 20)
             lapRampConfigured = true;
@@ -259,6 +283,17 @@ static void updateLapMotorRS485(SystemState &S)
     bool forward = S.motorDir == 1;
     bool reverse = S.motorDir == 3;
     bool running = S.RPMSetpoint > 0 && (forward || reverse);
+    if (running && !lapWasRunning) {
+        lapKickArmed = S.RPMSetpoint < LAP_STARTUP_RPM;
+        lapKickStarted = false;
+        lapKickArmedMs = millis();
+    }
+    lapWasRunning = running;
+    if (!running || millis() - lapKickArmedMs >= 5000 ||
+        (lapKickStarted && millis() - lapKickStartedMs >= LAP_STARTUP_KICK_MS))
+        lapKickArmed = false;
+    lapDiagnostics.startupBoost = running && lapKickArmed;
+    const int effectiveRpm = lapKickArmed ? max(S.RPMSetpoint, LAP_STARTUP_RPM) : S.RPMSetpoint;
     uint8_t wantedControl = running
         ? (forward ? CONTROL_FORWARD : CONTROL_REVERSE)
         : CONTROL_BRAKE;
@@ -345,12 +380,12 @@ static void updateLapMotorRS485(SystemState &S)
     }
 
     // The controller manual's speed examples use little-byte value order.
-    if (lapSentRpm != S.RPMSetpoint)
+    if (lapSentRpm != effectiveRpm)
     {
-        uint16_t rpm = uint16_t(S.RPMSetpoint);
+        uint16_t rpm = uint16_t(effectiveRpm);
         lapPhase = 1;
         writeLapRegister(REG_COMMAND_RPM, uint8_t(rpm), uint8_t(rpm >> 8));
-        lapSentRpm = S.RPMSetpoint;
+        lapSentRpm = effectiveRpm;
         return;
     }
 

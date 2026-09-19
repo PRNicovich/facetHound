@@ -140,6 +140,9 @@ bool systemReady = false;
 uint32_t lastRx = 0;
 bool linkAlive = false;
 uint32_t telemetryVersion = 0;
+bool meshReceiving = false;
+bool meshDisplayFailed = false;
+uint32_t meshLastRxMs = 0;
 DisplayMode displayMode = DisplayMode::CLASSIC;
 bool restoreDisplayPending = false;
 bool usbDemoMode = false;
@@ -576,10 +579,13 @@ void parseLine(char* line)
   char* valueText = comma + 1;
 
   if (key[0] == 0) return;
+  if (!strncmp(key, "MESH", 4)) meshLastRxMs = millis();
 
   if (!strcmp(key, "MESHCLEAR"))
   {
     runtimeGemMesh().clear();
+    meshReceiving = false;
+    meshDisplayFailed = false;
     gemUi.invalidate();
     ++telemetryVersion;
     return;
@@ -599,7 +605,15 @@ void parseLine(char* line)
                   uint16_t(strtoul(edges, nullptr, 10)),
                   uint16_t(strtoul(planes, nullptr, 10)),
                   strtof(indexResolution, nullptr), strtof(radius, nullptr));
+    meshReceiving = ok;
+    meshDisplayFailed = !ok;
     if (!ok) sendLineBoth("@ERR,MESHBEGIN,invalid counts or scale");
+    else {
+      tft.fillRect(0, 0, 320, 36, TFT_BLACK);
+      tft.setTextColor(TFT_CYAN, TFT_BLACK);
+      tft.drawString("Loading gem...", 8, 8, 2);
+      sendLineBoth("@MESHACK,BEGIN");
+    }
     return;
   }
 
@@ -664,14 +678,20 @@ void parseLine(char* line)
 
   if (!strcmp(key, "MESHEND"))
   {
+    meshReceiving = false;
     if (runtimeGemMesh().finishTransfer())
     {
-      gemUi.invalidate();
+      meshDisplayFailed = false;
+      closeSettingsMenu();
+      restoreDisplayPending = true;
+      if (displayMode != DisplayMode::CLASSIC) gemUi.begin(displayMode);
       ++telemetryVersion;
       sendLineBoth("@MESHACK,READY");
     }
-    else
+    else {
+      meshDisplayFailed = true;
       sendLineBoth("@ERR,MESHEND,incomplete transfer");
+    }
     return;
   }
 
@@ -1641,6 +1661,26 @@ void loop()
 {
   rxUpdate();
   sendEncoder();
+  if (meshReceiving && millis() - meshLastRxMs > 3000) {
+    meshReceiving = false;
+    meshDisplayFailed = true;
+    sendLineBoth("@ERR,MESHEND,transfer timeout");
+  }
+  // Do not spend tens of milliseconds drawing while the mesh is arriving.
+  // Never show the built-in mesh with a loaded job's points after a failure.
+  if (meshReceiving || meshDisplayFailed) {
+    if (meshDisplayFailed) {
+      static uint32_t lastErrorDraw = 0;
+      if (millis() - lastErrorDraw > 1000) {
+        tft.fillRect(0, 0, 320, 48, TFT_BLACK);
+        tft.setTextColor(TFT_RED, TFT_BLACK);
+        tft.drawString("Gem transfer failed - reload", 8, 8, 2);
+        lastErrorDraw = millis();
+      }
+    }
+    yield();
+    return;
+  }
 
   // This heartbeat gives the base a continuous, non-motion-dependent way to
   // verify the display-to-base half of the UART.  Encoder traffic alone is not

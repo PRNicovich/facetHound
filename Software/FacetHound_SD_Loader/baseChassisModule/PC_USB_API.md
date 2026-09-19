@@ -53,7 +53,7 @@ unknown lines for forward compatibility.
 | `SD PROBE` | With axes unlocked and lap paused, test CMD0 and initialization, then use SdFat for card initialization, sector-0 read and volume mounting. No formatting/file writes; follow with SD RETRY | `@SD_PROBE,...`, `@SD_INIT,...`, `@SD_FS,...` including library error/data codes |
 | `SD RETRY` | With axes unlocked and lap paused, force SD reinitialization after insertion/wiring changes | `@SD_MOUNT,bus=gpio,...`, `@ACK,SD,RETRY,READY/MISSING` |
 | `SD LIST` | List readable root-level `.asc` and `.fct` files | `@SD_FILE,<index>,<name>` |
-| `GEM LOAD <index>` | Load the index returned by SD LIST using the existing cache/build and mesh-transfer path; axes unlocked and lap paused | `@GEM,LOADED,<path>` or `@CFGNAK,LOAD_SD_FILE,<reason>` |
+| `GEM LOAD <index>` | Load the index returned by SD LIST; axes unlocked and lap paused. Builds geometry or reads cache, then transfers it asynchronously | `@GEM,LOADED,<path>`, `@GEM,GEOMETRY,<cache-status>,vertices=...,edges=...,planes=...`, then `@GEM,DISPLAY_READY` or `@GEM,DISPLAY_ERROR,...` |
 | `MODE CLASSIC\|STATIC\|DYNAMIC` | Select display mode without changing motor locks | `@ACK,MODE,<mode>` |
 | `FLOW <0..750>` | Set raw pump velocity; displayed mL/min uses the configured conversion | `@ACK,FLOW,<value>` |
 | `PUMP FWD` | Set forward pump direction | `@ACK,PUMP` |
@@ -196,3 +196,21 @@ with serial.Serial("COM5", 115200, timeout=1) as base:
 
     base.write(b"STOP\n")
 ```
+
+## Lap startup and diagnostics
+
+The keyboard speed knob changes the saved/user setpoint by 5 RPM per detent.
+On an explicit start with a positive setpoint below 300 RPM, the controller is
+temporarily commanded to 300 RPM for 2.5 seconds after its enable-write ACK,
+then returns to the setpoint. This includes the existing two-second ramp.
+An absolute five-second limit from the start request also bounds the boost if
+ACKs are lost. Pause/STOP cancels it; no automatic stall retries or current-limit
+changes are made. A request at or above 300 RPM gets no boost.
+
+`MOTOR STATUS`/`STATUS` includes `startup_boost`, `rpm_command_ack`,
+`control_ack` (09 forward, 0B reverse, 0C brake), and the raw status `run` and
+`fault` bytes. These distinguish the saved setpoint, acknowledged temporary
+command, and measured speed. Command ACKs now require an exact register/value
+echo, not merely any CRC-valid function-06 frame. For a direction that clicks
+and stops, capture these fields before clearing the fault. A working forward
+direction does not establish correct Hall/phase pairing for both directions.

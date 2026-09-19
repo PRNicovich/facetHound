@@ -553,27 +553,64 @@ static void setDisplayVisualMode(const char* mode)
     sendActiveCut(true);
 }
 
+static uint8_t meshSendStage = 0; // begin, wait BEGIN, vertices, edges, planes, end, wait READY
+static size_t meshSendIndex = 0;
+static uint32_t meshSendLastMs = 0;
+static uint8_t meshBeginAttempts = 0;
+
 static void sendActiveMesh()
 {
+    meshSendStage = 1;
+    meshSendIndex = 0;
+    meshBeginAttempts = 0;
+    meshSendLastMs = millis();
+}
+
+static void meshTransferTask()
+{
+    if (!meshSendStage) return;
+    if (meshSendStage == 2 || meshSendStage == 7) {
+        if (meshSendStage == 2 && millis() - meshSendLastMs > 1000 && meshBeginAttempts < 3) {
+            meshSendStage = 1;
+            return;
+        }
+        if (millis() - meshSendLastMs > 3000) {
+            Serial.println("@GEM,DISPLAY_ERROR,mesh acknowledgment timeout");
+            meshSendStage = 0;
+        }
+        return;
+    }
+    if (millis() - meshSendLastMs < 5) return;
+    meshSendLastMs = millis();
     if (!activeGemLoaded || activeGemGeometry.vertices.empty())
     {
         sendDisplayLine("@MESHCLEAR,0");
+        meshSendStage = 0;
         return;
     }
 
-    dispSerial.print("@MESHBEGIN,");
-    dispSerial.print(activeGemGeometry.vertices.size());
-    dispSerial.print(",");
-    dispSerial.print(activeGemGeometry.edges.size());
-    dispSerial.print(",");
-    dispSerial.print(activeGemGeometry.planes.size());
-    dispSerial.print(",");
-    dispSerial.print(activeGemDesign.wheelIndex, 4);
-    dispSerial.print(",");
-    dispSerial.println(activeGemGeometry.radius, 7);
+    if (meshSendStage == 1) {
+        ++meshBeginAttempts;
+        dispSerial.print("@MESHBEGIN,");
+        dispSerial.print(activeGemGeometry.vertices.size());
+        dispSerial.print(",");
+        dispSerial.print(activeGemGeometry.edges.size());
+        dispSerial.print(",");
+        dispSerial.print(activeGemGeometry.planes.size());
+        dispSerial.print(",");
+        dispSerial.print(activeGemDesign.wheelIndex, 4);
+        dispSerial.print(",");
+        dispSerial.println(activeGemGeometry.radius, 7);
+        meshSendStage = 2;
+        return;
+    }
 
-    for (size_t i = 0; i < activeGemGeometry.vertices.size(); ++i)
+    if (meshSendStage == 3 && meshSendIndex >= activeGemGeometry.vertices.size()) {
+        meshSendIndex = 0; meshSendStage = 4;
+    }
+    if (meshSendStage == 3)
     {
+        const size_t i = meshSendIndex++;
         const GemGeometryVertex& vertex = activeGemGeometry.vertices[i];
         dispSerial.print("@MESHV,");
         dispSerial.print(i);
@@ -583,10 +620,15 @@ static void sendActiveMesh()
         dispSerial.print(vertex.y, 7);
         dispSerial.print(",");
         dispSerial.println(vertex.z, 7);
+        return;
     }
 
-    for (size_t i = 0; i < activeGemGeometry.edges.size(); ++i)
+    if (meshSendStage == 4 && meshSendIndex >= activeGemGeometry.edges.size()) {
+        meshSendIndex = 0; meshSendStage = 5;
+    }
+    if (meshSendStage == 4)
     {
+        const size_t i = meshSendIndex++;
         const GemGeometryEdge& edge = activeGemGeometry.edges[i];
         dispSerial.print("@MESHE,");
         dispSerial.print(i);
@@ -602,10 +644,14 @@ static void sendActiveMesh()
             dispSerial.print(edge.supportPlanes[support]);
         }
         dispSerial.println();
+        return;
     }
 
-    for (size_t i = 0; i < activeGemGeometry.planes.size(); ++i)
+    if (meshSendStage == 5 && meshSendIndex >= activeGemGeometry.planes.size())
+        meshSendStage = 6;
+    if (meshSendStage == 5)
     {
+        const size_t i = meshSendIndex++;
         const GemGeometryPlane& plane = activeGemGeometry.planes[i];
         dispSerial.print("@MESHP,");
         dispSerial.print(i);
@@ -614,15 +660,17 @@ static void sendActiveMesh()
         dispSerial.print(",");
         dispSerial.print(plane.index, 5);
         dispSerial.print(",");
-          dispSerial.print(plane.tier);
-          dispSerial.print(",");
-          dispSerial.print(plane.facet);
-          dispSerial.print(",");
-          char name[GEM_SD_FACET_NAME_LENGTH] = {};
-          safeProtocolText(plane.name, name, sizeof(name));
-          dispSerial.println(name);
-      }
+        dispSerial.print(plane.tier);
+        dispSerial.print(",");
+        dispSerial.print(plane.facet);
+        dispSerial.print(",");
+        char name[GEM_SD_FACET_NAME_LENGTH] = {};
+        safeProtocolText(plane.name, name, sizeof(name));
+        dispSerial.println(name);
+        return;
+    }
     sendDisplayLine("@MESHEND,1");
+    meshSendStage = 7;
 }
 
 static void sendSdFilePage(size_t start, size_t requested)
@@ -1054,6 +1102,10 @@ static void applyConfigAction(char* actionText)
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));
         Serial.print("@GEM,LOADED,"); Serial.println(sourcePath);
+        Serial.print("@GEM,GEOMETRY,"); Serial.print(activeGemCacheStatus);
+        Serial.print(",vertices="); Serial.print(activeGemGeometry.vertices.size());
+        Serial.print(",edges="); Serial.print(activeGemGeometry.edges.size());
+        Serial.print(",planes="); Serial.println(activeGemGeometry.planes.size());
         char title[GEM_SD_TITLE_LENGTH] = {};
         safeProtocolText(activeGemDesign.title, title, sizeof(title));
         sendCfgAck(action, title);
@@ -1110,7 +1162,25 @@ void displayRxTask()
                 Serial.println("@LINK,DISPLAY,RX_ACTIVE");
             }
 
-            if (!strcmp(key, "ZENC"))
+            if (!strcmp(key, "MESHACK")) {
+                if (!strcmp(valueText, "BEGIN") && meshSendStage == 2) {
+                    meshSendStage = 3;
+                    meshSendIndex = 0;
+                    meshSendLastMs = millis();
+                } else if (!strcmp(valueText, "READY") && meshSendStage == 7) {
+                    meshSendStage = 0;
+                    Serial.println("@GEM,DISPLAY_READY");
+                    char title[GEM_SD_TITLE_LENGTH] = {};
+                    safeProtocolText(activeGemDesign.title, title, sizeof(title));
+                    sendCfgText("SD_ACTIVE", title);
+                    sendActiveCut(true);
+                }
+            }
+            else if (!strcmp(key, "ERR") && !strncmp(valueText, "MESH", 4)) {
+                meshSendStage = 0;
+                Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(valueText);
+            }
+            else if (!strcmp(key, "ZENC"))
             {
                 long raw = 0;
 
@@ -1258,6 +1328,10 @@ static void sendUsbMotorStatus()
     Serial.print(",last_fn=0x"); printHexByte(d.lastFunction);
     Serial.print(",last_exception=0x"); printHexByte(d.lastException);
     Serial.print(",fault=0x"); printHexByte(d.lastFault);
+    Serial.print(",run=0x"); printHexByte(d.lastRun);
+    Serial.print(",control_ack=0x"); printHexByte(d.commandedControl);
+    Serial.print(",rpm_command_ack="); Serial.print(d.commandedRpm);
+    Serial.print(",startup_boost="); Serial.print(d.startupBoost ? 1 : 0);
     Serial.print(",speed_raw="); Serial.print(d.lastSpeedRaw);
     Serial.print(",speed_raw_swapped="); Serial.print(uint16_t((d.lastSpeedRaw << 8) | (d.lastSpeedRaw >> 8)));
     Serial.print(",pole_pairs="); Serial.print(LAP_MOTOR_POLE_PAIRS);
@@ -2414,6 +2488,7 @@ void loop()
     pollDoubleClick(&S);
     rpmTask();
     displayTask();
+    meshTransferTask();
     autoSave();
     updateMotors(S);
 }
