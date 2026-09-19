@@ -879,10 +879,12 @@ void GemUi::tick(const GemTelemetry& state)
 {
     const uint32_t now = millis();
     const bool stateChanged = state.version != lastStateVersion_;
+    const bool selectionChanged = state.jobTier != lastJobTier_ ||
+                                  state.jobFacet != lastJobFacet_;
 
     if (mode_ == DisplayMode::DYNAMIC)
     {
-        if (now - lastFrameMs_ >= kFramePeriodMs)
+        if (selectionChanged || now - lastFrameMs_ >= kFramePeriodMs)
         {
             lastFrameMs_ = now;
             updatePose(state);
@@ -908,7 +910,7 @@ void GemUi::tick(const GemTelemetry& state)
         lastStaticLinkAlive_ = state.linkAlive;
     }
 
-    if ((state.version != lastHudVersion_ && now - lastHudMs_ >= kHudPeriodMs) ||
+    if (selectionChanged || (state.version != lastHudVersion_ && now - lastHudMs_ >= kHudPeriodMs) ||
         now - lastHudMs_ >= 500)
     {
         lastHudMs_ = now;
@@ -918,4 +920,6 @@ void GemUi::tick(const GemTelemetry& state)
     }
 
     lastStateVersion_ = state.version;
+    lastJobTier_ = state.jobTier;
+    lastJobFacet_ = state.jobFacet;
 }

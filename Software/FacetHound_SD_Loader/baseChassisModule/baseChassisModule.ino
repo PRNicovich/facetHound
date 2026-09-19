@@ -44,6 +44,7 @@ static const uint32_t DISPLAY_BAUD = 460800;
 // bytes, so sending the whole screen as one burst causes silent line loss.
 static const uint32_t DISPLAY_FAST_PERIOD_MS = 10;
 static const uint32_t SAVE_DEBOUNCE_MS = 500;
+static uint32_t lastKeyboardActionMs = 0;
 static const float MARK_MATCH_TOLERANCE = 0.0025f;
 
 static const uint32_t TWIST_RX_TIMEOUT_MS = 120;
@@ -1571,6 +1572,7 @@ static bool selectAdjacentBuiltin(bool changeTier, bool forward)
 
 static void routeKeyboardKey(uint8_t key)
 {
+    lastKeyboardActionMs = millis();
     if (key == MENU_TOGGLE_KEY)
     {
         // The display is the menu-state authority. Optimistically suppress
@@ -1794,6 +1796,7 @@ static void handleUsbCommand(char* line)
             Serial.print("@SD_PROBE,cmd0_r1=0x"); printHexByte(response);
             Serial.println(",expected=0x01,next=SD RETRY");
             if (response == 0x01) probeGemSdInitialization();
+            probeGemSdFilesystem();
         }
         else if (!strcasecmp(mode, "RETRY"))
         {
@@ -2223,6 +2226,12 @@ void autoSave()
         return;
 
     if (millis() - lastSave < SAVE_DEBOUNCE_MS)
+        return;
+
+    // Flash programming stalls execution. Do not interrupt navigation or
+    // STEP pulses to save the cursor/target after each key in a burst.
+    if (millis() - lastKeyboardActionMs < 1500 || twistMotionActive() ||
+        zedDirStep.distanceToGo() != 0)
         return;
 
     lastSave = millis();

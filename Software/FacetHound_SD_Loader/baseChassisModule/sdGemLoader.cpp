@@ -3,6 +3,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <SoftwareSPI.h>
+#include <SdFat.h>
 #include <math.h>
 #include <strings.h>
 #include <utility>
@@ -471,6 +472,48 @@ void probeGemSdInitialization()
         Serial.println(",next=SD RETRY");
     }
     gemSdSpi.endTransaction();
+}
+
+void probeGemSdFilesystem()
+{
+    // Use SdFat's standard SdInfo sequence instead of another custom SD driver.
+    // All accesses are reads; this diagnostic never formats or mounts for writing.
+    SD.end(false);
+    sdReady = false;
+    sdDiagnostics.ready = false;
+    sdDiagnostics.rootChecked = false;
+    SdFat probe;
+    const bool card = probe.cardBegin(SdSpiConfig(
+        GEM_SD_CS_PIN, SHARED_SPI, uint32_t(250000), &gemSdSpi));
+    Serial.print("@SD_FS,card_init="); Serial.print(card ? "OK" : "FAIL");
+    Serial.print(",error=0x"); Serial.print(probe.sdErrorCode(), HEX);
+    Serial.print(",data=0x"); Serial.println(probe.sdErrorData(), HEX);
+    if (card) {
+        uint8_t sector[512];
+        const bool read = probe.card()->readSector(0, sector);
+        Serial.print("@SD_FS,sector0="); Serial.print(read ? "OK" : "FAIL");
+        Serial.print(",error=0x"); Serial.print(probe.sdErrorCode(), HEX);
+        Serial.print(",data=0x"); Serial.print(probe.sdErrorData(), HEX);
+        if (read) {
+            Serial.print(",signature=");
+            Serial.print(sector[510], HEX); Serial.print('-'); Serial.print(sector[511], HEX);
+            Serial.print(",partition_types=");
+            for (uint8_t i = 0; i < 4; ++i) {
+                if (i) Serial.print('-');
+                Serial.print(sector[446 + i * 16 + 4], HEX);
+            }
+        }
+        Serial.println();
+        if (read) {
+            const bool volume = probe.volumeBegin();
+            Serial.print("@SD_FS,volume="); Serial.print(volume ? "OK" : "FAIL");
+            Serial.print(",fat_type="); Serial.print(volume ? probe.fatType() : 0);
+            Serial.print(",error=0x"); Serial.print(probe.sdErrorCode(), HEX);
+            Serial.print(",data=0x"); Serial.println(probe.sdErrorData(), HEX);
+        }
+    }
+    probe.end();
+    Serial.println("@SD_FS,next=SD RETRY");
 }
 
 size_t gemSdFileCount()

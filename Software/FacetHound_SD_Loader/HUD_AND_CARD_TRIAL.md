@@ -1,5 +1,49 @@
 # HUD, exact selection and card trial
 
+## Settled hold / keyboard / SD / lap integration follow-up
+
+Upload base and display; mast and keyboard unchanged. Index now latches settled
+on the first in-tolerance feedback sample and stops queued pulses. Holding
+current stays enabled, but encoder drift does NOT restart movement. Only a
+new target, explicit seek, or re-engagement re-arms it. Final approach speed
+is capped at 300 pulses/s per remaining index unit (100 minimum, existing
+1800 maximum). Overshoot/wrong-direction/invalid-feedback protections remain.
+Z has no position feedback correction loop: it holds after explicit jog pulses.
+Physical vibration with no new jog would need electrical/driver investigation.
+
+Flash autosave waits for 1.5 seconds without keyboard actions and no pending
+index/Z motion. Facet/tier changes repaint model and HUD without waiting for
+their normal frame intervals; selection still uses exact JOB identities.
+
+SD PROBE additionally uses the installed SdFat library's SdInfo approach:
+cardBegin, sector-0 read, volumeBegin. @SD_FS prints error/data codes and,
+if readable, sector signature and partition types. No formatting/file writes.
+CMD8=01/000001AA, ACMD41=00 and OCR=C0FF8000 indicate successful SDHC/SDXC
+initialization for that transaction, not proof of reliable sector reads.
+Use STOP, SD PROBE; paste all @SD_FS records. Card size and filesystem as
+reported by the PC are also useful; do not reformat existing data for this test.
+
+Lap comparison used origin/uiReno's BLD510B_Demo_copy_20260918125840 sketch.
+It sets register 8003 to 1414 (2 seconds each) before speed/enable; integration
+now restores that acknowledged configuration. Existing current limit, sensored
+mode and pole pairs are not altered. Pause commands take precedence over ramp
+configuration. MOTOR DEMOPROBE now also reads 8000..8005 via that same library
+and prints @BLD_CONFIG (control, ramp, current_mode, speed_wire).
+
+Lap trial: keep mechanism clear, stop other motion, send STOP and RPM 200.
+Then send MOTOR CW, watching the shaft; stop immediately with STOP if it
+shudders or stalls. Do not leave it energized stalled. If it turns smoothly,
+stop fully before trying MOTOR CCW. Do not queue CW and STOP back-to-back in
+one paste as that would not exercise startup. After stopping, MOTOR DEMOPROBE
+reports drive configuration. The manual describes approximately 150 RPM minimum;
+the proven demo used 500/1500 forward and 800 reverse, not the recent 12..92.
+This trial does not assert that low speed is the sole cause. If still shuddering,
+check @BLD_CONFIG mode byte against documented 0F sensored (10 sensorless)
+and measure each Hall signal toggling with hand rotation before phase swaps.
+Source: https://ae01.alicdn.com/kf/Sdb18dfe1fd7741f7bf6f43a54702a5abB.pdf
+
+Source/regression checks only; no Arduino build or physical validation claimed.
+
 RPM follow-up: hand-spin reports of 51200 and 66560 match the speed-register
 byte-order error exactly (wire 14 00 / 1A 00). Register 0x8018 is now decoded
 low-byte-first, producing 200 / 260 RPM under the existing 20/pole-pairs scale.

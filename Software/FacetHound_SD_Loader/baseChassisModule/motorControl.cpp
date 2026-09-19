@@ -70,6 +70,7 @@ static int lapSentRpm = -1;
 static uint8_t lapSentControl = 0xff;
 static bool lapProbeRequested = false;
 static bool lapDemoProbeRequested = false;
+static bool lapRampConfigured = false;
 
 static void rememberLapReply(uint8_t length)
 {
@@ -228,6 +229,9 @@ static bool collectLapReply(SystemState &S)
     }
     else if (validWriteEcho)
     {
+        if (lapPhase == 5 && lapReply[2] == 0x80 && lapReply[3] == 0x03 &&
+            lapReply[4] == 20 && lapReply[5] == 20)
+            lapRampConfigured = true;
         lapDiagnostics.validReplies++;
         lapDiagnostics.writeAcks++;
         lapDiagnostics.lastValidReplyMs = millis();
@@ -282,6 +286,21 @@ static void updateLapMotorRS485(SystemState &S)
         Serial.print(",error="); Serial.print(demo.lastError());
         Serial.print(",fault="); Serial.print(fault);
         Serial.print(",run="); Serial.println(run);
+        // Reuse the working demo's register reader, not a second Modbus stack.
+        // Raw control/ramp/current-mode/setpoint values expose configuration
+        // mismatches without changing current or commutation settings.
+        uint16_t registers[6] = {};
+        const bool configOk = demo.readRegisters(0x8000, 6, registers);
+        Serial.print("@BLD_CONFIG,ok="); Serial.print(configOk ? 1 : 0);
+        Serial.print(",error="); Serial.print(demo.lastError());
+        if (configOk) {
+            Serial.print(",control=0x"); Serial.print(registers[0], HEX);
+            Serial.print(",ramp=0x"); Serial.print(registers[3], HEX);
+            Serial.print(",current_mode=0x"); Serial.print(registers[4], HEX);
+            Serial.print(",speed_wire=0x"); Serial.print(registers[5], HEX);
+        }
+        Serial.println();
+        lapLastFrameMs = millis();
         return;
     }
 
@@ -302,6 +321,24 @@ static void updateLapMotorRS485(SystemState &S)
     {
         lapPhase = 4;
         readLapStatus();
+        return;
+    }
+
+    // A pause must not wait for a configuration write to succeed.
+    if (!running && lapSentControl != wantedControl)
+    {
+        lapPhase = 2;
+        writeLapRegister(REG_CONTROL, wantedControl, LAP_MOTOR_POLE_PAIRS);
+        lapSentControl = wantedControl;
+        return;
+    }
+
+    // Restore the working uiReno demo's 2 s ramp, once acknowledged. Never
+    // auto-change current limits, Hall mode or pole count to mask a fault.
+    if (!lapRampConfigured)
+    {
+        lapPhase = 5;
+        writeLapRegister(0x8003, 20, 20);
         return;
     }
 
@@ -775,6 +812,14 @@ static void updateTwistMotor(SystemState &S)
 
     setTwistDriverEnabled(true);
 
+    if (twistSettled)
+    {
+        // An idle lock is holding current, NOT an active position servo.
+        // Only a new target/explicit seek/unlock may re-arm movement.
+        S.twistError = shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex);
+        return;
+    }
+
     if (twistSettleUntilMs && int32_t(millis() - twistSettleUntilMs) < 0)
         return; // Hold energized, with no queued pulses, before correcting.
     twistSettleUntilMs = 0;
@@ -802,11 +847,10 @@ static void updateTwistMotor(SystemState &S)
     lastTwistControlMs = now;
 
     const float positionTolerance = max(POSITION_ERROR_TOL, 1.01f * S.wheelIndex / 4096.0f);
-    if (nLocks > TWIST_SETTLE_FRAMES &&
-        fabsf(shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex)) <= positionTolerance)
+    if (fabsf(shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex)) <= positionTolerance)
     {
         twistSettled = true;
-        twistDirStep.move(0);
+        stopTwistKeepLock();
         setTwistDriverEnabled(true);
         return;
     }
@@ -840,6 +884,7 @@ static void updateTwistMotor(SystemState &S)
             // Discard the remaining open-loop pulses when feedback reaches
             // or passes the target. Never finish a stale correction segment.
             stopTwistKeepLock();
+            if (absErr <= positionTolerance) twistSettled = true;
             if (absErr > positionTolerance)
             {
                 // Small crossings can settle with a damped reverse correction.
@@ -877,7 +922,9 @@ static void updateTwistMotor(SystemState &S)
         if (steps == 0 && totalSteps != 0)
             steps = (totalSteps > 0) ? 1 : -1;
 
-        twistDirStep.setMaxSpeed(TWIST_MAX_SPEED);
+        // Slow the final approach; retain the existing upper speed cap.
+        const float approachSpeed = constrain(absErr * 300.0f, 100.0f, TWIST_MAX_SPEED);
+        twistDirStep.setMaxSpeed(approachSpeed);
         twistDirStep.setAcceleration(TWIST_ACCEL);
 
         if (steps != 0 && twistDirStep.distanceToGo() == 0)

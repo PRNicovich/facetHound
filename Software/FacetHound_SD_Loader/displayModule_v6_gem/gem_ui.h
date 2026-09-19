@@ -69,6 +69,8 @@ private:
     uint32_t lastPoseMs_ = 0;
     uint32_t lastHudVersion_ = UINT32_MAX;
     uint32_t lastStateVersion_ = UINT32_MAX;
+    uint16_t lastJobTier_ = UINT16_MAX;
+    uint16_t lastJobFacet_ = UINT16_MAX;
     uint32_t lastStaticVersion_ = UINT32_MAX;
     bool lastStaticLinkAlive_ = false;
     int16_t screenX_[RUNTIME_MESH_MAX_VERTICES] = {};
