@@ -151,6 +151,13 @@ GemUi::GemUi(TFT_eSPI& display)
 {
 }
 
+void GemUi::releaseSprites()
+{
+    gemCanvas_.deleteSprite();
+    hudCanvas_.deleteSprite();
+    gemCanvasReady_ = hudCanvasReady_ = false;
+}
+
 bool GemUi::begin(DisplayMode mode)
 {
     mode_ = mode;

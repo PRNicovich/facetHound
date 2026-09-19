@@ -61,6 +61,7 @@ TFT_eSprite stext13 = TFT_eSprite(&tft);
 TFT_eSprite stext14 = TFT_eSprite(&tft);
 TFT_eSprite stext15 = TFT_eSprite(&tft);
 TFT_eSprite sBar1   = TFT_eSprite(&tft);
+TFT_eSprite tierError = TFT_eSprite(&tft);
 TFT_eSprite markSprite = TFT_eSprite(&tft);
 TFT_eSprite markStatusSprite = TFT_eSprite(&tft);
 TFT_eSprite axisLabels = TFT_eSprite(&tft);
@@ -381,23 +382,28 @@ static void saveDisplayModeAndRestart(DisplayMode nextMode)
   EEPROM.put(0, settings);
   EEPROM.commit();
 
-  if (!isClassicView(displayMode) && !isClassicView(nextMode)) {
+  {
+    // Release only view buffers, never the resident geometry/cache.
+    TFT_eSprite* classicSprites[] = {&stext1,&stext2,&stext3,&stext4,&stext5,
+      &stext6,&stext7,&stext8,&stext9,&stext10,&stext11,&stext12,&stext13,
+      &stext14,&stext15,&sBar1,&markSprite,&markStatusSprite,&axisLabels,
+      &unitLabels,&downLabels,&tierError};
+    for (auto* sprite : classicSprites) sprite->deleteSprite();
+    if (isClassicView(nextMode)) gemUi.releaseSprites();
     // Both views share the same resident mesh and sprite dimensions.
     displayMode = nextMode;
     closeSettingsMenu();
-    gemUi.begin(displayMode);
+    if (!isClassicView(displayMode)) gemUi.begin(displayMode);
     restoreDisplayPending = true;
     ++telemetryVersion;
     reportDisplayMode("@MODE,");
+    // A Classic-only boot deliberately did not fetch geometry. Request it
+    // once on entering a tier-aware view; ordinary mode switches reuse RAM.
+    if (nextMode != DisplayMode::CLASSIC && !runtimeGemMesh().active())
+      sendLineBoth("@CFGGET,MESH");
     return;
   }
 
-  Serial.print("@MODE,RESTARTING,");
-  Serial.println(displayModeName(nextMode));
-  baseSerial.print("@MODE,RESTARTING,");
-  baseSerial.println(displayModeName(nextMode));
-  delay(80);
-  rp2040.reboot();
 }
 
 static bool displayedFloatChanged(float oldValue, float newValue, float scale)
@@ -1275,7 +1281,7 @@ void drawMainScreen(bool initHere)
     unitLabels.loadFont(LABELS);
     unitLabels.setTextDatum(BL_DATUM);
     unitLabels.setTextColor(0xEF00);
-    unitLabels.drawString("°", 0, 230);
+    unitLabels.drawString("°", 0, displayMode==DisplayMode::CLASSIC_TIER ? 205 : 230);
     unitLabels.setTextColor(0xF8F4);
     unitLabels.drawString("mm", 0, 368);
     unitLabels.pushSprite(290, 0);
@@ -1286,7 +1292,7 @@ void drawMainScreen(bool initHere)
     axisLabels.setTextColor(0x07FE);
     axisLabels.drawString("Φ", 22, 50);
     axisLabels.setTextColor(0xEF00);
-    axisLabels.drawString("Θ", 22, 270);
+    axisLabels.drawString("Θ", 22, displayMode==DisplayMode::CLASSIC_TIER ? 245 : 270);
     axisLabels.setTextColor(0xF8F4);
     axisLabels.drawString("z", 22, 368);
     axisLabels.pushSprite(0, 0);
@@ -1306,13 +1312,13 @@ void drawMainScreen(bool initHere)
     stext1.setTextDatum(BR_DATUM);
 
     stext2.setColorDepth(8);
-    stext2.createSprite(256, 60);
+    stext2.createSprite(displayMode==DisplayMode::CLASSIC_TIER ? 175 : 256, 60);
     stext2.loadFont(NUMBERS);
     stext2.setTextColor(0xEF00);
     stext2.setTextDatum(BR_DATUM);
 
     stext3.setColorDepth(8);
-    stext3.createSprite(256, 110);
+    stext3.createSprite(256, displayMode==DisplayMode::CLASSIC_TIER ? 95 : 110);
     stext3.loadFont(NUMBERS);
     stext3.setTextColor(0xF8F4);
     stext3.setTextDatum(BR_DATUM);
@@ -1331,6 +1337,13 @@ void drawMainScreen(bool initHere)
 
     sBar1.setColorDepth(8);
     sBar1.createSprite(300, displayMode==DisplayMode::CLASSIC_TIER ? 40 : 20);
+    if(displayMode==DisplayMode::CLASSIC_TIER) {
+      tierError.setColorDepth(8);
+      tierError.createSprite(110,40);
+      tierError.loadFont(ERRORTEXT);
+      tierError.setTextDatum(BR_DATUM);
+      tierError.setTextColor(0xEF00);
+    }
 
     stext6.setColorDepth(8);
     stext6.createSprite(110, 40);
@@ -1410,7 +1423,14 @@ void drawMainScreen(bool initHere)
 
 void spriteTickHandler()
 {
-  if(displayMode==DisplayMode::CLASSIC_TIER) updateForceBarSprite();
+  if(displayMode==DisplayMode::CLASSIC_TIER) {
+    updateForceBarSprite();
+    static uint32_t lastTierMarks=UINT32_MAX;
+    if(lastTierMarks!=telemetryVersion) {
+      lastTierMarks=telemetryVersion;
+      updateMarkPointsSprite();
+    }
+  }
   if (!updateTipAngle &&
       !updateTiltAngle &&
       !updateTiltError &&
@@ -1512,15 +1532,15 @@ void updateTiltSprite()
 void updateTipSprite()
 {
   stext2.fillSprite(SPRITE_FILL);
-  stext2.drawFloat(tipAngle, 2, 256, 75);
-  stext2.pushSprite(30, 210);
+  stext2.drawFloat(tipAngle, 2, displayMode==DisplayMode::CLASSIC_TIER ? 175 : 256, 75);
+  stext2.pushSprite(30, displayMode==DisplayMode::CLASSIC_TIER ? 185 : 210);
 }
 
 void updateZSprite()
 {
   stext3.fillSprite(SPRITE_FILL);
-  stext3.drawFloat(zValue, 3, 256, 110);
-  stext3.pushSprite(30, 270);
+  stext3.drawFloat(zValue, 3, 256, displayMode==DisplayMode::CLASSIC_TIER ? 95 : 110);
+  stext3.pushSprite(30, displayMode==DisplayMode::CLASSIC_TIER ? 285 : 270);
 }
 
 void updateRPMSprite()
@@ -1546,27 +1566,30 @@ void updateForceBarSprite()
     if(millis()-lastCheck<100) return;
     lastCheck=millis();
     const auto& mesh=runtimeGemMesh();
-    uint16_t tiers[512]={}; const char* names[512]={}; unsigned count=0;
+    uint16_t tiers[512]={}, planes[512]={}; unsigned count=0;
     const unsigned planeCount=mesh.active()?mesh.planes().size():GemData::kPlaneCount;
     for(unsigned p=0;p<planeCount;++p) {
       uint16_t tier=mesh.active()?mesh.planes()[p].tier:GemData::kPlanes[p].tier;
       bool seen=false; for(unsigned i=0;i<count;++i) if(tiers[i]==tier) seen=true;
       if(!seen && count<512) {
         unsigned pos=count;
-        while(pos && tiers[pos-1]>tier) {tiers[pos]=tiers[pos-1];names[pos]=names[pos-1];--pos;}
-        tiers[pos]=tier; names[pos]=mesh.active()?mesh.planes()[p].name:nullptr; ++count;
+        while(pos && tiers[pos-1]>tier) {tiers[pos]=tiers[pos-1];planes[pos]=planes[pos-1];--pos;}
+        tiers[pos]=tier; planes[pos]=p; ++count;
       }
     }
     if(!count) return;
     unsigned current=0; for(unsigned i=0;i<count;++i) if(tiers[i]==jobTier) current=i;
     unsigned left=(current+count-1)%count,right=(current+1)%count;
-    char prev[16],next[16],text[80],error[80];
-    if(names[left] && names[left][0]) snprintf(prev,sizeof(prev),"%.12s",names[left]);
-    else snprintf(prev,sizeof(prev),"T%u",tiers[left]);
-    if(names[right] && names[right][0]) snprintf(next,sizeof(next),"%.12s",names[right]);
-    else snprintf(next,sizeof(next),"T%u",tiers[right]);
+    char prev[16],next[16],selected[16],text[80],error[80];
+    auto nameAt=[&](unsigned i,char* out,size_t size) {
+      if(mesh.active() && mesh.planes()[planes[i]].name[0])
+        snprintf(out,size,"%s",mesh.planes()[planes[i]].name);
+      else gemUi.inferredTierName(planes[i],out,size);
+    };
+    nameAt(left,prev,sizeof(prev)); nameAt(right,next,sizeof(next));
+    nameAt(current,selected,sizeof(selected));
     float target=fabsf(jobAngle); if(target>90) target=180-target;
-    snprintf(text,sizeof(text),"%s  < %u / %u >  %s",prev,current+1,count,next);
+    snprintf(text,sizeof(text),"%s < %s %u/%u > %s",prev,selected,current+1,count,next);
     snprintf(error,sizeof(error),"T%u  %.2f   err %+.2f",tiers[current],target,tipAngle-target);
     static char previous[160]={}; char combined[160]; snprintf(combined,sizeof(combined),"%s%s",text,error);
     static uint32_t lastTierDraw=0;
@@ -1574,15 +1597,15 @@ void updateForceBarSprite()
     snprintf(previous,sizeof(previous),"%s",combined); lastTierDraw=millis();
     sBar1.fillSprite(SPRITE_FILL); sBar1.setTextDatum(MC_DATUM);
     sBar1.setTextColor(TFT_YELLOW,SPRITE_FILL);
-    sBar1.drawString(text,150,9,2);
-    char targetText[32],errorText[24];
-    if(names[current] && names[current][0]) snprintf(targetText,sizeof(targetText),"%.10s %.2f",names[current],target);
-    else snprintf(targetText,sizeof(targetText),"T%u %.2f",tiers[current],target);
+    sBar1.drawString(text,150,15,2);
+    char errorText[24];
     snprintf(errorText,sizeof(errorText),"%+.2f",tipAngle-target);
-    sBar1.setTextDatum(MR_DATUM);
-    sBar1.drawString(targetText,137,29,2); sBar1.drawCircle(143,23,2,TFT_YELLOW);
-    sBar1.drawString(errorText,277,29,2); sBar1.drawCircle(283,23,2,TFT_YELLOW);
-    sBar1.pushSprite(10,170);
+    tierError.fillSprite(SPRITE_FILL);
+    tierError.drawFloat(fabsf(tipAngle-target),2,100,40);
+    tierError.drawString(tipAngle>=target ? "+" : "-",15,40);
+    tierError.drawCircle(106,10,2,0xEF00);
+    tierError.pushSprite(210,205);
+    sBar1.pushSprite(10,245);
     return;
   }
   int lastFillBarWidth = fillBarWidth;
@@ -1690,8 +1713,36 @@ void updateRPMSetValueSprite()
 
 void updateMarkPointsSprite()
 {
+    float leftValue=markL,rightValue=markR;
+    int ordinal=markIdx,total=nMarkIdx;
+    if(displayMode==DisplayMode::CLASSIC_TIER) {
+      const auto& mesh=runtimeGemMesh();
+      const unsigned count=mesh.active()?mesh.planes().size():GemData::kPlaneCount;
+      float indices[512]; uint16_t facets[512]; unsigned n=0;
+      for(unsigned p=0;p<count && n<512;++p) {
+        const auto tier=mesh.active()?mesh.planes()[p].tier:GemData::kPlanes[p].tier;
+        if(tier!=jobTier) continue;
+        float index=mesh.active()?mesh.planes()[p].twistTicks:GemData::kPlanes[p].twistTicks;
+        const float angle=mesh.active()?mesh.planes()[p].tipDegrees:GemData::kPlanes[p].tipDegrees;
+        const float wheel=mesh.active()?mesh.indexResolution():96.0f;
+        if(angle<0 || angle>90) index+=wheel*.5f;
+        index=fmodf(index+wheel,wheel);
+        if(wheelIndex>0 && wheel>0) index*=wheelIndex/wheel;
+        unsigned pos=n;
+        while(pos && indices[pos-1]>index) { indices[pos]=indices[pos-1]; facets[pos]=facets[pos-1]; --pos; }
+        indices[pos]=index;
+        facets[pos]=mesh.active()?mesh.planes()[p].facet:GemData::kPlanes[p].facet;
+        ++n;
+      }
+      if(n) {
+        unsigned selected=0;
+        for(unsigned i=0;i<n;++i) if(facets[i]==jobFacet) selected=i;
+        ordinal=selected+1; total=n;
+        leftValue=indices[(selected+n-1)%n]; rightValue=indices[(selected+1)%n];
+      }
+    }
     markSprite.fillSprite(SPRITE_FILL);
-    char counter[32]; snprintf(counter, sizeof(counter), "%d/%d", int(markIdx), int(nMarkIdx));
+    char counter[32]; snprintf(counter, sizeof(counter), "%d/%d", ordinal,total);
     markSprite.setTextDatum(BC_DATUM);
     if (markSprite.textWidth(counter) > 96) {
       markSprite.unloadFont();
@@ -1700,7 +1751,7 @@ void updateMarkPointsSprite()
       markSprite.loadFont(LABELS);
     } else markSprite.drawString(counter, 155, 30);
     markSprite.setTextDatum(BR_DATUM);
-  markSprite.drawFloat(markL, 2, 80, 30);
+  markSprite.drawFloat(leftValue, 2, 80, 30);
   markSprite.drawLine(105, 7, 99, 15, 0x07FE);
   markSprite.drawLine(99, 15, 105, 23, 0x07FE);
   markSprite.drawLine(106, 7, 100, 15, 0x07FE);
@@ -1709,7 +1760,7 @@ void updateMarkPointsSprite()
   markSprite.drawLine(216, 15, 210, 23, 0x07FE);
   markSprite.drawLine(211, 7, 217, 15, 0x07FE);
   markSprite.drawLine(217, 15, 211, 23, 0x07FE);
-  markSprite.drawFloat(markR, 2, 300, 30);
+  markSprite.drawFloat(rightValue, 2, 300, 30);
   markSprite.pushSprite(10, 130);
 }
 

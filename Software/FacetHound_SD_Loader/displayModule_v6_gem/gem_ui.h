@@ -42,6 +42,8 @@ class GemUi
 public:
     explicit GemUi(TFT_eSPI& display);
     bool begin(DisplayMode mode);
+    void releaseSprites();
+    void inferredTierName(uint16_t plane, char* text, size_t size) const;
     void tick(const GemTelemetry& state);
     void invalidate();
 
@@ -85,7 +87,6 @@ private:
     uint16_t nearestPlane(float tipDegrees, float twistTicks) const;
     bool edgeSelected(uint16_t edgeIndex, uint16_t plane) const;
     void fillSelectedProjection(uint16_t edgeCount, uint8_t panel);
-    void inferredTierName(uint16_t plane, char* text, size_t size) const;
     float selectedTargetTip(const GemTelemetry& state) const;
     float selectedTargetTwist(const GemTelemetry& state) const;
     void formatTierFacet(const GemTelemetry& state, char* text, size_t size,

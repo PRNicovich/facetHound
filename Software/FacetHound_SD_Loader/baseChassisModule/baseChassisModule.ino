@@ -548,10 +548,11 @@ static void setDisplayVisualMode(const char* mode)
                          !strcasecmp(mode, "STATIC") ? 2 :
                          !strcasecmp(mode, "CLASSIC_TIER") ? 3 : 0;
     const bool changed = displayVisualMode != next;
+    const bool changingMarkLayout = (displayVisualMode == 0) != (next == 0);
     const bool enteringGemView = displayVisualMode == 0 && next != 0;
     displayVisualMode = next;
     displayModeKnown = true;
-    if (changed && activeGemLoaded) rebuildLoadedMarksForMode();
+    if (changed && activeGemLoaded && changingMarkLayout) rebuildLoadedMarksForMode();
     if ((!enteringGemView && next!=3) || activeGemLoaded || savedGemRestorePending) return;
 
     const uint8_t firstTier = BuiltinGem::kCuts[0].tier;
