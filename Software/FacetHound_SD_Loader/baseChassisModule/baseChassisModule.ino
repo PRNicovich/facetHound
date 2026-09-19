@@ -199,7 +199,7 @@ static void updateZMillimeters()
              (ZED_GEAR_RATIO * ZED_ENC_OVERSAMPLE));
 }
 
-static float twistPositionFromRaw(int raw)
+static float twistPositionFromRaw(float raw)
 {
     float delta = float(raw - S.twistZeroRaw);
     float position = delta * S.wheelIndex / TWIST_ENCODER_COUNTS;
@@ -300,7 +300,7 @@ void mastTask()
             }
             else if (!strcmp(key, "twist"))
             {
-                if (val < 0.0f || val > 4095.0f)
+                if (val < 0.0f || val >= TWIST_ENCODER_COUNTS)
                     continue;
 
                 uint32_t now = millis();
@@ -309,7 +309,7 @@ void mastTask()
                 twistRxEver = true;
 
                 S.twistEncoderRaw = int(val);
-                float nextTwist = twistPositionFromRaw(S.twistEncoderRaw);
+                float nextTwist = twistPositionFromRaw(val);
 
                 if (!isfinite(lastTwistValue) ||
                     fabsf(shortestArcPath(nextTwist, lastTwistValue, S.wheelIndex)) > 0.001f)

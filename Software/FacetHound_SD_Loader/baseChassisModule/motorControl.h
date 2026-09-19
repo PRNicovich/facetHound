@@ -86,7 +86,7 @@ void requestLapLoopback();
 #define ZED_ENC_OVERSAMPLE        4.0f
 
 // Twist correction.
-#define POSITION_ERROR_TOL      0.013f
+#define POSITION_ERROR_TOL      0.009f
 #define TWIST_SETTLE_FRAMES     3
 #define TWIST_CONTROL_INTERVAL_MS 5
 #define TWIST_CORRECTION_GAIN   0.2f

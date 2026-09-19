@@ -846,7 +846,7 @@ static void updateTwistMotor(SystemState &S)
 
     lastTwistControlMs = now;
 
-    const float positionTolerance = max(POSITION_ERROR_TOL, 1.01f * S.wheelIndex / 4096.0f);
+    const float positionTolerance = POSITION_ERROR_TOL;
     if (fabsf(shortestArcPath(S.targetTwist, S.actualTwist, S.wheelIndex)) <= positionTolerance)
     {
         twistSettled = true;

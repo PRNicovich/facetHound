@@ -15,6 +15,27 @@ GemSdDiagnostics sdDiagnostics;
 SoftwareSPI gemSdSpi(GEM_SD_SCK_PIN, GEM_SD_MISO_PIN, GEM_SD_MOSI_PIN);
 constexpr uint32_t SD_RETRY_INTERVAL_MS = 1000;
 
+// The card has its own SPI pins. Keep the installed SDFS/SdFat file API,
+// but use its supported dedicated-bus mode instead of SDFS's hardcoded
+// shared mode. No library files or card format are modified.
+class GemCardFilesystem : public sdfs::SDFSImpl {
+public:
+    bool begin() override {
+        if (_mounted) return true;
+        _mounted = _fs.begin(SdSpiConfig(_cfg._csPin, DEDICATED_SPI,
+                                        _cfg._spiSettings, _cfg._spi));
+        Serial.print("@SD_MOUNT,bus=dedicated,ready="); Serial.print(_mounted ? 1 : 0);
+        Serial.print(",error=0x"); Serial.print(_fs.sdErrorCode(), HEX);
+        Serial.print(",data=0x"); Serial.println(_fs.sdErrorData(), HEX);
+        FsDateTime::setCallback(dateTimeCB);
+        return _mounted;
+    }
+    void end() override {
+        _fs.end();
+        _mounted = false;
+    }
+};
+
 bool supportedName(const char* name)
 {
     if (!name) return false;
@@ -360,6 +381,7 @@ GemSdResult parseDesign(File& file, bool fct, GemSdDesign* design)
 
 bool beginGemSd()
 {
+    SDFS = fs::FS(std::make_shared<GemCardFilesystem>());
     pinMode(GEM_SD_CS_PIN, OUTPUT);
     digitalWrite(GEM_SD_CS_PIN, HIGH);
     gemSdSpi.begin();
@@ -396,6 +418,7 @@ uint8_t probeGemSdCommand0()
     sdDiagnostics.ready = false;
     sdDiagnostics.rootChecked = false;
     digitalWrite(GEM_SD_CS_PIN, HIGH);
+    gemSdSpi.begin(); // SD.end may have released the PIO SPI transport.
     gemSdSpi.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
     for (uint8_t i = 0; i < 10; ++i) gemSdSpi.transfer(uint8_t(0xFF));
     digitalWrite(GEM_SD_CS_PIN, LOW);
@@ -484,7 +507,7 @@ void probeGemSdFilesystem()
     sdDiagnostics.rootChecked = false;
     SdFat probe;
     const bool card = probe.cardBegin(SdSpiConfig(
-        GEM_SD_CS_PIN, SHARED_SPI, uint32_t(250000), &gemSdSpi));
+        GEM_SD_CS_PIN, DEDICATED_SPI, uint32_t(250000), &gemSdSpi));
     Serial.print("@SD_FS,card_init="); Serial.print(card ? "OK" : "FAIL");
     Serial.print(",error=0x"); Serial.print(probe.sdErrorCode(), HEX);
     Serial.print(",data=0x"); Serial.println(probe.sdErrorData(), HEX);

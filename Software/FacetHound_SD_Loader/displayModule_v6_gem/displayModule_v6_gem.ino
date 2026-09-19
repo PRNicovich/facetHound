@@ -145,8 +145,10 @@ bool restoreDisplayPending = false;
 bool usbDemoMode = false;
 
 static const uint32_t DISPLAY_BAUD = 460800;
-static const uint16_t RX_BYTE_BUDGET = 320;
-static const uint8_t RX_LINE_BUDGET = 12;
+// Drain ordinary telemetry accumulated during a full model redraw before
+// painting again. All records retain wire order; none are prioritized/dropped.
+static const uint16_t RX_BYTE_BUDGET = 2048;
+static const uint8_t RX_LINE_BUDGET = 128;
 static const uint32_t SETTINGS_MAGIC = 0x46484D36; // "FHM6"
 static const char DISPLAY_FIRMWARE_ID[] = "TARGET-MENU-20260917";
 
@@ -730,6 +732,8 @@ void parseLine(char* line)
     char* name = strtok_r(nullptr, ",", &save);
     if (tier && facet && angle && gemcadDistance && index)
     {
+      const bool selectionChanged = jobTier != uint16_t(strtoul(tier, nullptr, 10)) ||
+                                    jobFacet != uint16_t(strtoul(facet, nullptr, 10));
       jobTier = uint16_t(strtoul(tier, nullptr, 10));
       jobFacet = uint16_t(strtoul(facet, nullptr, 10));
       jobAngle = strtof(angle, nullptr);
@@ -739,6 +743,11 @@ void parseLine(char* line)
       jobActive = true;
       updateMarkPointsBool = true;
       ++telemetryVersion;
+      if (selectionChanged) {
+        char ack[64];
+        snprintf(ack, sizeof(ack), "@JOBACK,%u,%u", unsigned(jobTier), unsigned(jobFacet));
+        sendLineBoth(ack);
+      }
     }
     return;
   }

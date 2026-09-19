@@ -1,5 +1,41 @@
 # HUD, exact selection and card trial
 
+## Full-resolution index / dedicated-SPI trial
+
+Upload mast, base and display together for this trial. Mast now retains all
+14 AMT232B position bits. @twist keeps its legacy 4096 units/revolution, but
+uses fractional quarter counts (e.g. 245.25). Base converts the floating-point
+value before truncating the legacy integer diagnostic/calibration field.
+No bit-bang timing, pin, MODE wiring or parity changes. At wheel 96 the
+measurement increment is 96/16384 = 0.005859375, rather than 0.0234375.
+Stop tolerance is 0.009 index units, with no automatic coarse-count enlargement.
+Settled holding remains passive: no feedback pulses until a fresh seek.
+This is resolution, not a claim of calibrated mechanical accuracy. Larger
+wheel resolutions may exceed this tolerance's quantization requirement.
+
+Display drains up to 2048 bytes/128 lines per loop instead of 320/12, preserving
+wire order, before the next redraw. A received changed selection emits
+@JOBACK,tier,facet; base TRACE ON exposes it. This lets a missed key be separated
+from delayed display receipt. Model rotation still follows actual index until
+the user chooses preview-versus-live behavior; physical tip never drives pose.
+
+Installed Arduino-Pico 5.6.0 SdFat error 0C is CMD18; data 04 is illegal command.
+Sector 0 already read using that library, so this is not proof of a bad format.
+Use the existing SDFS implementation with a small begin/end override selecting
+DEDICATED_SPI for the card-only bus and actually closing SdFat on end. All
+existing SD/File/cache APIs remain intact; no installed library files change.
+Mount attempts print @SD_MOUNT with library error/data. This is a trial for
+read/stop/restart reliability, not yet validated on hardware. No formatting.
+
+BLD readback C02/1414/AA0F/C800 means brake, two pole pairs, 2 s ramps,
+sensored mode, and 200 RPM setpoint. Do not increase current. With power off,
+disconnect motor phase leads and compare the three pairwise winding resistances;
+all should be similar, with none open. Account for test-lead resistance. Keep
+phase leads isolated for powered Hall-only testing. Verify Hall supply at the
+motor, then hand-turn and check all three Hall outputs switch. Valid switching
+does not alone prove phase/Hall alignment. Do not infer wire mapping from the
+ambiguous photos or randomly swap the Hall power leads.
+
 ## Settled hold / keyboard / SD / lap integration follow-up
 
 Upload base and display; mast and keyboard unchanged. Index now latches settled

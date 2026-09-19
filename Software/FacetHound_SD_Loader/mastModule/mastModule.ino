@@ -22,7 +22,7 @@ constexpr uint32_t BASE_BAUD = 115200;
 constexpr uint8_t TWIST_AVERAGE_SAMPLES = 16;
 constexpr uint8_t TIP_AVERAGE_SAMPLES = 8;
 constexpr uint8_t FORCE_AVERAGE_SAMPLES = 32;
-constexpr float TWIST_ENCODER_COUNTS = 4096.0f;
+constexpr float TWIST_ENCODER_COUNTS = 16384.0f;
 constexpr uint32_t TELEMETRY_PERIOD_MS = 20; // 50 complete frames per second.
 
 SerialPIO baseSerial(BASE_TX_PIN, BASE_RX_PIN);
@@ -75,8 +75,8 @@ static uint16_t readEncoderBitBang(uint8_t csPin, uint8_t clockPin,
   digitalWrite(csPin, HIGH);
 
   if (!validEncoderWord(word)) return 0xFFFFu;
-  // Both B encoders are 14-bit. Twist stays normalized to the existing
-  // 4096-count wire contract; tip retains all 14 position bits.
+  // Both B encoders are 14-bit. Retain full precision for both sensors;
+  // the telemetry formatter supplies the legacy twist scale separately.
   if (dataBits == 12) return uint16_t((word & 0x3FFFu) >> 2);
   if (dataBits == 14) return uint16_t(word & 0x3FFFu);
   return 0;
@@ -116,7 +116,14 @@ static void publishTelemetry()
   sendTelemetryLine("encfault", (tipSampleValid ? 0 : 1) |
                                 (twistSampleValid ? 0 : 2));
   if (tipSampleValid) sendTelemetryLine("tip", tipRawAveraged);
-  if (twistSampleValid) sendTelemetryLine("twist", twistRawAveraged);
+  if (twistSampleValid) {
+    // Keep the established 4096-units/revolution protocol scale, but retain
+    // the B encoder's lower two bits as quarter-count fractional values.
+    baseSerial.print("@twist,"); baseSerial.println(float(twistRawAveraged) / 4.0f, 2);
+    if (usbDiagnosticMode && Serial) {
+      Serial.print("@twist,"); Serial.println(float(twistRawAveraged) / 4.0f, 2);
+    }
+  }
   sendTelemetryLine("force", forceRawAveraged); // 12-bit ADC count * 32
 }
 
@@ -126,7 +133,7 @@ static void sampleSensors()
   const uint16_t tipSample = readEncoderChecked(
       TIP_CS_PIN, TIP_CLOCK_PIN, TIP_DATA_PIN, 14);
   const uint16_t twistSample = readEncoderChecked(
-      TWIST_CS_PIN, TWIST_CLOCK_PIN, TWIST_DATA_PIN, 12);
+      TWIST_CS_PIN, TWIST_CLOCK_PIN, TWIST_DATA_PIN, 14);
   const bool tipWasValid = tipSampleValid;
   const bool twistWasValid = twistSampleValid;
   tipSampleValid = tipSample != 0xFFFFu;
@@ -142,7 +149,7 @@ static void sampleSensors()
   }
 
   // Circular averaging prevents the twist reading from jumping through the
-  // middle of the wheel when samples straddle the 4095 -> 0 rollover.
+  // middle of the wheel when samples straddle the 16383 -> 0 rollover.
   if (twistSampleValid)
   {
   const float phase = TWO_PI * float(twistSample) / TWIST_ENCODER_COUNTS;
@@ -152,7 +159,7 @@ static void sampleSensors()
                                twistCosAverage.getFastAverage());
   if (averagedPhase < 0.0f) averagedPhase += TWO_PI;
   twistRawAveraged = lroundf(
-      averagedPhase * TWIST_ENCODER_COUNTS / TWO_PI) & 0x0FFF;
+      averagedPhase * TWIST_ENCODER_COUNTS / TWO_PI) & 0x3FFF;
   }
 
   // Preserve the classic oversampled ranges used by base calibration and the
