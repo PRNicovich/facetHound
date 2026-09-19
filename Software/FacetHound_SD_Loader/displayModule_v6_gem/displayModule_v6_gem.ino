@@ -1338,6 +1338,7 @@ void drawMainScreen(bool initHere)
     sBar1.setColorDepth(8);
     sBar1.createSprite(300, displayMode==DisplayMode::CLASSIC_TIER ? 40 : 20);
     if(displayMode==DisplayMode::CLASSIC_TIER) {
+      sBar1.loadFont(LABELS); // Same smooth font and size as the index list.
       tierError.setColorDepth(8);
       tierError.createSprite(110,40);
       tierError.loadFont(ERRORTEXT);
@@ -1595,9 +1596,28 @@ void updateForceBarSprite()
     static uint32_t lastTierDraw=0;
     if(!strcmp(previous,combined) && millis()-lastTierDraw<500) return;
     snprintf(previous,sizeof(previous),"%s",combined); lastTierDraw=millis();
-    sBar1.fillSprite(SPRITE_FILL); sBar1.setTextDatum(MC_DATUM);
+    sBar1.fillSprite(SPRITE_FILL); sBar1.setTextDatum(BC_DATUM);
     sBar1.setTextColor(TFT_YELLOW,SPRITE_FILL);
-    sBar1.drawString(text,150,15,2);
+    // LABELS has no angle-bracket glyphs: draw the same chevrons as index.
+    char middle[40],row[96];
+    snprintf(middle,sizeof(middle),"%s %u/%u",selected,current+1,count);
+    snprintf(row,sizeof(row),"%s   %s   %s",prev,middle,next);
+    while(sBar1.textWidth(row)>296 && (strlen(prev)>1 || strlen(next)>1)) {
+      char* longest=strlen(prev)>=strlen(next)?prev:next;
+      longest[strlen(longest)-1]='\0';
+      snprintf(row,sizeof(row),"%s   %s   %s",prev,middle,next);
+    }
+    const int gap=sBar1.textWidth("   ");
+    const int start=(300-sBar1.textWidth(row))/2;
+    const int leftArrow=start+sBar1.textWidth(prev)+gap/2;
+    const int rightArrow=leftArrow+gap+sBar1.textWidth(middle);
+    sBar1.drawString(row,150,30);
+    for(int stroke=0;stroke<2;++stroke) {
+      sBar1.drawLine(leftArrow+3+stroke,7,leftArrow-3+stroke,15,TFT_YELLOW);
+      sBar1.drawLine(leftArrow-3+stroke,15,leftArrow+3+stroke,23,TFT_YELLOW);
+      sBar1.drawLine(rightArrow-3+stroke,7,rightArrow+3+stroke,15,TFT_YELLOW);
+      sBar1.drawLine(rightArrow+3+stroke,15,rightArrow-3+stroke,23,TFT_YELLOW);
+    }
     char errorText[24];
     snprintf(errorText,sizeof(errorText),"%+.2f",tipAngle-target);
     tierError.fillSprite(SPRITE_FILL);
