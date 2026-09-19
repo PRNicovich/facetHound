@@ -6,8 +6,8 @@ settings link.
 
 ## Wiring
 
-The loader follows the v9 BaseModule header through Arduino-Pico's PIO-backed
-`SoftwareSPI`:
+The loader follows the v9 BaseModule header through `GemSdSpi`, a bounded
+GPIO SPI adapter for the existing Arduino SD/SdFat filesystem:
 
 | microSD reader | Base GPIO |
 | --- | ---: |
@@ -18,10 +18,27 @@ The loader follows the v9 BaseModule header through Arduino-Pico's PIO-backed
 | VCC | Reader's documented supply |
 | GND | GND |
 
-This ordering is not a legal hardware-SPI mapping, so one PIO state machine is
-used for software SPI. The pin constants are grouped at the top of
+This ordering is not a legal hardware-SPI mapping. The transport clocks GPIOs
+in mode 0 at no more than 250 kHz, with interrupts enabled. No PIO state
+machines are allocated, including on repeated retries. The pin constants are at the top of
 `sdGemLoader.h`. GPIO 8/9 serve the v9 `ESC.TTL` header for the external
 BLD-510B RS-485 interface; GPIO 26/27 are not connected on v9.
+
+The Arduino-Pico 5.6.0 `SoftwareSPI` implementation allocated another PIO
+state machine on each begin, did not reclaim it on end, and waited indefinitely
+for FIFO data. It also dereferenced null source/destination buffer pointers;
+SdFat uses such buffers for receive-only/send-only transfers. `GemSdSpi`
+avoids those paths and sends 0xFF during receive-only SD transfers. Filesystem
+mounting remains in SdFat, using shared transaction mode and explicit teardown.
+No formatting or installed-library modifications are required.
+
+After uploading the base sketch, run `STOP`, `SD RETRY`, `SD LIST`.
+The mount diagnostic should now say `bus=gpio`; `bus=dedicated` means the old
+firmware is still running. Repeat `SD RETRY` several times and issue `STATUS`
+between attempts to check that serial remains responsive. An absent card can
+still take the library's finite initialization timeout. With a mounted card,
+use `GEM LOAD <index>` with an index returned by `SD LIST`, then choose dynamic
+mode in settings. Loading can create a same-named geometry cache (see below).
 
 Use a FAT16/FAT32 card. Put `.asc` or `.fct` files in the card root. The browser
 intentionally ignores directories and other file types.

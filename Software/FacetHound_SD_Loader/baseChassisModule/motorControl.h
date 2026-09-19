@@ -104,8 +104,7 @@ void requestLapLoopback();
 // Verify against measured travel; driver microstep changes affect this scale.
 #define Z_STEPS_PER_MM           2000.0f
 
-#define RPM_LIMIT_LOW     0
-#define RPM_LIMIT_HIGH  200
+#include "lapMotorLimits.h"
 
 #define DOUBLE_CLICK_MS 150
 

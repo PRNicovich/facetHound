@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "systemState.h"
+#include "lapMotorLimits.h"
 
 #if defined(ARDUINO_ARCH_RP2040) && __has_include(<hardware/flash.h>) && \
     __has_include(<hardware/sync.h>) && __has_include(<hardware/regs/addressmap.h>)
@@ -243,7 +244,7 @@ static void sanitizeState(SystemState& S)
 
     if (!isfinite(S.flowSetpoint)) S.flowSetpoint = 0.0f;
     S.flowSetpoint = constrain(S.flowSetpoint, 0.0f, 750.0f);
-    S.RPMSetpoint = constrain(S.RPMSetpoint, 0, 200);
+    S.RPMSetpoint = constrain(S.RPMSetpoint, RPM_LIMIT_LOW, RPM_LIMIT_HIGH);
     if (S.zIdx < 0 || S.zIdx > 2) S.zIdx = 0;
     if (S.twistIdx < 0 || S.twistIdx > 2) S.twistIdx = 1;
     if (S.flow_dir < 0 || S.flow_dir > 3) S.flow_dir = 1;

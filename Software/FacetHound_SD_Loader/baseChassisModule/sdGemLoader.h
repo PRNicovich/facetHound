@@ -4,7 +4,7 @@
 #include <vector>
 
 // BaseModule v9 microSD header. This order is implemented with the
-// Arduino-Pico PIO-backed SoftwareSPI class because it is not a legal
+// bounded GPIO SPI transport because it is not a legal
 // hardware-SPI signal mapping.
 #define GEM_SD_CS_PIN   10
 #define GEM_SD_SCK_PIN  12

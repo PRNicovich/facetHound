@@ -2,7 +2,7 @@
 
 #include <SD.h>
 #include <SPI.h>
-#include <SoftwareSPI.h>
+#include "GemSdSpi.h"
 #include <SdFat.h>
 #include <math.h>
 #include <strings.h>
@@ -12,19 +12,18 @@ namespace
 {
 bool sdReady = false;
 GemSdDiagnostics sdDiagnostics;
-SoftwareSPI gemSdSpi(GEM_SD_SCK_PIN, GEM_SD_MISO_PIN, GEM_SD_MOSI_PIN);
+GemSdSpi gemSdSpi(GEM_SD_SCK_PIN, GEM_SD_MISO_PIN, GEM_SD_MOSI_PIN);
 constexpr uint32_t SD_RETRY_INTERVAL_MS = 1000;
 
-// The card has its own SPI pins. Keep the installed SDFS/SdFat file API,
-// but use its supported dedicated-bus mode instead of SDFS's hardcoded
-// shared mode. No library files or card format are modified.
+// Keep the installed SDFS/SdFat file API and explicitly close the underlying
+// volume between attempts. Shared mode terminates reads between operations.
 class GemCardFilesystem : public sdfs::SDFSImpl {
 public:
     bool begin() override {
         if (_mounted) return true;
-        _mounted = _fs.begin(SdSpiConfig(_cfg._csPin, DEDICATED_SPI,
+        _mounted = _fs.begin(SdSpiConfig(_cfg._csPin, SHARED_SPI,
                                         _cfg._spiSettings, _cfg._spi));
-        Serial.print("@SD_MOUNT,bus=dedicated,ready="); Serial.print(_mounted ? 1 : 0);
+        Serial.print("@SD_MOUNT,bus=gpio,ready="); Serial.print(_mounted ? 1 : 0);
         Serial.print(",error=0x"); Serial.print(_fs.sdErrorCode(), HEX);
         Serial.print(",data=0x"); Serial.println(_fs.sdErrorData(), HEX);
         FsDateTime::setCallback(dateTimeCB);
@@ -418,7 +417,7 @@ uint8_t probeGemSdCommand0()
     sdDiagnostics.ready = false;
     sdDiagnostics.rootChecked = false;
     digitalWrite(GEM_SD_CS_PIN, HIGH);
-    gemSdSpi.begin(); // SD.end may have released the PIO SPI transport.
+    gemSdSpi.begin(); // Idempotent; no state machines or heap allocation.
     gemSdSpi.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
     for (uint8_t i = 0; i < 10; ++i) gemSdSpi.transfer(uint8_t(0xFF));
     digitalWrite(GEM_SD_CS_PIN, LOW);
@@ -507,7 +506,7 @@ void probeGemSdFilesystem()
     sdDiagnostics.rootChecked = false;
     SdFat probe;
     const bool card = probe.cardBegin(SdSpiConfig(
-        GEM_SD_CS_PIN, DEDICATED_SPI, uint32_t(250000), &gemSdSpi));
+        GEM_SD_CS_PIN, SHARED_SPI, uint32_t(250000), &gemSdSpi));
     Serial.print("@SD_FS,card_init="); Serial.print(card ? "OK" : "FAIL");
     Serial.print(",error=0x"); Serial.print(probe.sdErrorCode(), HEX);
     Serial.print(",data=0x"); Serial.println(probe.sdErrorData(), HEX);

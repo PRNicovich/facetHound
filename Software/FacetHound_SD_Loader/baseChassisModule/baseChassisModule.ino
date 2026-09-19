@@ -1396,7 +1396,7 @@ static void printUsbHelp()
 {
     Serial.println("@HELP,STATUS | STREAM ON [ms] | STREAM OFF");
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
-    Serial.println("@HELP,RPM <0..200> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
+    Serial.println("@HELP,RPM <0..1500> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
     Serial.println("@HELP,SD STATUS|PROBE|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
     Serial.println("@HELP,GEM LOAD <SD-file-index> | MODE CLASSIC|STATIC|DYNAMIC");
@@ -1801,6 +1801,10 @@ static void handleUsbCommand(char* line)
         }
         else if (!strcasecmp(mode, "RETRY"))
         {
+            if (S.twistLock || S.zLock || S.indexSpinRpm != 0.0f ||
+                S.motorDir == 1 || S.motorDir == 3) {
+                Serial.println("@ERR,SD,stop motion before RETRY"); return;
+            }
             const bool ready = retryGemSd();
             Serial.print("@ACK,SD,RETRY,"); Serial.println(ready ? "READY" : "MISSING");
             if (ready) gemSdFileCount();

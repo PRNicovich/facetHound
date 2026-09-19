@@ -41,7 +41,7 @@ unknown lines for forward compatibility.
 | `JOG TWIST <index-units>` | Set a relative index target and enable index lock | `@ACK,JOG,TWIST,<target>` |
 | `INDEX PROBE` | Explicit motion test: 128 positive STEP pulses at 300 pulses/s maximum, then sample encoder delta and release; requires fresh valid encoders, axes unlocked and lap paused | `@INDEX_PROBE,...,suggested_motor_sign=...` (does not change calibration) |
 | `JOG Z <signed-steps>` | Request a relative Z move in raw motor steps | `@ACK,JOG,Z,<steps>` |
-| `RPM <0..200>` | Set lap-speed command in RPM | `@ACK,RPM,<rpm>` |
+| `RPM <0..1500>` | Set lap-speed command in RPM (no automatic startup boost) | `@ACK,RPM,<rpm>` |
 | `MOTOR CW` | Set lap direction clockwise | `@ACK,MOTOR` |
 | `MOTOR CCW` | Set lap direction counter-clockwise | `@ACK,MOTOR` |
 | `MOTOR OFF` | Set lap RPM command to zero | `@ACK,MOTOR` |
@@ -51,7 +51,7 @@ unknown lines for forward compatibility.
 | `MOTOR STATUS` | Report Modbus validation counters and last raw reply | `@MOTOR,...` |
 | `SD STATUS` | Report SD initialization and root-directory state | `@SD,...` |
 | `SD PROBE` | With axes unlocked and lap paused, test CMD0 and initialization, then use SdFat for card initialization, sector-0 read and volume mounting. No formatting/file writes; follow with SD RETRY | `@SD_PROBE,...`, `@SD_INIT,...`, `@SD_FS,...` including library error/data codes |
-| `SD RETRY` | Force SD reinitialization after insertion/wiring changes | `@ACK,SD,RETRY,READY/MISSING` |
+| `SD RETRY` | With axes unlocked and lap paused, force SD reinitialization after insertion/wiring changes | `@SD_MOUNT,bus=gpio,...`, `@ACK,SD,RETRY,READY/MISSING` |
 | `SD LIST` | List readable root-level `.asc` and `.fct` files | `@SD_FILE,<index>,<name>` |
 | `GEM LOAD <index>` | Load the index returned by SD LIST using the existing cache/build and mesh-transfer path; axes unlocked and lap paused | `@GEM,LOADED,<path>` or `@CFGNAK,LOAD_SD_FILE,<reason>` |
 | `MODE CLASSIC\|STATIC\|DYNAMIC` | Select display mode without changing motor locks | `@ACK,MODE,<mode>` |
