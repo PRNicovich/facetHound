@@ -39,6 +39,7 @@ unknown lines for forward compatibility.
 | `TEST DISPLAY LOOPBACK` | Five-second base GPIO4/5 loopback test | `@ACK,TEST,DISPLAY,LOOPBACK,5_SECONDS` |
 | `KEY <0..255>` | Inject one configured HID usage through the same action router as the UART keyboard | `@ACK,KEY,<hid>` |
 | `JOG TWIST <index-units>` | Set a relative index target and enable index lock | `@ACK,JOG,TWIST,<target>` |
+| `INDEX PROBE` | Explicit motion test: 128 positive STEP pulses at 300 pulses/s maximum, then sample encoder delta and release; requires fresh valid encoders, axes unlocked and lap paused | `@INDEX_PROBE,...,suggested_motor_sign=...` (does not change calibration) |
 | `JOG Z <signed-steps>` | Request a relative Z move in raw motor steps | `@ACK,JOG,Z,<steps>` |
 | `RPM <0..200>` | Set lap-speed command in RPM | `@ACK,RPM,<rpm>` |
 | `MOTOR CW` | Set lap direction clockwise | `@ACK,MOTOR` |

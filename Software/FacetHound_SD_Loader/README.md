@@ -21,8 +21,8 @@ ranges are documented in `mastModule/README.md`.
 | microSD reader | Base GPIO |
 | --- | ---: |
 | CS | 10 |
-| SCK | 11 |
-| MOSI | 12 |
+| MOSI | 11 |
+| SCK | 12 |
 | MISO | 13 |
 
 This is the connector order routed by `Hardware/pcb/v9/BaseModule.sch`.

@@ -1398,6 +1398,7 @@ static void printUsbHelp()
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
     Serial.println("@HELP,SD STATUS|PROBE|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
     Serial.println("@HELP,GEM LOAD <SD-file-index> | MODE CLASSIC|STATIC|DYNAMIC");
+    Serial.println("@HELP,INDEX PROBE (128 positive pulses; axes unlocked, lap paused)");
 }
 
 static bool selectAdjacentGemTier(bool forward)
@@ -1431,24 +1432,14 @@ static bool selectAdjacentGemTier(bool forward)
         }
     }
 
-    size_t selected = 0;
-    float lowestIndex = INFINITY;
-    for (size_t i = 0; i < count; ++i)
-    {
+    size_t ordinal = 0;
+    for (size_t i = 0; i < current; ++i)
+        if (activeGemDesign.cuts[i].tier == currentTier) ++ordinal;
+    size_t selected = 0, first = 0, position = 0;
+    for (size_t i = 0; i < count; ++i) {
         if (activeGemDesign.cuts[i].tier != targetTier) continue;
-        if (S.markPoints[i] < lowestIndex)
-        {
-            lowestIndex = S.markPoints[i];
-            selected = i;
-        }
-    }
-    float nearestDistance = 1.0001f;
-    if (S.twistReady && isfinite(S.actualTwist)) {
-        for (size_t i = 0; i < count; ++i) {
-            if (activeGemDesign.cuts[i].tier != targetTier) continue;
-            const float distance = fabsf(shortestArcPath(S.markPoints[i], S.actualTwist, S.wheelIndex));
-            if (distance < nearestDistance) { nearestDistance = distance; selected = i; }
-        }
+        if (position == 0) { first = i; selected = first; }
+        if (position++ == ordinal) { selected = i; break; }
     }
     S.markIdx = int(selected);
     homeMarkPoint(&S);
@@ -1562,15 +1553,14 @@ static bool selectAdjacentBuiltin(bool changeTier, bool forward)
         }
     }
 
-    if (changeTier && S.twistReady && isfinite(S.actualTwist)) {
-        float nearestDistance = 1.0001f;
+    if (changeTier) {
+        uint16_t ordinal = 0, position = 0;
+        for (uint16_t i = 0; i < uint16_t(builtinCutIndex); ++i)
+            if (BuiltinGem::kCuts[i].tier == current.tier) ++ordinal;
         for (uint16_t i = 0; i < BuiltinGem::kCutCount; ++i) {
-            const BuiltinGem::Cut& candidate = BuiltinGem::kCuts[i];
-            if (candidate.tier != targetTier) continue;
-            const float index = machineIndexForFacet(candidate.rawIndex, candidate.storedTipDegrees,
-                                                     BuiltinGem::kWheelIndex);
-            const float distance = fabsf(shortestArcPath(index, S.actualTwist, S.wheelIndex));
-            if (distance < nearestDistance) { nearestDistance = distance; selected = i; }
+            if (BuiltinGem::kCuts[i].tier != targetTier) continue;
+            if (position == 0) selected = i;
+            if (position++ == ordinal) { selected = i; break; }
         }
     }
     builtinCutIndex = selected;
@@ -1642,6 +1632,21 @@ static void handleUsbCommand(char* line)
     char* save = nullptr;
     char* command = strtok_r(line, " \t", &save);
     if (!command) return;
+
+    if (!strcasecmp(command, "INDEX")) {
+        char* verb = strtok_r(nullptr, " \t", &save);
+        if (!verb || strcasecmp(verb, "PROBE")) {
+            Serial.println("@ERR,INDEX,expected PROBE"); return;
+        }
+        if (S.twistLock || S.zLock || twistMotionActive() || S.indexSpinRpm != 0.0f ||
+            S.motorDir == 1 || S.motorDir == 3 || !S.twistReady ||
+            mastEncoderFault != 0 || millis() - lastTwistRxMs > 100) {
+            Serial.println("@ERR,INDEX,stop motion and require fresh valid encoders"); return;
+        }
+        startIndexPolarityProbe(S);
+        Serial.println("@ACK,INDEX,PROBE,128_POSITIVE_PULSES");
+        return;
+    }
 
     if (!strcasecmp(command, "MODE")) {
         char* mode = strtok_r(nullptr, " \t", &save);
@@ -2116,7 +2121,7 @@ void displayTask()
         // 32-byte PIO UART queue while it is busy rendering a frame.
         switch (displaySlot)
         {
-            case 0:  sendKV("T", 24.0f); break;
+            case 0:  sendKV("T", 24.0f); sendKV("A", 24.0f + indexError); break;
             case 1:  sendKV("E", indexError); break;
             case 2:  sendKV("TIP", 45.0f + 12.0f * sinf(phase * 0.5f)); break;
             case 3:  sendKV("ZMM", 100.0f + 25.0f * cosf(phase)); break;
@@ -2146,7 +2151,10 @@ void displayTask()
 
     switch (displaySlot)
     {
-        case 0:  sendKV("T",   S.targetTwist); break;
+        case 0:
+            sendKV("A", S.actualTwist); // Atomic measured pose; never target + stale error.
+            sendKV("T", S.targetTwist);
+            break;
         case 1:  sendKV("E",   displayTwistError); break;
         case 2:  sendKV("TIP", S.tipDegrees); break;
         case 3:  sendKV("ZMM", S.zMM); break;

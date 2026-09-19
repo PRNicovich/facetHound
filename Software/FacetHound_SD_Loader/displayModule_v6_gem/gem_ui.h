@@ -9,6 +9,8 @@
 struct GemTelemetry
 {
     float targetTwist = 0.0f;
+    float actualTwist = 0.0f;
+    bool actualTwistValid = false;
     float twistError = 0.0f;
     float tipDegrees = 0.0f;
     float zMillimeters = 0.0f;
@@ -64,6 +66,7 @@ private:
     uint16_t selectedPlane_ = 0;
     uint32_t lastFrameMs_ = 0;
     uint32_t lastHudMs_ = 0;
+    uint32_t lastHudVersion_ = UINT32_MAX;
     uint32_t lastStateVersion_ = UINT32_MAX;
     uint32_t lastStaticVersion_ = UINT32_MAX;
     bool lastStaticLinkAlive_ = false;

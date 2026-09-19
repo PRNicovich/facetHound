@@ -4,6 +4,7 @@
 struct SystemState;
 void faultHoldTwist(SystemState &S);
 bool indexMotionFaultLatched();
+void startIndexPolarityProbe(SystemState &S);
 void requestLapLoopback();
 
 #include <Arduino.h>

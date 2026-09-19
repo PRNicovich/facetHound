@@ -32,6 +32,10 @@ static int  nLocks = 0;
 static bool twistSettled = false;
 static bool twistMoving = false;
 static bool twistFaultLatched = false;
+static bool indexProbeActive = false;
+static float indexProbeStart = 0.0f;
+static uint32_t indexProbeStartedMs = 0;
+static uint32_t indexProbeSettledMs = 0;
 static bool zMoving = false;
 static float lastTwistTarget = NAN;
 static float twistLegStartError = 0.0f;
@@ -373,7 +377,7 @@ float shortestArcPath(float target, float current, float wheelIndex)
 
 bool twistMotionActive()
 {
-    return twistMoving || twistDirStep.distanceToGo() != 0;
+    return indexProbeActive || twistMoving || twistDirStep.distanceToGo() != 0;
 }
 
 static void stopTwistKeepLock()
@@ -390,6 +394,7 @@ static void stopTwistKeepLock()
 
 void hardStopTwist(SystemState &S)
 {
+    indexProbeActive = false;
     twistFaultLatched = false;
     S.indexSpinRpm = 0.0f;
     S.twistLock = 0;
@@ -632,6 +637,20 @@ void faultHoldTwist(SystemState &S)
 
 bool indexMotionFaultLatched() { return twistFaultLatched; }
 
+void startIndexPolarityProbe(SystemState &S)
+{
+    hardStopTwist(S);
+    S.twistReady = true; // caller checked fresh, valid feedback before entry
+    indexProbeStart = S.actualTwist;
+    indexProbeStartedMs = millis();
+    indexProbeSettledMs = 0;
+    twistDirStep.setMaxSpeed(300.0f);
+    twistDirStep.setAcceleration(600.0f);
+    twistDirStep.move(128); // Uncorrected positive pulses, never a target seek.
+    setTwistDriverEnabled(true);
+    indexProbeActive = true;
+}
+
 void requestLapLoopback()
 {
 #if USE_LAP_MOTOR_RS485
@@ -670,6 +689,27 @@ void requestLapLoopback()
 
 static void updateTwistMotor(SystemState &S)
 {
+    if (indexProbeActive) {
+        if (!S.twistReady || S.twistLock || S.zLock || S.indexSpinRpm != 0.0f ||
+            millis() - indexProbeStartedMs > 2500) {
+            hardStopTwist(S);
+            Serial.println("@INDEX_PROBE,ABORT_FEEDBACK_OR_TIMEOUT");
+            return;
+        }
+        twistDirStep.run();
+        if (twistDirStep.distanceToGo() != 0) return;
+        if (!indexProbeSettledMs) indexProbeSettledMs = millis();
+        if (millis() - indexProbeSettledMs < 250) return;
+        const float delta = shortestArcPath(S.actualTwist, indexProbeStart, S.wheelIndex);
+        Serial.print("@INDEX_PROBE,pulses=128,start="); Serial.print(indexProbeStart, 4);
+        Serial.print(",end="); Serial.print(S.actualTwist, 4);
+        Serial.print(",delta="); Serial.print(delta, 4);
+        Serial.print(",suggested_motor_sign=");
+        if (fabsf(delta) < S.wheelIndex / 4096.0f) Serial.println("UNDETERMINED");
+        else Serial.println(delta * S.indexSign > 0.0f ? 1 : -1);
+        hardStopTwist(S);
+        return;
+    }
     if (!S.twistLock) twistFaultLatched = false;
     if (twistFaultLatched) {
         stopTwistKeepLock();

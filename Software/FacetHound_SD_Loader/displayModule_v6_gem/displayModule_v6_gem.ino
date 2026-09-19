@@ -73,6 +73,8 @@ bool updateTiltAngle = true;
 bool updateTiltError = true;
 float tiltSetAngle = 0.0f;
 float tiltSetError = 0.0f;
+float actualIndexValue = 0.0f;
+bool actualIndexReceived = false;
 int tiltLock = 0;
 bool updateTiltLockBool = true;
 bool updateTiltStepIndexBool = true;
@@ -449,6 +451,10 @@ static void setFlowDir(float v)
   if (!displayedIntChanged(Flow_dir, next)) return;
   Flow_dir = next;
   updateFlowDirBool = true;
+  Serial.print("@UIFLOW,dir="); Serial.print(Flow_dir);
+  Serial.print(",running="); Serial.println(Flow_dir == 0 || Flow_dir == 2);
+  baseSerial.print("@UIFLOW,dir="); baseSerial.print(Flow_dir);
+  baseSerial.print(",running="); baseSerial.println(Flow_dir == 0 || Flow_dir == 2);
 }
 
 static void setForceRaw(float v)
@@ -823,7 +829,11 @@ void parseLine(char* line)
 
   if      (!strcmp(key, "T"))    setTilt(val);
   else if (!strcmp(key, "E"))    setTiltError(val);
-  else if (!strcmp(key, "A"))    { /* actual twist not drawn on classic screen */ }
+  else if (!strcmp(key, "A")) {
+    actualIndexValue = val;
+    actualIndexReceived = true;
+    ++telemetryVersion;
+  }
   else if (!strcmp(key, "TIP"))  setTip(val);
   else if (!strcmp(key, "P"))    setTip(val);
   else if (!strcmp(key, "ZMM"))  setZ(val);
@@ -1504,6 +1514,8 @@ static GemTelemetry currentGemTelemetry()
 {
   GemTelemetry state;
   state.targetTwist = tiltSetAngle;
+  state.actualTwist = actualIndexValue;
+  state.actualTwistValid = actualIndexReceived;
   state.twistError = tiltSetError;
   state.tipDegrees = tipAngle;
   state.zMillimeters = zValue;
@@ -1554,6 +1566,8 @@ void setup()
 {
   Serial.begin(115200);
   baseSerial.begin(DISPLAY_BAUD);
+  Serial.println("@BUILD,DISPLAY,SDPIN-ACTUALINDEX-HUD2");
+  baseSerial.println("@BUILD,DISPLAY,SDPIN-ACTUALINDEX-HUD2");
 
   // The animated title card is useful on the bench, but it should not hold up
   // an installed display.  Treat USB mode as an actively opened CDC port, not

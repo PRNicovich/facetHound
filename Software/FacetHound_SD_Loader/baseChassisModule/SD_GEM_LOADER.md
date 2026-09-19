@@ -12,8 +12,8 @@ The loader follows the v9 BaseModule header through Arduino-Pico's PIO-backed
 | microSD reader | Base GPIO |
 | --- | ---: |
 | CS | 10 |
-| SCK | 11 |
-| MOSI | 12 |
+| MOSI | 11 |
+| SCK | 12 |
 | MISO | 13 |
 | VCC | Reader's documented supply |
 | GND | GND |

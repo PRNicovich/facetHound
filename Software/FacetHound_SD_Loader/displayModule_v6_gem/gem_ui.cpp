@@ -186,6 +186,7 @@ bool GemUi::begin(DisplayMode mode)
 
 void GemUi::invalidate()
 {
+    lastHudVersion_ = UINT32_MAX;
     lastStateVersion_ = UINT32_MAX;
     lastStaticVersion_ = UINT32_MAX;
     lastStaticLinkAlive_ = !lastStaticLinkAlive_;
@@ -472,7 +473,8 @@ void GemUi::updatePose(const GemTelemetry& state)
     float targetTip = state.jobActive && isfinite(state.jobAngle)
                           ? machineTip(state.jobAngle) : 45.0f;
     float targetTwist = normalizedTwist(
-        state.targetTwist + state.twistError, state.wheelIndex
+        state.actualTwistValid ? state.actualTwist : displayedTwist_ * state.wheelIndex / meshResolution,
+        state.wheelIndex
     );
 
     // No second simulated motor: show live index on the next rendered frame.
@@ -798,10 +800,6 @@ void GemUi::drawHud(const GemTelemetry& state)
 {
     hudCanvas_.fillSprite(C_BG);
     hudCanvas_.drawFastHLine(8, 0, 304, C_PANEL);
-    textAt(hudCanvas_, state.indexEngaged ? "I LOCK" : "I FREE", 8, 3,
-           state.indexEngaged ? C_CYAN : C_DIM, 1, TL_DATUM);
-    textAt(hudCanvas_, state.zEngaged ? "Z LOCK" : "Z FREE", 65, 3,
-           state.zEngaged ? C_MAGENTA : C_DIM, 1, TL_DATUM);
 
     char line[64];
     const float targetTip = selectedTargetTip(state);
@@ -817,7 +815,7 @@ void GemUi::drawHud(const GemTelemetry& state)
                                  ? runtimeGemMesh().indexResolution()
                                  : float(GemData::kIndexResolution);
     const float targetTwist = selectedTargetTwist(state);
-    const float actualTwist = normalizedTwist(state.targetTwist + state.twistError,
+    const float actualTwist = normalizedTwist(state.actualTwistValid ? state.actualTwist : state.targetTwist + state.twistError,
                                                state.wheelIndex);
     const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
     snprintf(line, sizeof(line), "%+7.2f", targetTwist);
@@ -851,6 +849,16 @@ void GemUi::drawHud(const GemTelemetry& state)
 
     drawSmallAxisSymbol(hudCanvas_, 14, 34, true, C_YELLOW);
     drawSmallAxisSymbol(hudCanvas_, 14, 85, false, C_CYAN);
+    // Draw last, in each axis' left gutter. Font 2 and geometric lamp remain
+    // visible even with installations that omit the tiny GLCD font.
+    textAt(hudCanvas_, state.indexEngaged ? "L" : "U", 14, 61,
+           state.indexEngaged ? C_CYAN : C_TEXT, 2, MC_DATUM);
+    textAt(hudCanvas_, state.zEngaged ? "L" : "U", 14, 113,
+           state.zEngaged ? C_MAGENTA : C_TEXT, 2, MC_DATUM);
+    if (state.indexEngaged) hudCanvas_.fillCircle(29, 61, 3, C_CYAN);
+    else hudCanvas_.drawCircle(29, 61, 3, C_TEXT);
+    if (state.zEngaged) hudCanvas_.fillCircle(29, 113, 3, C_MAGENTA);
+    else hudCanvas_.drawCircle(29, 113, 3, C_TEXT);
 }
 
 void GemUi::pushGemCanvas()
@@ -896,10 +904,11 @@ void GemUi::tick(const GemTelemetry& state)
         lastStaticLinkAlive_ = state.linkAlive;
     }
 
-    if ((stateChanged && now - lastHudMs_ >= kHudPeriodMs) ||
+    if ((state.version != lastHudVersion_ && now - lastHudMs_ >= kHudPeriodMs) ||
         now - lastHudMs_ >= 500)
     {
         lastHudMs_ = now;
+        lastHudVersion_ = state.version;
         drawHud(state);
         pushHudCanvas();
     }

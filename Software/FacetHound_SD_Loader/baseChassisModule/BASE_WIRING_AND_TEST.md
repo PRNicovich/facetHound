@@ -18,8 +18,8 @@ All UART logic must be 3.3 V TTL and every module needs a common ground.
 | Mast UART RX | 2 | Mast to base, 115200 baud |
 | Lap TTL TX / RX | 8 / 9 | Hardware UART1 at the v9 `ESC.TTL` header; external automatic-direction RS-485 module; BLD-510B, 9600 8N1 |
 | SD CS | 10 | v9 microSD header pin 2; PIO-backed software SPI |
-| SD SCK | 11 | v9 microSD header pin 3; PIO-backed software SPI |
-| SD MOSI | 12 | v9 microSD header pin 4; PIO-backed software SPI |
+| SD MOSI | 11 | v9 microSD header pin 3, matching photographed reader |
+| SD SCK | 12 | v9 microSD header pin 4, matching photographed reader |
 | SD MISO | 13 | v9 microSD header pin 5; PIO-backed software SPI |
 | Twist STEP / DIR / EN / shared UART | 1 / 0 / 14 / 28 | TMC2208-compatible axis; UART through 1 kΩ |
 | Z STEP / DIR / EN / shared UART | 16 / 17 / 18 / 15 | TMC2208-compatible axis; UART through 1 kΩ |
@@ -28,7 +28,9 @@ All UART logic must be 3.3 V TTL and every module needs a common ground.
 
 This map comes from `Hardware/pcb/v9/BaseModule.sch`.
 The v9 board does not connect GPIO 26/27. The microSD header is, in pin order,
-3V3, CS, SCK, MOSI, MISO, GND. Do not use the old GPIO 8-11 SD map with v9.
+3V3, CS, MOSI, SCK, MISO, GND for the photographed straight-through reader.
+The old software labels had SCK/MOSI reversed. Do not swap the power pins or
+use the old GPIO 8-11 SD map with v9. No card-detect pin is required.
 
 For the opposite end of the mast link, connect mast TX GPIO8 to base RX GPIO2
 and mast RX GPIO9 to base TX GPIO3. The matching streaming records and numeric
