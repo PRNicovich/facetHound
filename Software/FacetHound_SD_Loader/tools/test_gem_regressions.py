@@ -85,6 +85,20 @@ def main():
             girdle_edges+=1
     assert girdle_edges
     print(f"Backgammon: all four projections in bounds; {girdle_edges} girdle edges visible in T and B")
+    # New two-panel Static layout: reserve the right strip for the gauge.
+    for axes, flip, box in (([0,1],False,(10,34,218,154)),
+                             ([0,1],True,(10,34,218,154)),
+                             ([1,2],False,(10,194,218,120))):
+        uv=points[:,axes].copy()
+        if flip: uv[:,1]*=-1
+        x,y,w,h=box
+        center=(uv.min(axis=0)+uv.max(axis=0))/2
+        scale=min((w-20)/np.ptp(uv[:,0]),(h-20)/np.ptp(uv[:,1]))
+        screen=(uv-center)*scale+[x+w/2,y+h/2]
+        assert np.all(screen >= [x+9,y+9])
+        assert np.all(screen <= [x+w-9,y+h-9])
+        assert screen[:,0].max()<238
+    print("Two-panel Static: crown, pavilion and fixed side fit clear of gauge")
 
 
 if __name__ == "__main__":

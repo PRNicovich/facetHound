@@ -12,6 +12,12 @@ struct GemTelemetry
     float actualTwist = 0.0f;
     bool actualTwistValid = false;
     float twistError = 0.0f;
+    float nominalIndex = 0.0f;
+    float cheatIndex = 0.0f;
+    bool cheatReceived = false;
+    bool cheatTemporary = false;
+    uint32_t tipSampleSequence = 0;
+    uint8_t faults = 0;
     float tipDegrees = 0.0f;
     float zMillimeters = 0.0f;
     float flow = 0.0f;
@@ -81,6 +87,11 @@ private:
     int16_t screenX_[RUNTIME_MESH_MAX_VERTICES] = {};
     int16_t screenY_[RUNTIME_MESH_MAX_VERTICES] = {};
     float screenDepth_[RUNTIME_MESH_MAX_VERTICES] = {};
+    float tipHistory_[10] = {};
+    uint8_t tipHistoryCount_ = 0;
+    uint32_t lastTipSample_ = UINT32_MAX;
+    void drawErrorScale();
+    bool selectedBehind(uint8_t panel) const;
 
     float normalizedTwist(float ticks, float wheelIndex) const;
     float wrappedDelta(float target, float current, float period) const;

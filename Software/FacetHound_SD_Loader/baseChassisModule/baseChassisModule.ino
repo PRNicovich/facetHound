@@ -13,6 +13,7 @@
 #include "gemGeometry.h"
 #include "gemCache.h"
 #include "builtinGemCuts.h"
+#include "transferCheat.h"
 
 // Integration trials: change one flag to true and upload only this base sketch
 // to reverse that link's GPIO direction without reflashing the remote module.
@@ -497,6 +498,52 @@ static void targetBuiltinCut()
     S.dirty = true;
 }
 
+static bool graphicalMode() { return displayVisualMode==1 || displayVisualMode==2; }
+
+static float selectedStoredTip()
+{
+    if(activeGemLoaded && S.markIdx>=0 && size_t(S.markIdx)<activeGemDesign.cuts.size())
+        return activeGemDesign.cuts[S.markIdx].angleDegrees;
+    return BuiltinGem::kCuts[constrain(builtinCutIndex,0,int(BuiltinGem::kCutCount)-1)].storedTipDegrees;
+}
+
+static float nominalSelectedIndex()
+{
+    if(activeGemLoaded && S.markIdx>=0 && size_t(S.markIdx)<activeGemDesign.cuts.size()) {
+        const auto& cut=activeGemDesign.cuts[S.markIdx];
+        return machineIndexForFacet(cut.index,cut.angleDegrees,activeGemDesign.wheelIndex);
+    }
+    const auto& cut=BuiltinGem::kCuts[constrain(builtinCutIndex,0,int(BuiltinGem::kCutCount)-1)];
+    return machineIndexForFacet(cut.rawIndex,cut.storedTipDegrees,BuiltinGem::kWheelIndex);
+}
+
+static float& selectedSideCheat()
+{
+    // Girdle/table follow the non-negative (crown) side convention.
+    const float distance=activeGemLoaded && S.markIdx>=0 && size_t(S.markIdx)<activeGemDesign.cuts.size()
+        ?activeGemDesign.cuts[S.markIdx].gemcadDistance:0;
+    return transferPavilion(selectedStoredTip(),distance) ? S.pavilionCheatTurns : S.crownCheatTurns;
+}
+
+static void applyCheatedTarget()
+{
+    S.targetTwist=wrapPositive(nominalSelectedIndex()+
+        (selectedSideCheat()+S.temporaryCheatTurns)*S.wheelIndex,S.wheelIndex);
+    S.targetValid=true;
+    notifyTwistTargetChanged();
+    if(S.twistLock) setTwistDriverEnabled(true);
+}
+
+static void sendCheatState()
+{
+    if(!graphicalMode()) return;
+    dispSerial.print("@CHEAT,");
+    dispSerial.print(nominalSelectedIndex(),4); dispSerial.print(',');
+    dispSerial.print((selectedSideCheat()+S.temporaryCheatTurns)*S.wheelIndex,4);
+    dispSerial.print(','); dispSerial.print(fabsf(S.temporaryCheatTurns)>0.0000001f?1:0);
+    dispSerial.print(','); dispSerial.println(S.targetTwist,4);
+}
+
 static void sendActiveCut(bool force = false)
 {
     if (!activeGemLoaded)
@@ -800,6 +847,21 @@ static void rebuildLoadedMarksForMode()
 static void applyLoadedGemDesign(GemSdDesign&& design, GemRuntimeGeometry&& geometry)
 {
     hardStopTwist(S);
+    // Bind saved transfer offsets to the design contents, not a menu ordinal.
+    uint32_t gemId=2166136261UL;
+    auto hashBytes=[&](const void* data,size_t count) {
+        const auto* bytes=static_cast<const uint8_t*>(data);
+        while(count--) {gemId^=*bytes++;gemId*=16777619UL;}
+    };
+    hashBytes(design.fileName,strlen(design.fileName));
+    hashBytes(&design.wheelIndex,sizeof(design.wheelIndex));
+    for(const auto& cut:design.cuts) {
+        hashBytes(&cut.index,sizeof(cut.index));
+        hashBytes(&cut.angleDegrees,sizeof(cut.angleDegrees));
+        hashBytes(&cut.gemcadDistance,sizeof(cut.gemcadDistance));
+    }
+    if(S.cheatGemId!=gemId) S.crownCheatTurns=S.pavilionCheatTurns=0;
+    S.cheatGemId=gemId; S.temporaryCheatTurns=0;
     updateWheelIndex(S, design.wheelIndex);
 
     S.markPoints.clear();
@@ -823,6 +885,7 @@ static void applyLoadedGemDesign(GemSdDesign&& design, GemRuntimeGeometry&& geom
     activeGemGeometry = std::move(geometry);
     activeGemLoaded = true;
     rebuildLoadedMarksForMode();
+    if(graphicalMode()) applyCheatedTarget();
     lastJobCutSent = -1;
 }
 
@@ -1818,6 +1881,23 @@ static void routeKeyboardKey(uint8_t key)
     else
     {
         const bool useBuiltinGem = !activeGemLoaded && displayVisualMode != 0;
+        if(graphicalMode() && (key==16 || key==18 || key==11)) {
+            if(key==11) {
+                selectedSideCheat()=wrapTransferTurns(selectedSideCheat()+S.temporaryCheatTurns);
+                S.temporaryCheatTurns=0;
+                S.dirty=true;
+                // No extra movement or second application to the current facet.
+            } else if(S.wheelIndex>0) {
+                static const float steps[]={1.0f,0.1f,0.005f};
+                S.temporaryCheatTurns+=(key==16?1:-1)*steps[constrain(S.twistIdx,0,2)]/S.wheelIndex;
+                S.temporaryCheatTurns=wrapTransferTurns(S.temporaryCheatTurns);
+                applyCheatedTarget();
+            }
+            sendCheatState();
+            return;
+        }
+        const bool facetChange=key==5 || key==6 || key==12 || key==13;
+        if(facetChange) S.temporaryCheatTurns=0;
         if (key == 5)
         {
             if (activeGemLoaded && displayVisualMode!=0) selectAdjacentGemTier(true);
@@ -1848,6 +1928,10 @@ static void routeKeyboardKey(uint8_t key)
         }
         else
             handleKey(&S, key);
+        if(graphicalMode() && (facetChange || key==14 || (key==15 && S.twistLock))) {
+            applyCheatedTarget();
+            sendCheatState();
+        }
     }
 }
 
@@ -2436,6 +2520,16 @@ void displayTask()
             break;
         }
 
+        case 22: sendCheatState(); break;
+        case 23: {
+            unsigned fault=0;
+            if(mastEncoderFault || !lastMastRxMs || now-lastMastRxMs>3500) fault|=1;
+            if(indexMotionFaultLatched()) fault|=2;
+            if(lapMotorDiagnostics().lastFault) fault|=4;
+            if(!lastZEncoderRxMs || now-lastZEncoderRxMs>3500) fault|=8;
+            sendKV("HUDFAULT",int(fault));
+            break;
+        }
         default:
             displaySlot = 0;
             return;
@@ -2443,7 +2537,7 @@ void displayTask()
 
     displaySlot++;
 
-    if (displaySlot > 21)
+    if (displaySlot > 23)
         displaySlot = 0;
 }
 

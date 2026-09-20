@@ -64,6 +64,11 @@ struct SystemState
 
     // Cheat mode
     bool cheatMode = false;
+    // Transfer alignment is a rotation, not an edit to nominal geometry.
+    float crownCheatTurns = 0.0f;
+    float pavilionCheatTurns = 0.0f;
+    uint32_t cheatGemId = 0;
+    float temporaryCheatTurns = 0.0f; // runtime only; discarded on facet change
 
     // Save debounce
     bool dirty = false;

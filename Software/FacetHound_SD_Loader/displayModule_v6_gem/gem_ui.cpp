@@ -177,6 +177,8 @@ bool GemUi::begin(DisplayMode mode)
     lastStaticLinkAlive_ = false;
     lastFrameMs_ = 0;
     lastHudMs_ = 0;
+    tipHistoryCount_ = 0;
+    lastTipSample_ = UINT32_MAX;
 
     if (!gemCanvasReady_ || !hudCanvasReady_)
     {
@@ -325,7 +327,7 @@ void GemUi::fillSelectedProjection(uint16_t edgeCount, uint8_t panel)
         }
         vertices[j + 1] = vertex; angles[j + 1] = angle;
     }
-    const bool behind = panel >= 2 && depth / count < 0.0f;
+    const bool behind = panel >= 2 && selectedBehind(panel);
     const uint16_t fill = behind ? 0x0102 : 0x0204;
     for (uint8_t i = 0; i < count; ++i) {
         const uint16_t a = vertices[i], b = vertices[(i + 1) % count];
@@ -467,7 +469,7 @@ void GemUi::updatePose(const GemTelemetry& state)
     float targetTip = state.jobActive && isfinite(state.jobAngle)
                           ? machineTip(state.jobAngle) : 45.0f;
     float targetTwist = normalizedTwist(
-        state.actualTwistValid ? state.actualTwist : displayedTwist_ * state.wheelIndex / meshResolution,
+        state.actualTwistValid ? state.actualTwist-(state.cheatReceived?state.cheatIndex:0) : displayedTwist_ * state.wheelIndex / meshResolution,
         state.wheelIndex
     );
 
@@ -601,8 +603,8 @@ void GemUi::drawDynamic(const GemTelemetry& state)
     const float cz = cosf(twist), sz = sinf(twist);
     const float roll = runtime.active() ? displayedRoll_*DEG_TO_RAD : 0.0f;
     const float cr=cosf(roll), sr=sinf(roll);
-    const float scale = 116.0f / (runtime.active() ? runtime.radius() : GemData::kRadius);
-    constexpr float centerX = 160.0f;
+    const float scale = 100.0f / (runtime.active() ? runtime.radius() : GemData::kRadius);
+    constexpr float centerX = 117.0f;
     constexpr float centerY = 166.0f;
 
     const uint16_t vertexCount = runtime.active() ? uint16_t(runtime.vertices().size())
@@ -701,215 +703,194 @@ void GemUi::drawDynamic(const GemTelemetry& state)
 void GemUi::drawStatic(const GemTelemetry& state)
 {
     gemCanvas_.fillSprite(C_BG);
-    drawHeader(state, true);
-    const RuntimeGemMesh& runtime = runtimeGemMesh();
-
-    static const char* labels[] = {"T", "B", "F", "S"};
-    static const int16_t boxes[][4] = {
-        {18, 36, 138, 130}, {165, 36, 138, 130},
-        {18, 180, 138, 130}, {165, 180, 138, 130},
-    };
-
-    for (uint8_t panel = 0; panel < 4; ++panel)
-    {
-        gemCanvas_.drawRect(
-            boxes[panel][0], boxes[panel][1], boxes[panel][2], boxes[panel][3], C_PANEL
-        );
-
-        if (runtime.active())
-        {
-            float minU = INFINITY, maxU = -INFINITY;
-            float minV = INFINITY, maxV = -INFINITY;
-            for (uint16_t i = 0; i < runtime.vertices().size(); ++i)
-            {
-                const RuntimeMeshVertex& point = runtime.vertices()[i];
-                float u = panel < 2 ? point.x : (panel == 2 ? point.x : point.y);
-                float v = panel < 2 ? point.y : point.z;
-                if (panel == 1) v = -v;
-                minU = min(minU, u); maxU = max(maxU, u);
-                minV = min(minV, v); maxV = max(maxV, v);
-            }
-            float centerU = 0.5f * (minU + maxU);
-            float centerV = 0.5f * (minV + maxV);
-            float spanU = max(maxU - minU, 1.0e-6f);
-            float spanV = max(maxV - minV, 1.0e-6f);
-            float scale = min(float(boxes[panel][2] - 32) / spanU,
-                              float(boxes[panel][3] - 32) / spanV);
-            float centerX = boxes[panel][0] + 0.5f * boxes[panel][2];
-            float centerY = boxes[panel][1] + 0.5f * boxes[panel][3];
-
-            for (uint16_t i = 0; i < runtime.vertices().size(); ++i)
-            {
-                const RuntimeMeshVertex& point = runtime.vertices()[i];
-                float u = panel < 2 ? point.x : (panel == 2 ? point.x : point.y);
-                float v = panel < 2 ? point.y : point.z;
-                if (panel == 1) v = -v;
-                screenX_[i] = constrain(int16_t(lroundf(centerX + (u - centerU) * scale)),
-                    int16_t(boxes[panel][0]+8), int16_t(boxes[panel][0]+boxes[panel][2]-8));
-                screenY_[i] = constrain(int16_t(lroundf(centerY - (v - centerV) * scale)),
-                    int16_t(boxes[panel][1]+8), int16_t(boxes[panel][1]+boxes[panel][3]-8));
-                if (panel == 0) screenDepth_[i] = point.z;
-                else if (panel == 1) screenDepth_[i] = -point.z;
-                else if (panel == 2) screenDepth_[i] = -point.y;
-                else screenDepth_[i] = point.x;
-            }
-
-            fillSelectedProjection(uint16_t(runtime.edges().size()), panel);
-
-            float viewSpan = 0.0f;
-            for (const RuntimeMeshVertex& point : runtime.vertices())
-            {
-                float viewValue = panel == 2 ? point.y : point.x;
-                viewSpan = max(viewSpan, fabsf(viewValue));
-            }
-
-            for (uint8_t pass = 0; pass < 2; ++pass)
-            {
-                for (uint16_t i = 0; i < runtime.edges().size(); ++i)
-                {
-                    const RuntimeMeshEdge& edge = runtime.edges()[i];
-                    const RuntimeMeshVertex& a = runtime.vertices()[edge.a];
-                    const RuntimeMeshVertex& b = runtime.vertices()[edge.b];
-                    bool visible = true;
-                    if (panel < 2)
-                    {
-                        visible = runtime.edgeVisibleFromCap(i,panel==0);
-                    }
-                    else
-                    {
-                        // Front/side are complete projections; color below
-                        // distinguishes edges on the rear half of the stone.
-                        visible = true;
-                    }
-                    if (!visible) continue;
-                    bool selected = edgeSelected(i, selectedPlane_);
-                    if (selected != (pass == 1)) continue;
-                    float depth = 0.0f;
-                    if (panel == 0) depth = 0.5f * (a.z + b.z);
-                    else if (panel == 1) depth = -0.5f * (a.z + b.z);
-                    else if (panel == 2) depth = -0.5f * (a.y + b.y);
-                    else depth = 0.5f * (a.x + b.x);
-                    const bool behind = panel >= 2 && depth < 0.0f;
-                    const uint16_t color = selected ? (behind ? 0x1384 : C_GREEN)
-                                                    : (behind ? C_DIM : C_EDGE);
-                    gemCanvas_.drawLine(screenX_[edge.a], screenY_[edge.a],
-                                        screenX_[edge.b], screenY_[edge.b], color);
-                }
-            }
+    drawHeader(state,true);
+    const auto& mesh=runtimeGemMesh();
+    const bool loaded=mesh.active();
+    const uint16_t nv=loaded?mesh.vertices().size():GemData::kVertexCount;
+    const uint16_t ne=loaded?mesh.edges().size():GemData::kEdgeCount;
+    auto xAt=[&](uint16_t i){return loaded?mesh.vertices()[i].x:GemData::kVertices[i].x;};
+    auto yAt=[&](uint16_t i){return loaded?mesh.vertices()[i].y:GemData::kVertices[i].y;};
+    auto zAt=[&](uint16_t i){return loaded?mesh.vertices()[i].z:GemData::kVertices[i].z;};
+    // The cap follows selected tier; S is a fixed projection, never auto-rotated.
+    bool pavilion=oppositeApproach(state.jobAngle) ||
+        (fabsf(state.jobAngle)<0.000001f && (signbit(state.jobAngle) || state.jobGemcadDistance<0));
+    if(loaded && selectedPlane_<mesh.planes().size() && mesh.planes()[selectedPlane_].normalValid &&
+       fabsf(mesh.planes()[selectedPlane_].nz)>0.00001f)
+        pavilion=mesh.planes()[selectedPlane_].nz<0;
+    const uint8_t cap=pavilion?1:0;
+    for(uint8_t view=0;view<2;++view) {
+        const uint8_t panel=view?3:cap;
+        const int bx=10,by=view?194:34,bw=218,bh=view?120:154;
+        float minU=INFINITY,maxU=-INFINITY,minV=INFINITY,maxV=-INFINITY;
+        for(uint16_t i=0;i<nv;++i) {
+            const float u=view?yAt(i):xAt(i);
+            const float v=view?zAt(i):(cap?-yAt(i):yAt(i));
+            minU=min(minU,u);maxU=max(maxU,u);minV=min(minV,v);maxV=max(maxV,v);
         }
-        else
-        {
-            for (uint16_t i = 0; i < GemData::kVertexCount; ++i) {
-                screenX_[i] = GemData::kStaticPoints[panel][i].x;
-                screenY_[i] = GemData::kStaticPoints[panel][i].y - 10;
-                const auto& point = GemData::kVertices[i];
-                if (panel == 0) screenDepth_[i] = point.z;
-                else if (panel == 1) screenDepth_[i] = -point.z;
-                else if (panel == 2) screenDepth_[i] = -point.y;
-                else screenDepth_[i] = point.x;
-            }
-            fillSelectedProjection(GemData::kEdgeCount, panel);
-            for (uint8_t pass = 0; pass < 2; ++pass)
-            {
-                for (uint16_t i = 0; i < GemData::kEdgeCount; ++i)
-                {
-                    const auto& edge = GemData::kEdges[i];
-                    if (panel < 2 && (edge.viewMask & (1u << panel)) == 0) continue;
-                    bool selected = edgeSelected(i, selectedPlane_);
-                    if (selected != (pass == 1)) continue;
-                    const auto& a = GemData::kStaticPoints[panel][edge.a];
-                    const auto& b = GemData::kStaticPoints[panel][edge.b];
-                    const auto& a3 = GemData::kVertices[edge.a];
-                    const auto& b3 = GemData::kVertices[edge.b];
-                    float depth = 0.0f;
-                    if (panel == 0) depth = 0.5f * (a3.z + b3.z);
-                    else if (panel == 1) depth = -0.5f * (a3.z + b3.z);
-                    else if (panel == 2) depth = -0.5f * (a3.y + b3.y);
-                    else depth = 0.5f * (a3.x + b3.x);
-                    const bool behind = panel >= 2 && depth < 0.0f;
-                    const uint16_t color = selected ? (behind ? 0x1384 : C_GREEN)
-                                                    : (behind ? C_DIM : C_EDGE);
-                    gemCanvas_.drawLine(a.x, a.y - 10, b.x, b.y - 10, color);
-                }
-            }
+        const float scale=min((bw-20)/max(maxU-minU,1e-6f),(bh-20)/max(maxV-minV,1e-6f));
+        for(uint16_t i=0;i<nv;++i) {
+            const float u=view?yAt(i):xAt(i);
+            const float v=view?zAt(i):(cap?-yAt(i):yAt(i));
+            screenX_[i]=lroundf(bx+bw*.5f+(u-(minU+maxU)*.5f)*scale);
+            screenY_[i]=lroundf(by+bh*.5f-(v-(minV+maxV)*.5f)*scale);
+            screenDepth_[i]=view?xAt(i):(cap?-zAt(i):zAt(i));
         }
-
-        const uint8_t datum = panel == 0 ? TL_DATUM : panel == 1 ? TR_DATUM
-                                  : panel == 2 ? BL_DATUM : BR_DATUM;
-        const int labelX = (panel == 0 || panel == 2)
-                               ? boxes[panel][0] + 5
-                               : boxes[panel][0] + boxes[panel][2] - 5;
-        const int labelY = panel < 2
-                               ? boxes[panel][1] + 4
-                               : boxes[panel][1] + boxes[panel][3] - 4;
-        textAt(gemCanvas_, labels[panel], labelX, labelY, C_DIM, 2, datum);
+        fillSelectedProjection(ne,panel);
+        const bool faceBehind=view && selectedBehind(panel);
+        for(uint8_t pass=0;pass<2;++pass) for(uint16_t e=0;e<ne;++e) {
+            if(!view && !(loaded?mesh.edgeVisibleFromCap(e,cap==0):
+                (GemData::kEdges[e].viewMask&(1u<<cap))!=0)) continue;
+            const bool selected=edgeSelected(e,selectedPlane_);
+            if(selected!=(pass==1)) continue;
+            const uint16_t a=loaded?mesh.edges()[e].a:GemData::kEdges[e].a;
+            const uint16_t b=loaded?mesh.edges()[e].b:GemData::kEdges[e].b;
+            const bool behind=view && (selected?faceBehind:(screenDepth_[a]+screenDepth_[b]<0));
+            const uint16_t color=selected?(behind?0x1384:C_GREEN):(behind?C_DIM:C_EDGE);
+            gemCanvas_.drawLine(screenX_[a],screenY_[a],screenX_[b],screenY_[b],color);
+        }
+        textAt(gemCanvas_,view?"S":cap?"B":"T",bx,by+3,C_NAME,2,TL_DATUM);
     }
+}
 
+bool GemUi::selectedBehind(uint8_t panel) const
+{
+    const auto& mesh=runtimeGemMesh();
+    if(mesh.active() && selectedPlane_<mesh.planes().size() &&
+       mesh.planes()[selectedPlane_].normalValid) {
+        const auto& n=mesh.planes()[selectedPlane_];
+        return panel==3?n.nx<0:panel==2?n.ny>0:false;
+    }
+    // Built-in convex faces: recover the outward normal from actual vertices.
+    float ax=0,ay=0,az=0,nx=0,ny=0,nz=0,best=0;
+    bool anchor=false;
+    for(uint16_t e=0;e<GemData::kEdgeCount && !mesh.active();++e) {
+        if(!edgeSelected(e,selectedPlane_))continue;
+        const auto& a=GemData::kVertices[GemData::kEdges[e].a];
+        const auto& b=GemData::kVertices[GemData::kEdges[e].b];
+        if(!anchor){ax=a.x;ay=a.y;az=a.z;anchor=true;}
+        const float ux=a.x-ax,uy=a.y-ay,uz=a.z-az;
+        const float vx=b.x-ax,vy=b.y-ay,vz=b.z-az;
+        const float cx=uy*vz-uz*vy,cy=uz*vx-ux*vz,cz=ux*vy-uy*vx;
+        const float length=cx*cx+cy*cy+cz*cz;
+        if(length>best){best=length;nx=cx;ny=cy;nz=cz;}
+    }
+    if(nx*ax+ny*ay+nz*az<0){nx=-nx;ny=-ny;}
+    return panel==3?nx<0:panel==2?ny>0:false;
 }
 
 void GemUi::drawHud(const GemTelemetry& state)
 {
     hudCanvas_.fillSprite(C_BG);
-    hudCanvas_.drawFastHLine(8, 0, 304, C_PANEL);
+    hudCanvas_.drawFastHLine(8,0,304,C_PANEL);
+    // Decimal anchored fields: three whole digits reserved; Z has three decimals.
+    auto number=[&](float v,int digits,int x,int y,uint8_t font,uint16_t color,bool sign=false) {
+        char buffer[32];snprintf(buffer,sizeof(buffer),sign?"%+.*f":"%.*f",digits,v);
+        char* dot=strchr(buffer,'.'); if(!dot)return;
+        textAt(hudCanvas_,dot,x,y,color,font,BL_DATUM);
+        *dot=0;textAt(hudCanvas_,buffer,x,y,color,font,BR_DATUM);
+    };
+    const float tipError=state.tipDegrees-selectedTargetTip(state);
+    const float nominal=state.cheatReceived?state.nominalIndex:
+        selectedTargetTwist(state)*state.wheelIndex/
+        (runtimeGemMesh().active()?runtimeGemMesh().indexResolution():float(GemData::kIndexResolution));
+    const float actual=state.actualTwistValid?state.actualTwist:state.targetTwist+state.twistError;
+    const float indexError=wrappedDelta(actual,state.targetTwist,state.wheelIndex);
+    number(state.tipDegrees,2,111,43,4,C_YELLOW);
+    drawDegreeGlyph(hudCanvas_,163,21,C_YELLOW);
+    // Explicit delta triangle avoids missing custom-font Unicode glyphs.
+    hudCanvas_.drawTriangle(198,29,193,40,203,40,C_YELLOW);
+    number(tipError,2,270,43,2,C_YELLOW,true);
+    drawDegreeGlyph(hudCanvas_,305,28,C_YELLOW);
 
-    char line[64];
-    const float targetTip = selectedTargetTip(state);
-    const float tipError = state.tipDegrees - targetTip;
-    snprintf(line, sizeof(line), "%+7.2f", targetTip);
-    textAt(hudCanvas_, line, 197, 58, C_YELLOW, 6, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 205, 19, C_YELLOW);
-    snprintf(line, sizeof(line), "%+.2f", tipError);
-    textAt(hudCanvas_, line, 284, 53, C_YELLOW, 4, BR_DATUM);
-    drawDegreeGlyph(hudCanvas_, 292, 27, C_YELLOW);
+    number(nominal,2,111,81,4,C_CYAN);
+    const uint16_t cheatColor=state.cheatTemporary?TFT_WHITE:C_CYAN;
+    textAt(hudCanvas_,"CHEAT",176,62,cheatColor,2,BL_DATUM);
+    number(state.cheatReceived?state.cheatIndex:0,2,270,62,2,cheatColor,true);
+    hudCanvas_.drawTriangle(198,69,193,80,203,80,C_CYAN);
+    number(indexError,2,270,82,2,C_CYAN,true);
 
-    const float resolution = runtimeGemMesh().active()
-                                 ? runtimeGemMesh().indexResolution()
-                                 : float(GemData::kIndexResolution);
-    const float targetTwist = selectedTargetTwist(state);
-    const float actualTwist = normalizedTwist(state.actualTwistValid ? state.actualTwist : state.targetTwist + state.twistError,
-                                               state.wheelIndex);
-    const float indexError = wrappedDelta(actualTwist, targetTwist, resolution);
-    snprintf(line, sizeof(line), "%+7.2f", targetTwist);
-    textAt(hudCanvas_, line, 197, 109, C_CYAN, 6, BR_DATUM);
-    snprintf(line, sizeof(line), "%+.2f", indexError);
-    textAt(hudCanvas_, line, 284, 104, C_CYAN, 4, BR_DATUM);
-    drawStepIndicator(hudCanvas_, 202, 62, state.indexStep, C_CYAN);
+    number(state.zMillimeters,3,111,119,4,C_MAGENTA);
+    textAt(hudCanvas_,"mm",180,119,C_MAGENTA,2,BL_DATUM);
+    drawSmallAxisSymbol(hudCanvas_,14,31,true,C_YELLOW);
+    drawSmallAxisSymbol(hudCanvas_,14,69,false,C_CYAN);
+    textAt(hudCanvas_,"z",14,108,C_MAGENTA,4,MC_DATUM);
+    if(state.indexEngaged)hudCanvas_.fillCircle(38,58,4,C_CYAN);
+    else hudCanvas_.drawCircle(38,58,4,C_DIM);
+    drawStepIndicator(hudCanvas_,32,68,state.indexStep,C_CYAN);
+    if(state.zEngaged)hudCanvas_.fillCircle(38,96,4,C_MAGENTA);
+    else hudCanvas_.drawCircle(38,96,4,C_DIM);
+    drawStepIndicator(hudCanvas_,32,106,state.zStep,C_MAGENTA);
 
-    hudCanvas_.drawFastHLine(8, 102, 304, C_PANEL);
+    const char* fault=nullptr;
+    if(!state.linkAlive)fault="LINK LOST";
+    else if(state.faults&1)fault="ENC STALE";
+    else if(state.faults&2)fault="INDEX FAULT";
+    else if(state.faults&4)fault="LAP FAULT";
+    else if(state.faults&8)fault="Z STALE";
+    if(fault)textAt(hudCanvas_,fault,314,115,TFT_RED,2,BR_DATUM);
 
-    textAt(hudCanvas_, "Z", 13, 137, C_MAGENTA, 2, MC_DATUM);
-    snprintf(line, sizeof(line), "%+8.3f", state.zMillimeters);
-    textAt(hudCanvas_, line, 197, 159, C_MAGENTA, 6, BR_DATUM);
-    drawStepIndicator(hudCanvas_, 202, 109, state.zStep, C_MAGENTA);
-    textAt(hudCanvas_, "mm", 205, 141, C_MAGENTA, 2, ML_DATUM);
+    const bool running=state.rpmDirection==1 || state.rpmDirection==3;
+    const bool clockwise=state.rpmDirection==1 || state.rpmDirection==2;
+    const uint16_t rpmColor=running?TFT_WHITE:C_DIM;
+    drawRotationArrow(hudCanvas_,17,143,clockwise,running,rpmColor);
+    char value[24];snprintf(value,sizeof(value),"%lu",static_cast<unsigned long>(running?state.rpmActual:max(0L,state.rpmSet)));
+    textAt(hudCanvas_,value,99,157,rpmColor,4,BR_DATUM);
+    textAt(hudCanvas_,"rpm",103,155,rpmColor,2,BL_DATUM);
+    const bool flowing=state.flowDirection==0 || state.flowDirection==2;
+    drawWaterDrop(hudCanvas_,166,143,flowing?C_CYAN:C_DIM);
+    snprintf(value,sizeof(value),"%.1f",state.flow);
+    textAt(hudCanvas_,value,239,157,flowing?TFT_WHITE:C_DIM,4,BR_DATUM);
+    textAt(hudCanvas_,"mL/min",245,155,flowing?TFT_WHITE:C_DIM,1,BL_DATUM);
+}
 
-    const bool clockwise = state.rpmDirection == 1 || state.rpmDirection == 2;
-    const bool motorRunning = state.rpmDirection == 1 || state.rpmDirection == 3;
-    const uint16_t rpmColor = motorRunning ? TFT_WHITE : C_DIM;
-    drawRotationArrow(hudCanvas_, 234, 116, clockwise, motorRunning, rpmColor);
-    const unsigned long shownRpm = motorRunning
-                                       ? static_cast<unsigned long>(state.rpmActual)
-                                       : static_cast<unsigned long>(max(0L, state.rpmSet));
-    snprintf(line, sizeof(line), "%lu rpm", shownRpm);
-    textAt(hudCanvas_, line, 313, 116, rpmColor, 2, MR_DATUM);
-
-    const bool flowRunning = state.flowDirection == 0 || state.flowDirection == 2;
-    const uint16_t flowColor = flowRunning ? C_CYAN : C_DIM;
-    drawWaterDrop(hudCanvas_, 234, 143, flowColor);
-    snprintf(line, sizeof(line), "%.1f mL/min", state.flow);
-    textAt(hudCanvas_, line, 313, 143, flowRunning ? TFT_WHITE : C_DIM, 2, MR_DATUM);
-
-    drawSmallAxisSymbol(hudCanvas_, 14, 34, true, C_YELLOW);
-    drawSmallAxisSymbol(hudCanvas_, 14, 85, false, C_CYAN);
-    if (state.indexEngaged) hudCanvas_.fillCircle(29,61,4,C_CYAN);
-    else hudCanvas_.drawCircle(29,61,4,C_DIM);
-    if (state.zEngaged) hudCanvas_.fillCircle(29,113,4,C_MAGENTA);
-    else hudCanvas_.drawCircle(29,113,4,C_DIM);
+void GemUi::drawErrorScale()
+{
+    // Only this strip changes for new tip readings in Static mode.
+    gemCanvas_.fillRect(238,34,82,286,C_BG);
+    auto yAt=[](float error) {
+        float a=fabsf(error);
+        float d=a<=.05f?a/.05f:1+log10f(a/.05f);
+        d=min(d,1+log10f(200.0f));
+        return int(lroundf(184-copysignf(d,error)*106/(1+log10f(200.0f))));
+    };
+    gemCanvas_.drawFastVLine(274,78,213,C_DIM);
+    for(int sign=-1;sign<=1;sign+=2) {
+        for(float tick:{.1f,1.0f,10.0f}) {
+            int y=yAt(sign*tick);
+            gemCanvas_.drawFastHLine(270,y,8,C_NAME);
+            char label[12];snprintf(label,sizeof(label),"%s%g",sign>0?"+":"-",tick);
+            textAt(gemCanvas_,label,282,y,C_NAME,1,ML_DATUM);
+        }
+        for(float tick:{.05f,.5f,5.0f})
+            gemCanvas_.drawFastHLine(272,yAt(sign*tick),5,C_DIM);
+    }
+    gemCanvas_.drawLine(269,73,274,66,C_NAME);gemCanvas_.drawLine(274,66,279,73,C_NAME);
+    gemCanvas_.drawFastVLine(274,66,12,C_NAME);
+    gemCanvas_.drawLine(269,295,274,302,C_NAME);gemCanvas_.drawLine(274,302,279,295,C_NAME);
+    gemCanvas_.drawFastVLine(274,290,12,C_NAME);
+    gemCanvas_.drawLine(284,179,278,184,TFT_YELLOW);
+    gemCanvas_.drawLine(278,184,284,189,TFT_YELLOW);
+    textAt(gemCanvas_,"0",291,184,C_YELLOW,2,ML_DATUM);
+    // Build per-pixel intensity so overlapping aged marks add light.
+    float intensity[213]={};
+    for(uint8_t i=0;i+1<tipHistoryCount_;++i) {
+        const int y=yAt(tipHistory_[i])-78;
+        const float alpha=.60f*powf(.76f,tipHistoryCount_-2-i);
+        if(y>=0 && y<213)intensity[y]=1-(1-intensity[y])*(1-alpha);
+    }
+    for(int y=0;y<213;++y) if(intensity[y]>0) {
+        uint8_t r=uint8_t(31*intensity[y]),g=uint8_t(63*intensity[y]);
+        gemCanvas_.fillRect(247,77+y,22,3,uint16_t(r<<11)|uint16_t(g<<5));
+    }
+    if(tipHistoryCount_)gemCanvas_.fillRect(247,yAt(tipHistory_[tipHistoryCount_-1])-1,22,3,TFT_YELLOW);
+    gemCanvas_.drawTriangle(253,307,249,316,257,316,C_YELLOW);
+    drawSmallAxisSymbol(gemCanvas_,270,312,true,C_YELLOW);
+    drawDegreeGlyph(gemCanvas_,284,307,C_YELLOW);
 }
 
 void GemUi::pushGemCanvas()
 {
-    if (gemCanvasReady_) gemCanvas_.pushSprite(0, 0);
+    if (gemCanvasReady_) {drawErrorScale(); gemCanvas_.pushSprite(0, 0);}
 }
 
 void GemUi::pushHudCanvas()
@@ -931,7 +912,21 @@ void GemUi::tick(const GemTelemetry& state)
     const bool stateChanged = state.version != lastStateVersion_;
     const bool selectionChanged = state.jobTier != lastJobTier_ ||
                                   state.jobFacet != lastJobFacet_;
+    bool gemPushed=false;
 
+    if(selectionChanged)tipHistoryCount_=0;
+    const bool newTip=state.tipSampleSequence!=lastTipSample_;
+    if(newTip) {
+        lastTipSample_=state.tipSampleSequence;
+        const float error=state.tipDegrees-selectedTargetTip(state);
+        if(state.linkAlive && !(state.faults&1) && isfinite(error)) {
+            if(tipHistoryCount_==10) {
+                for(int i=1;i<10;++i)tipHistory_[i-1]=tipHistory_[i];
+                --tipHistoryCount_;
+            }
+            tipHistory_[tipHistoryCount_++]=error;
+        } else tipHistoryCount_=0;
+    }
     if (mode_ == DisplayMode::DYNAMIC)
     {
         if (selectionChanged || now - lastFrameMs_ >= kFramePeriodMs)
@@ -944,6 +939,7 @@ void GemUi::tick(const GemTelemetry& state)
                fabsf(displayedRoll_-oldRoll)>0.002f) {
                 drawDynamic(state);
                 pushGemCanvas();
+                gemPushed=true;
             }
         }
     }
@@ -959,10 +955,16 @@ void GemUi::tick(const GemTelemetry& state)
         {
             drawStatic(state);
             pushGemCanvas();
+            gemPushed=true;
         }
 
         lastStaticVersion_ = state.version;
         lastStaticLinkAlive_ = state.linkAlive;
+    }
+
+    if((newTip || selectionChanged) && !gemPushed) {
+        drawErrorScale();
+        gemCanvas_.pushSprite(238,34,238,34,82,286);
     }
 
     if (lastHudVersion_ == UINT32_MAX || selectionChanged || (state.version != lastHudVersion_ && now - lastHudMs_ >= kHudPeriodMs) ||

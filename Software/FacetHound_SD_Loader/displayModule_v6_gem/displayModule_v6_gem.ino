@@ -94,6 +94,10 @@ bool updateSpinServoIdxBool = true;
 
 bool updateTipAngle = true;
 float tipAngle = 0.0f;
+uint32_t tipSampleSequence=0;
+float nominalIndexValue=0,cheatIndexValue=0;
+bool cheatReceived=false,cheatTemporary=false;
+uint8_t hudFaults=0;
 
 bool updateZValue = true;
 float zValue = 0.0f;
@@ -971,6 +975,16 @@ void parseLine(char* line)
     return;
   }
 
+  if(!strcmp(key,"CHEAT")) {
+    float nominal=0,cheat=0,target=0; int temporary=0;
+    if(sscanf(valueText,"%f,%f,%d,%f",&nominal,&cheat,&temporary,&target)==4 &&
+       isfinite(nominal) && isfinite(cheat) && isfinite(target)) {
+      nominalIndexValue=nominal; cheatIndexValue=cheat;
+      cheatTemporary=temporary!=0; cheatReceived=true;
+      setTilt(target); ++telemetryVersion;
+    }
+    return;
+  }
   float val = 0.0f;
   if (!parsePlainFloat(valueText, &val)) return;
 
@@ -986,8 +1000,10 @@ void parseLine(char* line)
     actualIndexReceived = true;
     ++telemetryVersion;
   }
-  else if (!strcmp(key, "TIP"))  setTip(val);
-  else if (!strcmp(key, "P"))    setTip(val);
+  else if (!strcmp(key, "TIP") || !strcmp(key,"P")) {
+    setTip(val); tipAngle=val; ++tipSampleSequence; // retain sub-display precision for history
+  }
+  else if (!strcmp(key,"HUDFAULT")) hudFaults=uint8_t(val);
   else if (!strcmp(key, "ZMM"))  setZ(val);
   else if (!strcmp(key, "Z"))    setZ(val);
   else if (!strcmp(key, "RPM"))  setRPMSet(val);
@@ -1801,6 +1817,12 @@ static GemTelemetry currentGemTelemetry()
   state.actualTwistValid = actualIndexReceived;
   state.twistError = tiltSetError;
   state.tipDegrees = tipAngle;
+  state.tipSampleSequence=tipSampleSequence;
+  state.nominalIndex=nominalIndexValue;
+  state.cheatIndex=cheatIndexValue;
+  state.cheatReceived=cheatReceived;
+  state.cheatTemporary=cheatTemporary;
+  state.faults=hudFaults;
   state.zMillimeters = zValue;
   state.flow = flowRate;
   state.wheelIndex = wheelIndex;

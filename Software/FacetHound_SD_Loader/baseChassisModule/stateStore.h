@@ -22,7 +22,7 @@
 static const char* STATE_FLASH_PATH = "last-64k";
 
 static const uint32_t STATE_MAGIC = 0x46485744UL;
-static const uint16_t STATE_VERSION = 4;
+static const uint16_t STATE_VERSION = 5;
 
 #if STATE_HAS_RAW_FLASH
 #ifndef PICO_FLASH_SIZE_BYTES
@@ -110,6 +110,14 @@ struct SavedStateV4Header
 
     uint32_t checksum;
 };
+
+struct SavedStateV5Header : SavedStateV4Header
+{
+    float crownCheatTurns;
+    float pavilionCheatTurns;
+    uint32_t cheatGemId;
+};
+static_assert(sizeof(SavedStateV5Header)<=FLASH_PAGE_SIZE,"state header overflow");
 
 // Previous fixed-list format, retained only for one-time migration.
 struct SavedStateV2Legacy
@@ -275,7 +283,7 @@ static void sanitizeState(SystemState& S)
 }
 
 #if STATE_HAS_RAW_FLASH
-static bool writeStateRawFlash(const SavedStateV4Header& header,
+static bool writeStateRawFlash(const SavedStateV5Header& header,
                                const std::vector<float>& positions)
 {
     if (positions.size() > STATE_MAX_SAVED_POSITIONS) return false;
@@ -303,7 +311,7 @@ static bool writeStateRawFlash(const SavedStateV4Header& header,
     }
     restore_interrupts(interrupts);
 
-    const auto* storedHeader = reinterpret_cast<const SavedStateV4Header*>(
+    const auto* storedHeader = reinterpret_cast<const SavedStateV5Header*>(
         XIP_BASE + STATE_FLASH_OFFSET);
     const float* storedPositions = reinterpret_cast<const float*>(
         XIP_BASE + STATE_FLASH_OFFSET + STATE_HEADER_BYTES);
@@ -325,12 +333,15 @@ inline bool saveState(SystemState& S)
 #else
     if (S.markPoints.size() > STATE_MAX_SAVED_POSITIONS) return false;
 
-    SavedStateV4Header header = {};
+    SavedStateV5Header header = {};
     header.magic = STATE_MAGIC;
     header.version = STATE_VERSION;
     header.headerBytes = STATE_HEADER_BYTES;
     header.totalBytes = STATE_HEADER_BYTES + S.markPoints.size() * sizeof(float);
-    header.targetTwist = S.targetTwist;
+    header.targetTwist = fmodf(S.targetTwist-S.temporaryCheatTurns*S.wheelIndex+S.wheelIndex,S.wheelIndex);
+    header.crownCheatTurns=S.crownCheatTurns;
+    header.pavilionCheatTurns=S.pavilionCheatTurns;
+    header.cheatGemId=S.cheatGemId;
     header.flowSetpoint = S.flowSetpoint;
     header.wheelIndex = S.wheelIndex;
     header.zIdx = S.zIdx;
@@ -397,14 +408,24 @@ inline bool loadState(SystemState& S)
         return false;
     }
 
-    if (version != STATE_VERSION)
+    if (version != 4 && version != STATE_VERSION)
     {
         lastStateLoadResult = STATE_LOAD_BAD_HEADER;
         return false;
     }
 
-    const SavedStateV4Header header =
-        *reinterpret_cast<const SavedStateV4Header*>(base);
+    SavedStateV5Header header = {};
+    if(version==4) {
+        const auto oldHeader=*reinterpret_cast<const SavedStateV4Header*>(base);
+        if(oldHeader.markCount>STATE_MAX_SAVED_POSITIONS ||
+           oldHeader.headerBytes!=STATE_HEADER_BYTES ||
+           oldHeader.totalBytes!=STATE_HEADER_BYTES+oldHeader.markCount*sizeof(float) ||
+           oldHeader.checksum!=stateChecksum(oldHeader,reinterpret_cast<const float*>(base+STATE_HEADER_BYTES),oldHeader.markCount)) {
+            lastStateLoadResult=STATE_LOAD_BAD_CHECKSUM; return false;
+        }
+        static_cast<SavedStateV4Header&>(header)=oldHeader;
+        header.checksum=stateChecksum(header,reinterpret_cast<const float*>(base+STATE_HEADER_BYTES),header.markCount);
+    } else header=*reinterpret_cast<const SavedStateV5Header*>(base);
     if (header.headerBytes != STATE_HEADER_BYTES ||
         header.markCount > STATE_MAX_SAVED_POSITIONS ||
         header.totalBytes != STATE_HEADER_BYTES + header.markCount * sizeof(float) ||
@@ -421,6 +442,10 @@ inline bool loadState(SystemState& S)
         return false;
     }
 
+    S.crownCheatTurns=isfinite(header.crownCheatTurns)?header.crownCheatTurns:0;
+    S.pavilionCheatTurns=isfinite(header.pavilionCheatTurns)?header.pavilionCheatTurns:0;
+    S.cheatGemId=header.cheatGemId;
+    S.temporaryCheatTurns=0;
     S.targetTwist = header.targetTwist;
     S.flowSetpoint = header.flowSetpoint;
     S.wheelIndex = header.wheelIndex;
