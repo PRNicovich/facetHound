@@ -566,6 +566,12 @@ void GemUi::updatePose(const GemTelemetry& state)
 
 void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
 {
+    if(state.tierComment && state.tierComment[0]) {
+        char comment[39] = {};
+        snprintf(comment,sizeof(comment),"%s",state.tierComment);
+        if(strlen(state.tierComment)>38) memcpy(comment+35,"...",3);
+        textAt(gemCanvas_,comment,7,28,C_TEXT,1,TL_DATUM);
+    }
     const char* title = state.jobActive && state.jobTitle && state.jobTitle[0]
                             ? state.jobTitle : GemData::kTitle;
     const char* cursor = title;

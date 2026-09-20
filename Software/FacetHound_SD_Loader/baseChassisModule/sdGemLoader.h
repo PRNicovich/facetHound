@@ -40,6 +40,7 @@ struct GemSdDesign
     char title[GEM_SD_TITLE_LENGTH] = {};
     char fileName[GEM_SD_FILE_NAME_LENGTH] = {};
     std::vector<GemCutCoordinate> cuts;
+    std::vector<String> tierComments; // one-based tier, ASC G cutting instructions
 };
 
 enum class GemSdResult : uint8_t

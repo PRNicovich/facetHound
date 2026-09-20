@@ -131,6 +131,7 @@ bool updateWheelIndexBool = true;
 bool jobActive = false;
 char jobTitle[48] = {};
 char jobFacetName[12] = {};
+char tierComment[97] = {};
 uint16_t jobTier = 0;
 uint16_t jobFacet = 0;
 float jobAngle = 0.0f;
@@ -868,6 +869,15 @@ void parseLine(char* line)
     return;
   }
 
+  if (!strcmp(key, "TIERCOMMENT")) {
+    char* comma=strchr(valueText, ',');
+    if(comma && strtoul(valueText,nullptr,10)==jobTier) {
+      snprintf(tierComment,sizeof(tierComment),"%s",comma+1);
+      ++telemetryVersion;
+      gemUi.invalidate();
+    }
+    return;
+  }
   if (!strcmp(key, "JOB"))
   {
     char* save = nullptr;
@@ -882,6 +892,7 @@ void parseLine(char* line)
       const bool selectionChanged = jobTier != uint16_t(strtoul(tier, nullptr, 10)) ||
                                     jobFacet != uint16_t(strtoul(facet, nullptr, 10));
       jobTier = uint16_t(strtoul(tier, nullptr, 10));
+      tierComment[0]=0;
       jobFacet = uint16_t(strtoul(facet, nullptr, 10));
       jobAngle = strtof(angle, nullptr);
       jobGemcadDistance = strtof(gemcadDistance, nullptr);
@@ -1838,6 +1849,7 @@ static GemTelemetry currentGemTelemetry()
   state.jobActive = jobActive;
   state.jobTitle = jobTitle;
   state.jobFacetName = jobFacetName;
+  state.tierComment = tierComment;
   state.jobTier = jobTier;
   state.jobFacet = jobFacet;
   state.jobAngle = jobAngle;

@@ -34,6 +34,7 @@ struct GemTelemetry
     bool jobActive = false;
     const char* jobTitle = nullptr;
     const char* jobFacetName = nullptr;
+    const char* tierComment = nullptr;
     uint16_t jobTier = 0;
     uint16_t jobFacet = 0;
     float jobAngle = 0.0f;

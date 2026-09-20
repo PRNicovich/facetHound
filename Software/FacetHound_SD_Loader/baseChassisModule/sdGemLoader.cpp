@@ -180,7 +180,16 @@ GemSdResult appendAscFacets(char* cursor, GemSdDesign* design,
             facetNameNext = true;
             continue;
         }
-        if (!strcmp(token, "G")) break; // remainder is cutting instructions
+        if (!strcmp(token, "G")) {
+            if(design->tierComments.size()<=tier) design->tierComments.resize(tier+1);
+            String comment(skipSpace(cursor));
+            comment.trim();
+            String& saved=design->tierComments[tier];
+            if(saved.length() && comment.length()) saved += " ";
+            saved += comment;
+            if(saved.length()>96) saved.remove(96);
+            break;
+        }
 
         double index = 0.0;
         if (!parseFloatToken(token, &index)) return GemSdResult::BAD_NUMBER;

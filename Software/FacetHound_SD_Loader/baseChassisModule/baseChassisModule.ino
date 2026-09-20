@@ -563,6 +563,7 @@ static void sendActiveCut(bool force = false)
         dispSerial.print(cut.rawIndex, 4);
         dispSerial.println(",");
         lastBuiltinCutSent = builtinCutIndex;
+        dispSerial.print("@TIERCOMMENT,"); dispSerial.print(cut.tier); dispSerial.println(",");
         return;
     }
 
@@ -586,6 +587,11 @@ static void sendActiveCut(bool force = false)
     dispSerial.print(",");
     dispSerial.println(name);
     lastJobCutSent = S.markIdx;
+    char comment[97] = {};
+    if(cut.tier<activeGemDesign.tierComments.size())
+        safeProtocolText(activeGemDesign.tierComments[cut.tier].c_str(),comment,sizeof(comment));
+    dispSerial.print("@TIERCOMMENT,"); dispSerial.print(cut.tier);
+    dispSerial.print(','); dispSerial.println(comment);
 }
 
 static void rebuildLoadedMarksForMode();

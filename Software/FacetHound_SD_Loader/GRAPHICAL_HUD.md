@@ -30,9 +30,12 @@ Existing records are unchanged. New newline-delimited records:
 ```text
 @CHEAT,nominal_index,total_cheat,temporary,target_index
 @HUDFAULT,mask
+@TIERCOMMENT,tier,text
 ```
 
 Index values use the current wheel's units; `temporary` is 0/1. The fault mask is encoder stale/fault=1, index motion fault=2, lap fault=4, Z stale=8. These records describe state, not PC motion commands.
+
+Tier comments come from GemCAD ASC `G` cutting instructions (not an `n G` tier name). They are retained per tier, up to 96 characters, and sent after the selected JOB. The graphical header shows one abbreviated line; tiers without comments leave it blank. Reload an already loaded gem after updating to populate this metadata.
 
 ## Bench verification after uploading
 
