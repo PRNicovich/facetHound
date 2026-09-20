@@ -16,6 +16,12 @@ def main():
     girdle=princess["facetList"][0]
     indices=[(f["value"]+48)%96 for f in girdle["facets"]]
     assert len(indices)==48 and len(set(indices))==48
+    # A restarted base using built-in tier-1 IDs 1..16 against a retained
+    # Princess mesh reproduces the reported display loop exactly: 9..24.
+    ranks=[1+sum(other<value for other in indices) for value in indices]
+    assert sorted(ranks[:16])==list(range(9,25))
+    assert sorted(ranks)==list(range(1,49))
+    print("Reproduced 9..24 signature: built-in IDs applied to retained Princess mesh")
     for forward in (True,False):
         current=0; visited=[]
         for _ in range(48):

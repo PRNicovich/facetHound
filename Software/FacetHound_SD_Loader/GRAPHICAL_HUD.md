@@ -39,4 +39,6 @@ Tier comments come from GemCAD ASC `G` cutting instructions (not an `n G` tier n
 
 ## Bench verification after uploading
 
+After a base-only restart, reporting a non-Classic mode now restores the saved SD design even if the display retains its mesh. Previously only a fresh mesh request triggered restoration, allowing built-in facet IDs to address a retained loaded model (Princess showed 9..24 of 48). Built-in JOB/navigation is suppressed while restoration is pending or failed; unrelated controls remain available. Test with the display left powered during a base reset, then cycle all 48 Princess girdle facets with keys 12/13.
+
 Check crown/pavilion tier changes in Static, fixed side rear shading, and the smallest/longest loaded gems. Check temporary cheat clears on facet change; H applies only to that side. Verify nominal index stays fixed while corrected target/error changes. Verify lock dots, step changes, flow pause colors, and gauge history. Syntax/regression checks cannot substitute for this TFT and motion-hardware check.

@@ -546,6 +546,9 @@ static void sendCheatState()
 
 static void sendActiveCut(bool force = false)
 {
+    // A retained display mesh may belong to the saved SD design after only
+    // the base restarts. Never send built-in facet IDs into that mesh.
+    if (!activeGemLoaded && (savedGemRestorePending || savedGemRestoreFailed || pendingGemLoad>=0)) return;
     if (!activeGemLoaded)
     {
         if (builtinCutIndex < 0 || builtinCutIndex >= int(BuiltinGem::kCutCount))
@@ -1313,6 +1316,20 @@ static void applyConfigAction(char* actionText)
     sendCfgNak(action, "UNKNOWN_ACTION");
 }
 
+static bool restoreSavedGemForDisplay()
+{
+    if (!savedGemRestorePending || activeGemLoaded) return false;
+    savedGemRestorePending=false;
+    const int index=lastGemSdIndex();
+    savedGemRestoreFailed=index == -2;
+    if(index>=0) {
+        char action[48]; snprintf(action,sizeof(action),"LOAD_SD_FILE,%d",index);
+        applyConfigAction(action);
+        savedGemRestoreFailed=!activeGemLoaded && pendingGemLoad<0;
+    }
+    return true;
+}
+
 void displayRxTask()
 {
     while (dispSerial.available())
@@ -1419,16 +1436,7 @@ void displayRxTask()
                 else if (!strcasecmp(valueText, "GEM_INFO")) sendLoadedGemInfo();
                 else if (!strcasecmp(valueText, "MESH"))
                 {
-                    if (savedGemRestorePending && !activeGemLoaded) {
-                        savedGemRestorePending=false;
-                        const int index=lastGemSdIndex();
-                        savedGemRestoreFailed=index == -2;
-                        if(index>=0) {
-                            char action[48]; snprintf(action,sizeof(action),"LOAD_SD_FILE,%d",index);
-                            applyConfigAction(action);
-                            savedGemRestoreFailed=!activeGemLoaded;
-                        }
-                    }
+                    restoreSavedGemForDisplay();
                     sendActiveMesh();
                 }
                 else if (!strncasecmp(valueText, "POSITIONS,", 10))
@@ -1893,6 +1901,12 @@ static void routeKeyboardKey(uint8_t key)
     else
     {
         const bool useBuiltinGem = !activeGemLoaded && displayVisualMode != 0;
+        const bool gemNavigationKey=key==5 || key==6 || key==11 ||
+            (key>=12 && key<=16) || key==18;
+        if(useBuiltinGem && gemNavigationKey && (savedGemRestorePending || savedGemRestoreFailed || pendingGemLoad>=0)) {
+            Serial.println("@ERR,GEM,restore or load the selected design before navigation");
+            return;
+        }
         if(graphicalMode() && (key==16 || key==18 || key==11)) {
             if(key==11) {
                 selectedSideCheat()=wrapTransferTurns(selectedSideCheat()+S.temporaryCheatTurns);
@@ -2738,6 +2752,10 @@ void loop()
 {
     mastTask();
     displayRxTask();
+    // MODE replies arrive even when the display retains its mesh and therefore
+    // does not ask for CFGGET,MESH again. Restore before processing facet keys.
+    if(displayModeKnown && displayVisualMode!=0 && restoreSavedGemForDisplay())
+        sendActiveMesh();
     keyboardTask();
     usbDiagnosticTask();
 
