@@ -1694,8 +1694,9 @@ static void printUsbHelp()
 
 static bool selectAdjacentGemTier(bool forward)
 {
-    const size_t count = min(activeGemDesign.cuts.size(), S.markPoints.size());
+    const size_t count = activeGemDesign.cuts.size();
     if (!activeGemLoaded || count == 0) return false;
+    if(S.markPoints.size()!=count) rebuildLoadedMarksForMode();
 
     size_t current = S.markIdx >= 0 ? size_t(S.markIdx) : 0;
     if (current >= count) current = 0;
@@ -1740,12 +1741,17 @@ static bool selectAdjacentGemTier(bool forward)
 
 static bool selectAdjacentGemFacet(bool forward)
 {
-    const size_t count = min(activeGemDesign.cuts.size(), S.markPoints.size());
+    const size_t count = activeGemDesign.cuts.size();
     if (!activeGemLoaded || count == 0) return false;
+    if(S.markPoints.size()!=count) rebuildLoadedMarksForMode();
     size_t current = S.markIdx >= 0 ? size_t(S.markIdx) : 0;
     if (current >= count) current = 0;
     const uint16_t tier = activeGemDesign.cuts[current].tier;
-    const float currentIndex = S.markPoints[current];
+    auto indexAt=[&](size_t i) {
+        const auto& cut=activeGemDesign.cuts[i];
+        return machineIndexForFacet(cut.index,cut.angleDegrees,activeGemDesign.wheelIndex);
+    };
+    const float currentIndex = indexAt(current);
 
     size_t selected = current;
     float selectedIndex = forward ? INFINITY : -INFINITY;
@@ -1753,7 +1759,7 @@ static bool selectAdjacentGemFacet(bool forward)
     for (size_t i = 0; i < count; ++i)
     {
         if (activeGemDesign.cuts[i].tier != tier || i == current) continue;
-        const float index = S.markPoints[i];
+        const float index = indexAt(i);
         if ((forward && index > currentIndex + 0.0001f && index < selectedIndex) ||
             (!forward && index < currentIndex - 0.0001f && index > selectedIndex))
         {
@@ -1768,7 +1774,7 @@ static bool selectAdjacentGemFacet(bool forward)
         for (size_t i = 0; i < count; ++i)
         {
             if (activeGemDesign.cuts[i].tier != tier) continue;
-            const float index = S.markPoints[i];
+            const float index = indexAt(i);
             if ((forward && index < selectedIndex) || (!forward && index > selectedIndex))
             {
                 selected = i;

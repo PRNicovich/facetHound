@@ -21,7 +21,7 @@ Static shows the selected tier's crown (T) or pavilion (B) cap plus a fixed side
 
 Both modes share decimal-aligned values, cheat/error readouts, open-gray/filled-color lock dots and cumulative step symbols. Flow remains its setpoint: cyan drop and white text running, gray paused. RPM is measured while running and setpoint while paused. Red fault notices occupy the spare Z row.
 
-The vertical tip-error gauge retains ten received samples. Latest is yellow; older ticks fade, with overlapping history brightening. Labels: 0, ±0.1, ±1, ±10 degrees. Unlabeled minor ticks: ±0.05, ±0.5, ±5. The inner ±0.05 region is linear; outer regions are logarithmic. End arrows indicate overflow.
+The vertical tip-error gauge retains ten received samples. Latest is yellow; older ticks fade by a factor of 0.60 per newer sample, with overlapping history brightening. Labels: 0, ±0.1, ±1, ±10 degrees. Unlabeled minor ticks: ±0.05, ±0.5, ±5. The inner ±0.1 region is linear, spanning 42 pixels; outer regions are logarithmic. End arrows indicate overflow. The compact bottom label is ΔΘ; only the main tip value carries a degree symbol.
 
 ## Base → display records
 

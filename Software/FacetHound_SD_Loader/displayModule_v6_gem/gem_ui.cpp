@@ -566,27 +566,29 @@ void GemUi::updatePose(const GemTelemetry& state)
 
 void GemUi::drawHeader(const GemTelemetry& state, bool showTier)
 {
+    const char* title = state.jobActive && state.jobTitle && state.jobTitle[0]
+                            ? state.jobTitle : GemData::kTitle;
+    const char* cursor = title;
+    gemCanvas_.setTextFont(2);
+    for (int row=0; row<2 && *cursor; ++row) {
+        char line[49] = {};
+        size_t count=min(strlen(cursor),sizeof(line)-1);
+        memcpy(line,cursor,count);
+        while(count && gemCanvas_.textWidth(line)>145) line[--count]=0;
+        if(cursor[count] && row==0) {
+            size_t split=count; while(split && cursor[split]!=' ') --split;
+            if(split) {count=split;line[count]=0;}
+        }
+        if(row==1 && cursor[count] && count>=3) memcpy(line+count-3,"...",3);
+        textAt(gemCanvas_,line,7,row*16,TFT_WHITE,2,TL_DATUM);
+        cursor+=count; while(*cursor==' ')++cursor;
+    }
     if(state.tierComment && state.tierComment[0]) {
         char comment[39] = {};
         snprintf(comment,sizeof(comment),"%s",state.tierComment);
         if(strlen(state.tierComment)>38) memcpy(comment+35,"...",3);
-        textAt(gemCanvas_,comment,7,28,C_TEXT,1,TL_DATUM);
+        textAt(gemCanvas_,comment,7,36,C_TEXT,1,TL_DATUM);
     }
-    const char* title = state.jobActive && state.jobTitle && state.jobTitle[0]
-                            ? state.jobTitle : GemData::kTitle;
-    const char* cursor = title;
-    for (int row=0; row<2 && *cursor; ++row) {
-        size_t count = min(size_t(23), strlen(cursor));
-        if (cursor[count] && row==0) {
-            size_t split=count; while (split && cursor[split]!=' ') --split;
-            if (split) count=split;
-        }
-        char line[26] = {}; memcpy(line,cursor,count);
-        if (row==1 && cursor[count] && count>=3) memcpy(line+count-3,"...",3);
-        textAt(gemCanvas_,line,7,5+row*11,C_NAME,1,TL_DATUM);
-        cursor+=count; while (*cursor==' ') ++cursor;
-    }
-
     if (showTier)
     {
         char facet[40];
@@ -726,7 +728,7 @@ void GemUi::drawStatic(const GemTelemetry& state)
     const uint8_t cap=pavilion?1:0;
     for(uint8_t view=0;view<2;++view) {
         const uint8_t panel=view?3:cap;
-        const int bx=10,by=view?194:34,bw=218,bh=view?120:154;
+        const int bx=10,by=view?194:50,bw=218,bh=view?120:138;
         float minU=INFINITY,maxU=-INFINITY,minV=INFINITY,maxV=-INFINITY;
         for(uint16_t i=0;i<nv;++i) {
             const float u=view?yAt(i):xAt(i);
@@ -806,14 +808,13 @@ void GemUi::drawHud(const GemTelemetry& state)
     // Explicit delta triangle avoids missing custom-font Unicode glyphs.
     hudCanvas_.drawTriangle(198,29,193,40,203,40,C_YELLOW);
     number(tipError,2,270,43,2,C_YELLOW,true);
-    drawDegreeGlyph(hudCanvas_,305,28,C_YELLOW);
 
     number(nominal,2,111,81,4,C_CYAN);
     const uint16_t cheatColor=state.cheatTemporary?TFT_WHITE:C_CYAN;
-    textAt(hudCanvas_,"CHEAT",176,62,cheatColor,2,BL_DATUM);
-    number(state.cheatReceived?state.cheatIndex:0,2,270,62,2,cheatColor,true);
-    hudCanvas_.drawTriangle(198,69,193,80,203,80,C_CYAN);
-    number(indexError,2,270,82,2,C_CYAN,true);
+    textAt(hudCanvas_,"CHEAT",176,66,cheatColor,2,BL_DATUM);
+    number(state.cheatReceived?state.cheatIndex:0,2,270,66,2,cheatColor,true);
+    hudCanvas_.drawTriangle(198,73,193,84,203,84,C_CYAN);
+    number(indexError,2,270,86,2,C_CYAN,true);
 
     number(state.zMillimeters,3,111,119,4,C_MAGENTA);
     textAt(hudCanvas_,"mm",180,119,C_MAGENTA,2,BL_DATUM);
@@ -855,9 +856,9 @@ void GemUi::drawErrorScale()
     gemCanvas_.fillRect(238,34,82,286,C_BG);
     auto yAt=[](float error) {
         float a=fabsf(error);
-        float d=a<=.05f?a/.05f:1+log10f(a/.05f);
-        d=min(d,1+log10f(200.0f));
-        return int(lroundf(184-copysignf(d,error)*106/(1+log10f(200.0f))));
+        // +/-0.1 is linear and 42 pixels wide; logarithmic decades outside.
+        float d=a<=.1f?21*a/.1f:21+42.5f*log10f(a/.1f);
+        return int(lroundf(184-copysignf(min(d,106.0f),error)));
     };
     gemCanvas_.drawFastVLine(274,78,213,C_DIM);
     for(int sign=-1;sign<=1;sign+=2) {
@@ -881,7 +882,7 @@ void GemUi::drawErrorScale()
     float intensity[213]={};
     for(uint8_t i=0;i+1<tipHistoryCount_;++i) {
         const int y=yAt(tipHistory_[i])-78;
-        const float alpha=.60f*powf(.76f,tipHistoryCount_-2-i);
+        const float alpha=.50f*powf(.60f,tipHistoryCount_-2-i);
         if(y>=0 && y<213)intensity[y]=1-(1-intensity[y])*(1-alpha);
     }
     for(int y=0;y<213;++y) if(intensity[y]>0) {
@@ -889,9 +890,9 @@ void GemUi::drawErrorScale()
         gemCanvas_.fillRect(247,77+y,22,3,uint16_t(r<<11)|uint16_t(g<<5));
     }
     if(tipHistoryCount_)gemCanvas_.fillRect(247,yAt(tipHistory_[tipHistoryCount_-1])-1,22,3,TFT_YELLOW);
-    gemCanvas_.drawTriangle(253,307,249,316,257,316,C_YELLOW);
-    drawSmallAxisSymbol(gemCanvas_,270,312,true,C_YELLOW);
-    drawDegreeGlyph(gemCanvas_,284,307,C_YELLOW);
+    gemCanvas_.drawTriangle(258,307,254,315,262,315,C_YELLOW);
+    gemCanvas_.drawCircle(273,311,5,C_YELLOW);
+    gemCanvas_.drawFastHLine(267,311,13,C_YELLOW);
 }
 
 void GemUi::pushGemCanvas()

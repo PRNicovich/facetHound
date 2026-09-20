@@ -12,6 +12,19 @@ from gemcad_io import loadGemCADFile
 
 
 def main():
+    princess=loadGemCADFile(str(SOFTWARE / "gemUtils/data/pc01269.asc"))
+    girdle=princess["facetList"][0]
+    indices=[(f["value"]+48)%96 for f in girdle["facets"]]
+    assert len(indices)==48 and len(set(indices))==48
+    for forward in (True,False):
+        current=0; visited=[]
+        for _ in range(48):
+            visited.append(current)
+            candidates=[i for i,v in enumerate(indices) if
+                        (v>indices[current]+.0001 if forward else v<indices[current]-.0001)]
+            current=(min if forward else max)(candidates or list(range(48)),key=lambda i:indices[i])
+        assert len(set(visited))==48 and current==0
+    print("Princess: all 48 girdle facets reachable in both directions, including wraparound")
     for name in ("pc04188.asc", "pc42011.asc", "pc01028c.asc", "pc01043.asc"):
         design = loadGemCADFile(str(SOFTWARE / "gemUtils/data" / name))
         wheel = abs(design["wheelIndex"])
@@ -86,8 +99,8 @@ def main():
     assert girdle_edges
     print(f"Backgammon: all four projections in bounds; {girdle_edges} girdle edges visible in T and B")
     # New two-panel Static layout: reserve the right strip for the gauge.
-    for axes, flip, box in (([0,1],False,(10,34,218,154)),
-                             ([0,1],True,(10,34,218,154)),
+    for axes, flip, box in (([0,1],False,(10,50,218,138)),
+                             ([0,1],True,(10,50,218,138)),
                              ([1,2],False,(10,194,218,120))):
         uv=points[:,axes].copy()
         if flip: uv[:,1]*=-1
