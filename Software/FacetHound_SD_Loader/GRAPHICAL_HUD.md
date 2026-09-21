@@ -17,6 +17,8 @@ Applied offsets are stored with the current design identity. Loading a different
 
 ## Views
 
+In Dynamic and Static, the large tip number is the selected facet's nominal machine angle. Tip error text and gauge history show measured angle minus that nominal angle; the measured angle is not separately displayed. Classic modes are unchanged.
+
 Static shows the selected tier's crown (T) or pavilion (B) cap plus a fixed side (S) projection. Each projection fits all vertices into its own bounds. Rear-facing side highlights are dark green; rear side edges are dim. The cap includes girdle edges.
 
 Both modes share decimal-aligned values, cheat/error readouts, open-gray/filled-color lock dots and cumulative step symbols. Flow remains its setpoint: cyan drop and white text running, gray paused. RPM is measured while running and setpoint while paused. Red fault notices occupy the spare Z row.

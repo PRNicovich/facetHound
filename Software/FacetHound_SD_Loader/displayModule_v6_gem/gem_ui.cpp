@@ -797,13 +797,14 @@ void GemUi::drawHud(const GemTelemetry& state)
         textAt(hudCanvas_,dot,x,y,color,font,BL_DATUM);
         *dot=0;textAt(hudCanvas_,buffer,x,y,color,font,BR_DATUM);
     };
-    const float tipError=state.tipDegrees-selectedTargetTip(state);
+    const float nominalTip=selectedTargetTip(state);
+    const float tipError=state.tipDegrees-nominalTip;
     const float nominal=state.cheatReceived?state.nominalIndex:
         selectedTargetTwist(state)*state.wheelIndex/
         (runtimeGemMesh().active()?runtimeGemMesh().indexResolution():float(GemData::kIndexResolution));
     const float actual=state.actualTwistValid?state.actualTwist:state.targetTwist+state.twistError;
     const float indexError=wrappedDelta(actual,state.targetTwist,state.wheelIndex);
-    number(state.tipDegrees,2,111,43,4,C_YELLOW);
+    number(nominalTip,2,111,43,4,C_YELLOW);
     drawDegreeGlyph(hudCanvas_,163,21,C_YELLOW);
     // Explicit delta triangle avoids missing custom-font Unicode glyphs.
     hudCanvas_.drawTriangle(198,29,193,40,203,40,C_YELLOW);
