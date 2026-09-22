@@ -715,10 +715,15 @@ GemSdResult loadGemSdFileAt(size_t index, GemSdDesign* design)
     GemSdDesign candidate;
     copyText(candidate.fileName, sizeof(candidate.fileName), leafName(path));
     const char* dot = strrchr(path, '.');
+    Serial.print("@GEM_SOURCE,path=");Serial.print(path);
+    Serial.print(",bytes=");Serial.println(file.size());
     GemSdResult result = dot && !strcasecmp(dot,".gem") ? readBinaryGem(file,candidate) :
         dot && !strcasecmp(dot,".gcs") ? readGcs(file,candidate) :
         parseDesign(file, dot && !strcasecmp(dot, ".fct"), &candidate);
     if(result==GemSdResult::OK)propagateTierNames(&candidate);
+    Serial.print("@GEM_PARSE,result=");Serial.print(gemSdResultText(result));
+    Serial.print(",offset=");Serial.print(file.position());
+    Serial.print(",cuts=");Serial.println(candidate.cuts.size());
     file.close();
     if (result != GemSdResult::OK) return result;
     if (!candidate.title[0])

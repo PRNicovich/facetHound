@@ -9,7 +9,21 @@ static_assert(sizeof(double)==8,"GEM requires IEEE-754 binary64 doubles");
 // format-reference attribution and supported variants. Never trust file sizes.
 template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& design)
 {
-    auto bytes=[&](void* dst,size_t n) {return file.read(static_cast<uint8_t*>(dst),n)==int(n);};
+    // A Stream may return a short read. Accumulate it, without treating an
+    // empty metadata string as an I/O operation or retrying a failed read.
+    auto bytes=[&](void* dst,size_t n) {
+        auto* out=static_cast<uint8_t*>(dst);size_t done=0;
+        while(done<n) {
+            int got=file.read(out+done,n-done);
+            if(got<=0 || size_t(got)>n-done) {
+                Serial.print("@GEM_READ_ERROR,offset=");Serial.print(file.position());
+                Serial.print(",wanted=");Serial.print(n-done);Serial.print(",got=");Serial.println(got);
+                return false;
+            }
+            done+=size_t(got);
+        }
+        return true;
+    };
     auto u32=[&](uint32_t& v) {uint8_t b[4];if(!bytes(b,4))return false;
         v=uint32_t(b[0])|(uint32_t(b[1])<<8)|(uint32_t(b[2])<<16)|(uint32_t(b[3])<<24);return true;};
     auto real=[&](double& v) {uint8_t b[8];if(!bytes(b,8))return false;

@@ -38,6 +38,7 @@ public:
     }
     void close();
     bool isOpen() const { return open_; }
+    bool isGemPicker() const { return open_ && page_==Page::SD_FILES; }
     bool indexSpinRunning() const { return indexSpinRunning_; }
     float indexSpinRpm() const { return indexSpinRpm_; }
     MenuResult handle(MenuKey key);

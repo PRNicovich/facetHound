@@ -35,6 +35,18 @@ index/Z, restores built-in targets and returns to the main screen. With a card,
 current session. Selecting a replacement SD file remembers its new full path.
 Classic mode retains its immediate startup behavior.
 
+Failed loads keep the current picker folder/cursor instead of reopening it at
+entry zero. `@GEM_SOURCE` reports the actual opened path and byte count;
+`@GEM_PARSE` reports result, byte offset and recovered cut count. Binary short
+reads are accumulated; a zero/error read emits `@GEM_READ_ERROR` and fails
+without an unbounded retry. These diagnostics distinguish parser failures
+from a reset or a different file being opened on the card.
+
+`Tessellation_32_(J).gem` (7624 bytes) passes PC parsing/reconstruction with 48
+planes, 38 vertices and 84 edges. Its reported on-device BAD_HEADER has not yet
+been reproduced locally. A PC-generated `.fhc` beside the original is a cache
+workaround; the firmware verifies the original size/CRC before accepting it.
+
 Both base and display need this recovery update (`GEMPICKER` / `GEMSELECTED`).
 The display splash must yield screen ownership if recovery opens the picker
 during serial reception: no remaining animation frames, final black clear, or

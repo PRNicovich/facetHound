@@ -674,8 +674,13 @@ void parseLine(char* line)
     restoreDisplayPending=false;
     splashActive=false;bootModelPending=false;loadingDesign=false;meshReceiving=false;
     meshDisplayFailed=false;loadingProgress.deleteSprite();
-    openSettingsMenu();settingsMenu.openGemPicker();
-    sendLineBoth("@CFGGET,SD_FILES,0,6");
+    if(settingsMenu.isGemPicker()) {
+      settingsMenu.applyError("LOAD_SD_FILE",valueText);
+      settingsMenu.draw(); // Restore rows after the loading overlay; retain cursor/cache.
+    } else {
+      openSettingsMenu();settingsMenu.openGemPicker();
+      sendLineBoth("@CFGGET,SD_FILES,0,6");
+    }
     return;
   }
   if (!strcmp(key,"GEMSELECTED")) {
@@ -686,8 +691,8 @@ void parseLine(char* line)
     if (title) { *title++ = 0; snprintf(loadingTitle, sizeof(loadingTitle), "%.42s", title); }
     snprintf(loadingStage, sizeof(loadingStage), "%s", valueText);
     loadingDesign = strcmp(valueText, "ERROR") != 0;
-    if (!loadingDesign) { meshDisplayFailed = true; bootModelPending = false; }
-    if (!splashActive) drawLoadingProgress(-1, true);
+    if (!loadingDesign) { meshDisplayFailed = !settingsMenu.isGemPicker(); bootModelPending = false; }
+    if (!splashActive && (loadingDesign || !settingsMenu.isGemPicker())) drawLoadingProgress(-1, true);
     return;
   }
   if (!strncmp(key, "MESH", 4)) meshLastRxMs = millis();
