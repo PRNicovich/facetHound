@@ -47,6 +47,13 @@ planes, 38 vertices and 84 edges. Its reported on-device BAD_HEADER has not yet
 been reproduced locally. A PC-generated `.fhc` beside the original is a cache
 workaround; the firmware verifies the original size/CRC before accepting it.
 
+The reported failure at offset 28/cuts=0 localizes to the first tier ID after
+the old footer-probe rewind. GEM now reads strictly forward, replaying the
+40-byte lookahead from RAM. Invalid tier IDs emit `@GEM_TIER_ERROR` with the raw
+header so SD bytes can be compared with the supplied file. Hardware confirmation
+is still required. Saved-path records are written in one block and read back;
+`@GEM_REMEMBER_ERROR` identifies OPEN, WRITE or VERIFY failures.
+
 Both base and display need this recovery update (`GEMPICKER` / `GEMSELECTED`).
 The display splash must yield screen ownership if recovery opens the picker
 during serial reception: no remaining animation frames, final black clear, or

@@ -9,10 +9,12 @@ static_assert(sizeof(double)==8,"GEM requires IEEE-754 binary64 doubles");
 // format-reference attribution and supported variants. Never trust file sizes.
 template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& design)
 {
+    uint8_t replay[40];size_t replayAt=0,replayEnd=0;
     // A Stream may return a short read. Accumulate it, without treating an
     // empty metadata string as an I/O operation or retrying a failed read.
     auto bytes=[&](void* dst,size_t n) {
         auto* out=static_cast<uint8_t*>(dst);size_t done=0;
+        while(done<n && replayAt<replayEnd)out[done++]=replay[replayAt++];
         while(done<n) {
             int got=file.read(out+done,n-done);
             if(got<=0 || size_t(got)>n-done) {
@@ -35,11 +37,15 @@ template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& desi
     if(file.size()>2*1024*1024 || file.size()<40) return GemSdResult::BAD_HEADER;
     std::vector<uint32_t> nativeTiers;
     while(file.position()+40<=file.size()) {
-        const auto start=file.position();
-        uint32_t zero,unknown,fold,mirror,gear;
-        double ri,meridian;
-        if(!u32(zero)||!u32(unknown)||!u32(fold)||!u32(mirror)||!u32(gear)||
-           !real(ri)||!u32(unknown)||!real(meridian)) return GemSdResult::BAD_HEADER;
+        // Inspect the footer discriminator once, then replay those bytes from
+        // RAM if this is a polygon. Never rewind the SD file for every face.
+        uint8_t header[40];if(!bytes(header,sizeof(header)))return GemSdResult::BAD_HEADER;
+        auto word=[&](size_t p) {return uint32_t(header[p])|(uint32_t(header[p+1])<<8)|
+            (uint32_t(header[p+2])<<16)|(uint32_t(header[p+3])<<24);};
+        auto scalar=[&](size_t p) {uint64_t bits=uint64_t(word(p))|(uint64_t(word(p+4))<<32);
+            double v;memcpy(&v,&bits,8);return v;};
+        uint32_t zero=word(0),fold=word(8),mirror=word(12),gear=word(16);
+        double ri=scalar(20),meridian=scalar(32);
         const int32_t signedGear=int32_t(gear);
         if(zero==0 && fold>0 && fold<=400 && mirror<=1 && signedGear!=0 &&
            signedGear>=-400 && signedGear<=400 && ri>=1 && ri<=10 && fabs(meridian)<=400) {
@@ -64,10 +70,15 @@ template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& desi
             }
             return GemSdResult::OK;
         }
-        if(!file.seek(start))return GemSdResult::BAD_HEADER;
+        memcpy(replay,header,sizeof(header));replayAt=0;replayEnd=sizeof(header);
         double nx,ny,nz;uint32_t tier,marker;
-        if(!real(nx)||!real(ny)||!real(nz)||!u32(tier)||!tier||tier>GEM_SD_MAX_CUTS)
-            return GemSdResult::BAD_HEADER;
+        if(!real(nx)||!real(ny)||!real(nz)||!u32(tier))return GemSdResult::BAD_HEADER;
+        if(!tier||tier>GEM_SD_MAX_CUTS) {
+            Serial.print("@GEM_TIER_ERROR,value=");Serial.print(tier);
+            Serial.print(",header=");
+            for(uint8_t b:header) {if(b<16)Serial.print('0');Serial.print(b,HEX);}
+            Serial.println();return GemSdResult::BAD_HEADER;
+        }
         double length=sqrt(nx*nx+ny*ny+nz*nz);
         if(!isfinite(length)||length<1e-12)return GemSdResult::BAD_NUMBER;
         nx/=length;ny/=length;nz/=length;

@@ -669,9 +669,22 @@ bool rememberGemSdPath(const char* path)
 {
     if (!sdReady || !path || strlen(path) >= GEM_SD_PATH_LENGTH) return false;
     File file = SD.open("/facetHound.last", "w");
-    if (!file) return false;
-    bool ok = file.println(path) == strlen(path)+2;
-    file.close(); return ok;
+    if (!file) {Serial.println("@GEM_REMEMBER_ERROR,OPEN");return false;}
+    char record[GEM_SD_PATH_LENGTH+2];
+    size_t length=snprintf(record,sizeof(record),"%s\r\n",path);
+    size_t written=file.write(reinterpret_cast<const uint8_t*>(record),length);
+    file.flush();file.close();
+    if(written!=length) {
+        Serial.print("@GEM_REMEMBER_ERROR,WRITE,wanted=");Serial.print(length);
+        Serial.print(",written=");Serial.println(written);return false;
+    }
+    File check=SD.open("/facetHound.last",FILE_READ);
+    char verify[GEM_SD_PATH_LENGTH+2]={};
+    bool ok=check && check.size()==length && check.read(reinterpret_cast<uint8_t*>(verify),length)==int(length)
+        && !memcmp(record,verify,length);
+    check.close();
+    if(!ok)Serial.println("@GEM_REMEMBER_ERROR,VERIFY");
+    return ok;
 }
 
 int lastGemSdIndex()
