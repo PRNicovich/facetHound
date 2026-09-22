@@ -13,6 +13,7 @@
 
 constexpr size_t GEM_SD_MAX_CUTS = 2048;
 constexpr size_t GEM_SD_FILE_NAME_LENGTH = 64;
+constexpr size_t GEM_SD_PATH_LENGTH = 192;
 constexpr size_t GEM_SD_TITLE_LENGTH = 48;
 constexpr size_t GEM_SD_FACET_NAME_LENGTH = 12;
 
@@ -76,6 +77,10 @@ void probeGemSdFilesystem();
 const GemSdDiagnostics& gemSdDiagnostics();
 size_t gemSdFileCount();
 bool gemSdFileNameAt(size_t index, char* output, size_t outputSize);
+bool gemSdEntryIsDirectory(size_t index);
+bool gemSdEnterDirectory(size_t index);
+bool gemSdParentDirectory();
+const char* gemSdDirectory();
 bool gemSdFilePathAt(size_t index, char* output, size_t outputSize);
 bool gemSdFileTitleAt(size_t index, char* title, size_t size);
 bool readGemSdMetadataAt(size_t index, GemSdDesign* design);

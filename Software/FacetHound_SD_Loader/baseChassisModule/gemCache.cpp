@@ -155,7 +155,7 @@ GemCacheResult loadGemCache(const char* sourcePath, GemSdDesign* design,
                             GemRuntimeGeometry* geometry)
 {
     if (!sourcePath || !design || !geometry) return GemCacheResult::BAD_HEADER;
-    char cachePath[GEM_SD_FILE_NAME_LENGTH] = {};
+    char cachePath[GEM_SD_PATH_LENGTH] = {};
     if (!cachePathForSource(sourcePath, cachePath, sizeof(cachePath)))
         return GemCacheResult::CACHE_OPEN_FAILED;
     if (!SD.exists(cachePath)) return GemCacheResult::NOT_FOUND;
@@ -266,7 +266,7 @@ GemCacheResult loadGemCache(const char* sourcePath, GemSdDesign* design,
 GemCacheResult saveGemCache(const char* sourcePath, const GemSdDesign& design,
                             const GemRuntimeGeometry& geometry)
 {
-    char cachePath[GEM_SD_FILE_NAME_LENGTH] = {};
+    char cachePath[GEM_SD_PATH_LENGTH] = {};
     if (!cachePathForSource(sourcePath, cachePath, sizeof(cachePath)))
         return GemCacheResult::CACHE_OPEN_FAILED;
     uint32_t sourceSize = 0;

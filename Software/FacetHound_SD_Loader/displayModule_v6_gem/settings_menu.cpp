@@ -310,14 +310,19 @@ MenuResult SettingsMenu::handle(MenuKey key)
     }
     else if (page_ == Page::SD_FILES)
     {
-        if (key == MenuKey::BACK) enterRootPage();
+        if (key == MenuKey::BACK) {
+            if(strcmp(sdDirectory_,"/"))setCommand(result,"@CFGACTION,SD_UP,0");
+            else enterRootPage();
+        }
         else if (key == MenuKey::UP && sdFileCount_)
             sdCursor_ = (sdCursor_ + sdFileCount_ - 1) % sdFileCount_;
         else if (key == MenuKey::DOWN && sdFileCount_)
             sdCursor_ = (sdCursor_ + 1) % sdFileCount_;
         else if (key == MenuKey::SELECT && sdFileCount_)
         {
-            snprintf(status_, sizeof(status_), "Loading %.36s...",
+            if(sdCursor_<sdCacheStart_ || sdCursor_>=sdCacheStart_+kSdCacheSize ||
+               !sdFileValid_[sdCursor_-sdCacheStart_]) {requestSdWindow(result);return result;}
+            snprintf(status_, sizeof(status_), "Opening %.36s...",
                      sdCursor_ >= sdCacheStart_ && sdCursor_ < sdCacheStart_+kSdCacheSize ?
                          sdFileNames_[sdCursor_ - sdCacheStart_] : "design");
             setCommand(result, "@CFGACTION,LOAD_SD_FILE,%lu",
@@ -435,7 +440,7 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
         if (!strcasecmp(value, "NO_CARD"))
             snprintf(status_, sizeof(status_), "Insert a FAT32 SD card");
         else if (!strcasecmp(value, "READY") && !sdFileCount_)
-            snprintf(status_, sizeof(status_), "No .asc or .fct files in root");
+            snprintf(status_, sizeof(status_), "No .asc, .gem or .fct files");
     }
     else if (!strcasecmp(id,"GEM_INFO_DONE")) { if (open_ && page_==Page::GEM_INFO) drawGemInfo(); return; }
     else if (!strncasecmp(id,"GEM_INFO_",9)) {
@@ -447,13 +452,17 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
     {
         snprintf(activeDesign_, sizeof(activeDesign_), "%s", value);
     }
+    else if (!strcasecmp(id,"SD_DIR")) {
+        if(strcmp(sdDirectory_,value)) {
+            snprintf(sdDirectory_,sizeof(sdDirectory_),"%s",value);
+            sdCursor_=0;invalidateSdCache(0);
+        }
+    }
     else if (!strcasecmp(id, "SD_FILE_COUNT"))
     {
         sdFileCount_ = strtoul(value, nullptr, 10);
         if (sdCursor_ >= sdFileCount_) sdCursor_ = sdFileCount_ ? sdFileCount_ - 1 : 0;
-        if (sdFileCount_) snprintf(status_, sizeof(status_), "%lu design file%s",
-                                   static_cast<unsigned long>(sdFileCount_),
-                                   sdFileCount_ == 1 ? "" : "s");
+        snprintf(status_, sizeof(status_), "%lu entries", static_cast<unsigned long>(sdFileCount_));
     }
     else if (!strncasecmp(id, "SD_TITLE_", 9))
     {
@@ -628,7 +637,7 @@ void SettingsMenu::drawIndexSpin()
 void SettingsMenu::drawSdFiles()
 {
     char subtitle[56] = {};
-    snprintf(subtitle, sizeof(subtitle), "active: %.42s", activeDesign_);
+    snprintf(subtitle, sizeof(subtitle), "folder: %.42s", sdDirectory_);
     drawTitle(subtitle);
 
     if (!strcasecmp(sdStatus_, "NO_CARD"))
@@ -637,7 +646,7 @@ void SettingsMenu::drawSdFiles()
     }
     else if (!sdFileCount_)
     {
-        drawRow(150, "No design files", ".asc or .fct", true);
+        drawRow(150, "No design files", ".asc / .gem / .fct", true);
     }
     else
     {
@@ -648,7 +657,7 @@ void SettingsMenu::drawSdFiles()
             drawSdRow(index, row);
         }
     }
-    drawFooter(status_[0] ? status_ : "WHEEL choose   CLICK load   TOP-LEFT back");
+    drawFooter(status_[0] ? status_ : "WHEEL choose   CLICK open   TOP-LEFT back");
 }
 
 void SettingsMenu::drawRootRow(uint16_t index, uint8_t row)

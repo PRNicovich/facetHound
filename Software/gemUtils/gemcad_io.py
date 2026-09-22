@@ -180,6 +180,9 @@ def parseAllLines(txt):
 
 
 def loadGemCADFile(pth):
+    if str(pth).lower().endswith('.gem'):
+        from gem_binary import load_binary_gem
+        return load_binary_gem(pth)
     with open(pth, "r") as fID:
         txt = fID.readlines()
 

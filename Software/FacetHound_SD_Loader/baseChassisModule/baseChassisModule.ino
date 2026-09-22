@@ -814,6 +814,8 @@ static void sendSdFilePage(size_t start, size_t requested)
     if (start > total) start = total;
     if (count > total - start) count = total - start;
     sendCfgText("SD_STATUS", "READY");
+    sendCfgText("SD_DIR",gemSdDirectory());
+    Serial.print("@SD_DIR,");Serial.println(gemSdDirectory());
     sendCfgCount("SD_FILE_COUNT", total);
     for (size_t i = 0; i < count; ++i)
     {
@@ -1236,6 +1238,10 @@ static void applyConfigAction(char* actionText)
         sendCfgCount("POSITION_COUNT", S.markPoints.size());
         return;
     }
+    if (!strcmp(action,"SD_UP")) {
+        if(pendingGemLoad>=0) {sendCfgNak(action,"LOAD_PENDING");return;}
+        gemSdParentDirectory();sendSdFilePage(0,6);return;
+    }
     if (!strcmp(action, "LOAD_SD_FILE"))
     {
         long index = -1;
@@ -1245,6 +1251,12 @@ static void applyConfigAction(char* actionText)
             return;
         }
 
+        if(pendingGemLoad>=0) {sendCfgNak(action,"LOAD_PENDING");return;}
+        if(gemSdEntryIsDirectory(size_t(index))) {
+            if(!gemSdEnterDirectory(size_t(index)))sendCfgNak(action,"OPEN_FAILED");
+            else sendSdFilePage(0,6);
+            return;
+        }
         hardStopTwist(S);
         S.indexSpinRpm=0; S.twistLock=0; setTwistDriverEnabled(false);
         hardStopZ(); S.zLock=0; setZedDriverEnabled(false);
@@ -1255,7 +1267,7 @@ static void applyConfigAction(char* actionText)
             return;
         }
 
-        char sourcePath[GEM_SD_FILE_NAME_LENGTH] = {};
+        char sourcePath[GEM_SD_PATH_LENGTH] = {};
         if (!gemSdFilePathAt(size_t(index), sourcePath, sizeof(sourcePath)))
         {
             sendCfgNak(action, "OPEN_FAILED");
@@ -1589,12 +1601,14 @@ static void sendUsbSdList()
 {
     const size_t count = gemSdFileCount();
     sendUsbSdStatus();
+    Serial.print("@SD_DIR,");Serial.println(gemSdDirectory());
     Serial.print("@SD,listing="); Serial.println(count);
     for (size_t i = 0; i < count; ++i)
     {
         char name[GEM_SD_FILE_NAME_LENGTH] = {};
         if (!gemSdFileNameAt(i, name, sizeof(name))) continue;
         Serial.print("@SD_FILE,"); Serial.print(i); Serial.print(','); Serial.println(name);
+        Serial.print("@SD_TYPE,");Serial.print(i);Serial.println(gemSdEntryIsDirectory(i)?",DIR":",FILE");
     }
 }
 
@@ -1697,7 +1711,7 @@ static void printUsbHelp()
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
     Serial.println("@HELP,RPM <0..1500> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
-    Serial.println("@HELP,SD STATUS|PROBE|RETRY|LIST | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
+    Serial.println("@HELP,SD STATUS|PROBE|RETRY|LIST|UP | PROBE | TEST DISPLAY ON|OFF|LOOPBACK | TRACE ON|OFF");
     Serial.println("@HELP,GEM LOAD <SD-file-index> | MODE CLASSIC|STATIC|DYNAMIC");
     Serial.println("@HELP,INDEX PROBE (128 positive pulses; axes unlocked, lap paused)");
 }
@@ -2148,9 +2162,14 @@ static void handleUsbCommand(char* line)
         {
             sendUsbSdList();
         }
+        else if (!strcasecmp(mode,"UP"))
+        {
+            char action[]="SD_UP,0";
+            applyConfigAction(action);
+        }
         else
         {
-            Serial.println("@ERR,SD,expected STATUS|PROBE|RETRY|LIST");
+            Serial.println("@ERR,SD,expected STATUS|PROBE|RETRY|LIST|UP");
         }
         return;
     }

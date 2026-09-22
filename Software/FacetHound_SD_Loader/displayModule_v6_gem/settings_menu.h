@@ -100,6 +100,7 @@ private:
     char sdFileTitles_[kSdCacheSize][48] = {};
     bool sdFileValid_[kSdCacheSize] = {};
     char sdStatus_[24] = "UNKNOWN";
+    char sdDirectory_[192] = "/";
     char activeDesign_[48] = "NONE";
     char status_[48] = {};
     char gemInfo_[12][80] = {};

@@ -1,4 +1,5 @@
 #include "sdGemLoader.h"
+#include "gemBinaryReader.h"
 
 #include <SD.h>
 #include <SPI.h>
@@ -11,6 +12,7 @@
 namespace
 {
 bool sdReady = false;
+char currentDirectory[GEM_SD_PATH_LENGTH] = "/";
 GemSdDiagnostics sdDiagnostics;
 GemSdSpi gemSdSpi(GEM_SD_SCK_PIN, GEM_SD_MISO_PIN, GEM_SD_MOSI_PIN);
 constexpr uint32_t SD_RETRY_INTERVAL_MS = 1000;
@@ -39,7 +41,7 @@ bool supportedName(const char* name)
 {
     if (!name) return false;
     const char* dot = strrchr(name, '.');
-    return dot && (!strcasecmp(dot, ".asc") || !strcasecmp(dot, ".fct"));
+    return dot && (!strcasecmp(dot, ".asc") || !strcasecmp(dot, ".fct") || !strcasecmp(dot,".gem"));
 }
 
 const char* leafName(const char* path)
@@ -81,7 +83,7 @@ bool reopenCard(bool force = false)
 File openRoot()
 {
     if (!reopenCard()) return File();
-    File root = SD.open("/");
+    File root = SD.open(currentDirectory);
     sdDiagnostics.rootChecked = true;
     sdDiagnostics.rootReadable = bool(root) && root.isDirectory();
     if (!sdDiagnostics.rootReadable && root) root.close();
@@ -96,14 +98,14 @@ bool findFile(size_t wanted, char* path, size_t pathSize)
     size_t found = 0;
     for (File entry = root.openNextFile(); entry; entry = root.openNextFile())
     {
-        if (!entry.isDirectory() && supportedName(entry.name()))
+        if (leafName(entry.name())[0]!='.' &&
+            (entry.isDirectory() || supportedName(entry.name())))
         {
             if (found == wanted)
             {
-                const char* name = entry.name();
-                bool ok = name[0] == '/'
-                              ? copyText(path, pathSize, name)
-                              : snprintf(path, pathSize, "/%s", name) < int(pathSize);
+                const char* name = leafName(entry.name());
+                bool ok=snprintf(path,pathSize,"%s%s%s",currentDirectory,
+                    !strcmp(currentDirectory,"/")?"":"/",name)<int(pathSize);
                 entry.close();
                 root.close();
                 return ok;
@@ -569,7 +571,7 @@ size_t gemSdFileCount()
     size_t count = 0;
     for (File entry = root.openNextFile(); entry; entry = root.openNextFile())
     {
-        if (!entry.isDirectory() && supportedName(entry.name())) ++count;
+        if (leafName(entry.name())[0]!='.' && (entry.isDirectory() || supportedName(entry.name()))) ++count;
         entry.close();
     }
     root.close();
@@ -579,9 +581,27 @@ size_t gemSdFileCount()
 
 bool gemSdFileNameAt(size_t index, char* output, size_t outputSize)
 {
-    char path[GEM_SD_FILE_NAME_LENGTH] = {};
+    char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return false;
     return copyText(output, outputSize, leafName(path));
+}
+
+const char* gemSdDirectory() { return currentDirectory; }
+bool gemSdEntryIsDirectory(size_t index) {
+    char path[GEM_SD_PATH_LENGTH]={};
+    if(!findFile(index,path,sizeof(path)))return false;
+    File entry=SD.open(path);bool directory=entry && entry.isDirectory();entry.close();return directory;
+}
+bool gemSdEnterDirectory(size_t index) {
+    char path[GEM_SD_PATH_LENGTH]={};
+    if(!findFile(index,path,sizeof(path)))return false;
+    File entry=SD.open(path);bool directory=entry && entry.isDirectory();entry.close();
+    return directory && copyText(currentDirectory,sizeof(currentDirectory),path);
+}
+bool gemSdParentDirectory() {
+    char* slash=strrchr(currentDirectory,'/');
+    if(!slash || slash==currentDirectory)strcpy(currentDirectory,"/");else *slash=0;
+    return true;
 }
 
 bool gemSdFilePathAt(size_t index, char* output, size_t outputSize)
@@ -593,8 +613,15 @@ bool gemSdFileTitleAt(size_t index, char* title, size_t size)
 {
     if (!title || !size) return false;
     snprintf(title, size, "null");
-    char path[GEM_SD_FILE_NAME_LENGTH] = {};
+    if(gemSdEntryIsDirectory(index)) {snprintf(title,size,"[Folder]");return true;}
+    char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return false;
+    const char* extension=strrchr(path,'.');
+    if(extension && !strcasecmp(extension,".gem")) {
+        GemSdDesign metadata;
+        if(loadGemSdFileAt(index,&metadata)!=GemSdResult::OK)return false;
+        return copyText(title,size,metadata.title);
+    }
     File file = SD.open(path, FILE_READ);
     if (!file) return false;
     bool header = false;
@@ -618,8 +645,19 @@ bool gemSdFileTitleAt(size_t index, char* title, size_t size)
 
 bool readGemSdMetadataAt(size_t index, GemSdDesign* design)
 {
-    char path[GEM_SD_FILE_NAME_LENGTH] = {};
+    char path[GEM_SD_PATH_LENGTH] = {};
     if (!design || !findFile(index,path,sizeof(path))) return false;
+    const char* extension=strrchr(path,'.');
+    if(extension && !strcasecmp(extension,".gem")) {
+        GemSdDesign metadata;
+        if(loadGemSdFileAt(index,&metadata)!=GemSdResult::OK)return false;
+        design->symmetry=metadata.symmetry;design->mirror=metadata.mirror;
+        design->refractiveIndex=metadata.refractiveIndex;
+        copyText(design->formatVersion,sizeof(design->formatVersion),metadata.formatVersion);
+        copyText(design->attribution,sizeof(design->attribution),metadata.attribution);
+        design->tierComments=std::move(metadata.tierComments);
+        return true;
+    }
     File file = SD.open(path, FILE_READ); if (!file) return false;
     GemSdDesign header; bool seen = false; double angle=0, distance=0;
     uint16_t tier=0, facet=0;
@@ -641,7 +679,7 @@ bool readGemSdMetadataAt(size_t index, GemSdDesign* design)
 
 bool rememberGemSdPath(const char* path)
 {
-    if (!sdReady || !path || strlen(path) >= GEM_SD_FILE_NAME_LENGTH) return false;
+    if (!sdReady || !path || strlen(path) >= GEM_SD_PATH_LENGTH) return false;
     File file = SD.open("/facetHound.last", "w");
     if (!file) return false;
     bool ok = file.println(path) == strlen(path)+2;
@@ -653,12 +691,22 @@ int lastGemSdIndex()
     if (!sdReady) return -1;
     File file = SD.open("/facetHound.last", FILE_READ);
     if (!file) return -1;
-    char wanted[GEM_SD_FILE_NAME_LENGTH] = {};
+    char wanted[GEM_SD_PATH_LENGTH] = {};
     size_t n = file.readBytesUntil('\n', wanted, sizeof(wanted)-1); file.close();
     while (n && (wanted[n-1]=='\r' || wanted[n-1]=='\n')) wanted[--n]=0;
+    if(wanted[0]!='/' || strstr(wanted,"/../"))return -2;
+    char* slash=strrchr(wanted,'/');
+    if(!slash)return -2;
+    char parent[GEM_SD_PATH_LENGTH]={};
+    size_t length=slash-wanted;
+    if(length)memcpy(parent,wanted,length);else strcpy(parent,"/");
+    File directory=SD.open(parent);
+    if(!directory || !directory.isDirectory())return -2;
+    directory.close();
+    copyText(currentDirectory,sizeof(currentDirectory),parent);
     const size_t count = gemSdFileCount();
     for (size_t i=0; i<count; ++i) {
-        char path[GEM_SD_FILE_NAME_LENGTH] = {};
+        char path[GEM_SD_PATH_LENGTH] = {};
         if (findFile(i,path,sizeof(path)) && !strcmp(path,wanted)) return int(i);
     }
     return -2; // A remembered selection exists but cannot be restored.
@@ -669,15 +717,17 @@ GemSdResult loadGemSdFileAt(size_t index, GemSdDesign* design)
     if (!design) return GemSdResult::OPEN_FAILED;
     if (!reopenCard()) return GemSdResult::NO_CARD;
 
-    char path[GEM_SD_FILE_NAME_LENGTH] = {};
+    char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return GemSdResult::OPEN_FAILED;
     File file = SD.open(path, FILE_READ);
-    if (!file) return GemSdResult::OPEN_FAILED;
+    if (!file || file.isDirectory()) return GemSdResult::OPEN_FAILED;
 
     GemSdDesign candidate;
     copyText(candidate.fileName, sizeof(candidate.fileName), leafName(path));
     const char* dot = strrchr(path, '.');
-    GemSdResult result = parseDesign(file, dot && !strcasecmp(dot, ".fct"), &candidate);
+    GemSdResult result = dot && !strcasecmp(dot,".gem") ? readBinaryGem(file,candidate) :
+        parseDesign(file, dot && !strcasecmp(dot, ".fct"), &candidate);
+    if(result==GemSdResult::OK)propagateTierNames(&candidate);
     file.close();
     if (result != GemSdResult::OK) return result;
     if (!candidate.title[0])

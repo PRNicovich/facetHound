@@ -52,7 +52,8 @@ unknown lines for forward compatibility.
 | `SD STATUS` | Report SD initialization and root-directory state | `@SD,...` |
 | `SD PROBE` | With axes unlocked and lap paused, test CMD0 and initialization, then use SdFat for card initialization, sector-0 read and volume mounting. No formatting/file writes; follow with SD RETRY | `@SD_PROBE,...`, `@SD_INIT,...`, `@SD_FS,...` including library error/data codes |
 | `SD RETRY` | With axes unlocked and lap paused, force SD reinitialization after insertion/wiring changes | `@SD_MOUNT,bus=gpio,...`, `@ACK,SD,RETRY,READY/MISSING` |
-| `SD LIST` | List readable root-level `.asc` and `.fct` files | `@SD_FILE,<index>,<name>` |
+| `SD LIST` | List folders and `.asc`, `.gem`, `.fct` files in the current directory | `@SD_DIR,<path>`, `@SD_FILE,<index>,<name>`, `@SD_TYPE,<index>,DIR/FILE` |
+| `SD UP` | Go to the parent directory; root stays root. Rejected while a gem load is pending | `@SD_DIR,<path>` and refreshed display browser |
 | `GEM LOAD <index>` | Load the index returned by SD LIST; axes unlocked and lap paused. Builds geometry or reads cache, then transfers it asynchronously | `@GEM,LOADED,<path>`, `@GEM,GEOMETRY,<cache-status>,vertices=...,edges=...,planes=...`, then `@GEM,DISPLAY_READY` or `@GEM,DISPLAY_ERROR,...` |
 | `MODE CLASSIC\|STATIC\|DYNAMIC` | Select display mode without changing motor locks | `@ACK,MODE,<mode>` |
 | `FLOW <0..750>` | Set raw pump velocity; displayed mL/min uses the configured conversion | `@ACK,FLOW,<value>` |
@@ -60,6 +61,11 @@ unknown lines for forward compatibility.
 | `PUMP REV` | Set reverse pump direction | `@ACK,PUMP` |
 | `PUMP OFF` | Stop the pump direction command | `@ACK,PUMP` |
 | `STOP` | Stop index, Z, lap, and pump commands | `@ACK,STOP` |
+
+`GEM LOAD <index>` enters a folder when the selected SD LIST entry is a directory;
+it does not start motion. Run `SD LIST` again after entering or leaving a folder.
+Indices are relative to the current directory, shared with the display browser.
+Native binary GEM support and limits: [GEM_AND_FOLDERS.md](../GEM_AND_FOLDERS.md).
 
 Malformed values receive a specific `@ERR,<command>,<reason>` reply. Unknown
 commands receive `@ERR,UNKNOWN,use HELP`.
