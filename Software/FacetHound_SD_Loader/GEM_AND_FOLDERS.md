@@ -9,6 +9,15 @@ files (case-insensitive extensions). Turn the wheel to choose, click to enter
 a folder or load a design. The top-left/back key goes up one directory; at the
 card root it returns to Settings. Folders are labelled `[Folder]`.
 
+Folder browsing reads directory entries once and caches filenames/types. It
+does not open design files for previews or embedded titles; the title and other
+metadata appear after loading. Scrolling and repeated page requests use RAM.
+Changing directory or `SD RETRY` invalidates the list. If the card is edited on
+a PC, retry/reinsert it before relying on old menu ordinals. The cache is bounded
+to 1024 disk entries / approximately 96 KiB of names and entry bookkeeping per
+folder. A larger folder logs `@SD_LIST,TRUNCATED`; split it into subfolders.
+SPI speed, geometry loading and saved-path handling are unchanged.
+
 The selected design's full path is saved in `/facetHound.last`, so designs in
 subfolders can be restored after restart. No formatting or relocation of
 existing card contents is needed. Existing geometry caches remain compatible;

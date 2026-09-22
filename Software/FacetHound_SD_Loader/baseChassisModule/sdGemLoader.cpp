@@ -14,6 +14,10 @@ namespace
 {
 bool sdReady = false;
 char currentDirectory[GEM_SD_PATH_LENGTH] = "/";
+struct DirectoryEntry { String name; bool directory; };
+std::vector<DirectoryEntry> directoryEntries;
+bool directoryCached=false;
+void invalidateDirectory() {directoryCached=false;directoryEntries.clear();}
 GemSdDiagnostics sdDiagnostics;
 GemSdSpi gemSdSpi(GEM_SD_SCK_PIN, GEM_SD_MISO_PIN, GEM_SD_MOSI_PIN);
 constexpr uint32_t SD_RETRY_INTERVAL_MS = 1000;
@@ -73,6 +77,7 @@ bool reopenCard(bool force = false)
     // Conservative transfer rate for the cabled v9 reader, rather than the
     // library's faster default. Does not format or modify the card.
     SD.end(false);
+    invalidateDirectory();
     sdReady = SD.begin(GEM_SD_CS_PIN, uint32_t(250000), gemSdSpi);
     sdDiagnostics.ready = sdReady;
     sdDiagnostics.rootChecked = false;
@@ -91,33 +96,39 @@ File openRoot()
     return root;
 }
 
-bool findFile(size_t wanted, char* path, size_t pathSize)
+void cacheDirectory()
 {
-    if(wanted==0)return false; // permanent virtual built-in entry
+    if(directoryCached)return;
+    directoryEntries.clear();
     File root = openRoot();
-    if (!root || !root.isDirectory()) return false;
-
-    size_t found = 1;
+    if (!root || !root.isDirectory())return;
+    size_t bytes=0;
     for (File entry = root.openNextFile(); entry; entry = root.openNextFile())
     {
-        if (leafName(entry.name())[0]!='.' &&
-            (entry.isDirectory() || supportedName(entry.name())))
+        const char* name=leafName(entry.name());
+        bool directory=entry.isDirectory();
+        if (name[0]!='.' && (directory || supportedName(name)))
         {
-            if (found == wanted)
-            {
-                const char* name = leafName(entry.name());
-                bool ok=snprintf(path,pathSize,"%s%s%s",currentDirectory,
-                    !strcmp(currentDirectory,"/")?"":"/",name)<int(pathSize);
-                entry.close();
-                root.close();
-                return ok;
+            const size_t cost=strlen(name)+1+sizeof(DirectoryEntry)+16;
+            if(directoryEntries.size()>=1024 || bytes+cost>96*1024) {
+                Serial.println("@SD_LIST,TRUNCATED,split this folder into smaller folders");
+                entry.close();break;
             }
-            ++found;
+            directoryEntries.push_back({String(name),directory});bytes+=cost;
         }
         entry.close();
     }
     root.close();
-    return false;
+    directoryCached=true;
+}
+
+bool findFile(size_t wanted, char* path, size_t pathSize)
+{
+    if(wanted==0)return false; // permanent virtual built-in entry
+    cacheDirectory();
+    if(wanted>directoryEntries.size())return false;
+    return snprintf(path,pathSize,"%s%s%s",currentDirectory,
+        !strcmp(currentDirectory,"/")?"":"/",directoryEntries[wanted-1].name.c_str())<int(pathSize);
 }
 
 char* skipSpace(char* text)
@@ -568,15 +579,8 @@ void probeGemSdFilesystem()
 
 size_t gemSdFileCount()
 {
-    File root = openRoot();
-    if (!root || !root.isDirectory()) return 1;
-    size_t count = 1;
-    for (File entry = root.openNextFile(); entry; entry = root.openNextFile())
-    {
-        if (leafName(entry.name())[0]!='.' && (entry.isDirectory() || supportedName(entry.name()))) ++count;
-        entry.close();
-    }
-    root.close();
+    cacheDirectory();
+    size_t count=1+directoryEntries.size();
     sdDiagnostics.lastFileCount = count;
     return count;
 }
@@ -591,17 +595,19 @@ bool gemSdFileNameAt(size_t index, char* output, size_t outputSize)
 
 const char* gemSdDirectory() { return currentDirectory; }
 bool gemSdEntryIsDirectory(size_t index) {
-    char path[GEM_SD_PATH_LENGTH]={};
-    if(!findFile(index,path,sizeof(path)))return false;
-    File entry=SD.open(path);bool directory=entry && entry.isDirectory();entry.close();return directory;
+    if(!index)return false;
+    cacheDirectory();
+    return index<=directoryEntries.size() && directoryEntries[index-1].directory;
 }
 bool gemSdEnterDirectory(size_t index) {
     char path[GEM_SD_PATH_LENGTH]={};
     if(!findFile(index,path,sizeof(path)))return false;
     File entry=SD.open(path);bool directory=entry && entry.isDirectory();entry.close();
-    return directory && copyText(currentDirectory,sizeof(currentDirectory),path);
+    if(!directory || !copyText(currentDirectory,sizeof(currentDirectory),path))return false;
+    invalidateDirectory();return true;
 }
 bool gemSdParentDirectory() {
+    invalidateDirectory();
     char* slash=strrchr(currentDirectory,'/');
     if(!slash || slash==currentDirectory)strcpy(currentDirectory,"/");else *slash=0;
     return true;
@@ -615,36 +621,14 @@ bool gemSdFilePathAt(size_t index, char* output, size_t outputSize)
 bool gemSdFileTitleAt(size_t index, char* title, size_t size)
 {
     if (!title || !size) return false;
-    snprintf(title, size, "null");
+    title[0]=0;
     if(index==0)return copyText(title,size,"Always available");
     if(gemSdEntryIsDirectory(index)) {snprintf(title,size,"[Folder]");return true;}
     char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return false;
-    const char* extension=strrchr(path,'.');
-    if(extension && (!strcasecmp(extension,".gem") || !strcasecmp(extension,".gcs"))) {
-        GemSdDesign metadata;
-        if(loadGemSdFileAt(index,&metadata)!=GemSdResult::OK)return false;
-        return copyText(title,size,metadata.title);
-    }
-    File file = SD.open(path, FILE_READ);
-    if (!file) return false;
-    bool header = false;
-    char line[192];
-    // Bounded metadata preview: validate header, then find the first title.
-    for (int row = 0; row < 24 && file.available(); ++row) {
-        size_t n = file.readBytesUntil('\n', line, sizeof(line)-1); line[n]=0;
-        char* text = skipSpace(line);
-        size_t len = strlen(text);
-        while (len && (text[len-1]=='\r' || text[len-1]==' ')) text[--len]=0;
-        if (!*text) continue;
-        if (!header) {
-            header = !strncmp(text,"GemCad ",7) || !strncmp(text,"FacetHound 1",12);
-            if (!header) break;
-        } else if (*text=='H') {
-            snprintf(title, size, "%s", skipSpace(text+1)); file.close(); return true;
-        }
-    }
-    file.close(); return header;
+    // Browsing never opens a design. Embedded titles (often at EOF) are
+    // available after selection; the filename already identifies this row.
+    return copyText(title,size,"Click to load");
 }
 
 bool readGemSdMetadataAt(size_t index, GemSdDesign* design)
@@ -709,6 +693,7 @@ int lastGemSdIndex()
     if(!directory || !directory.isDirectory())return -2;
     directory.close();
     copyText(currentDirectory,sizeof(currentDirectory),parent);
+    invalidateDirectory();
     const size_t count = gemSdFileCount();
     for (size_t i=0; i<count; ++i) {
         char path[GEM_SD_PATH_LENGTH] = {};
