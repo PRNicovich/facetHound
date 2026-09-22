@@ -440,7 +440,7 @@ void SettingsMenu::applyConfig(const char* id, const char* value)
         if (!strcasecmp(value, "NO_CARD"))
             snprintf(status_, sizeof(status_), "Insert a FAT32 SD card");
         else if (!strcasecmp(value, "READY") && !sdFileCount_)
-            snprintf(status_, sizeof(status_), "No .asc, .gem or .fct files");
+            snprintf(status_, sizeof(status_), "No ASC, GEM, GCS or FCT files");
     }
     else if (!strcasecmp(id,"GEM_INFO_DONE")) { if (open_ && page_==Page::GEM_INFO) drawGemInfo(); return; }
     else if (!strncasecmp(id,"GEM_INFO_",9)) {
@@ -646,7 +646,7 @@ void SettingsMenu::drawSdFiles()
     }
     else if (!sdFileCount_)
     {
-        drawRow(150, "No design files", ".asc / .gem / .fct", true);
+        drawRow(150, "No design files", "ASC / GEM / GCS / FCT", true);
     }
     else
     {

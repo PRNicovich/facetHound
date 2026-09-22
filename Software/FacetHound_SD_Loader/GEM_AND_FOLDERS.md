@@ -1,10 +1,10 @@
-# Native GEM files and SD folders
+# Native GEM/GCS files and SD folders
 
 Upload both `baseChassisModule/baseChassisModule.ino` and
 `displayModule_v6_gem/displayModule_v6_gem.ino`, keeping their adjacent source
 files. Mast and keyboard firmware do not change.
 
-The SD menu now lists folders alongside ASC, FCT and native binary GemCAD GEM
+The SD menu now lists folders alongside ASC, FCT, Gem Cut Studio GCS and binary GemCAD GEM
 files (case-insensitive extensions). Turn the wheel to choose, click to enter
 a folder or load a design. The top-left/back key goes up one directory; at the
 card root it returns to Settings. Folders are labelled `[Folder]`.
@@ -35,12 +35,13 @@ to ASC instead. This is not a claim of support for every historical GEM variant.
 
 ## PC tools / Spyder
 
-`gemUtils/gemcad_io.py` now recognizes `.gem` directly. The bulk converter accepts
-ASC and GEM, including nested folders with `--recursive`:
+`gemUtils/gemcad_io.py` recognizes `.gem` and `.gcs` directly. The bulk converter accepts
+ASC, GEM and GCS, including nested folders with `--recursive`:
 
 ```text
 python tools/bulk_convert_gems.py "D:/Gem Designs" --recursive
 python tools/test_binary_gem.py
+python tools/test_gcs.py
 python tools/test_gem_regressions.py
 ```
 
@@ -57,6 +58,41 @@ use `[Folder]` as their `SD_TITLE_n`. Folder changes are rejected during pending
 loads so a queued file index cannot silently refer to a different directory.
 
 USB commands are documented in `baseChassisModule/PC_USB_API.md`.
+
+## Gem Cut Studio GCS
+
+The version-1000 XML reader imports the index gear, tier names/instructions,
+title/author and RI. Construction-guide tiers are excluded; hidden physical
+tiers are retained. No file conversion is required on the card. Normal vectors
+and facet vertices are converted with `(x,y,z) -> (-y,x,z)` to the existing
+ASC coordinate convention. Stored normals take precedence over index-angle
+labels: GCS changes index winding between crown and pavilion. The index targets
+are derived from those normalized planes, not by blindly copying index_angle.
+When normals are absent, tier angle and index_angle supply them. Depth may be
+supplied on the tier or derived from vertices. Invalid planes are rejected.
+
+GCS `base`, `symmetry`, and `mirror` are editor state, not verified design
+symmetry or an index offset. They are not imported as those machine settings.
+See the official [GCS format specification](https://www.gemcutstudio.com/app_download/UserManual_v100.pdf),
+pages 56–58. Render colors, frosting and optical-simulation settings are not
+machine cutting instructions and are not imported.
+
+The firmware uses a bounded streaming XML reader (2 MiB file, 4095-byte tag,
+16 nesting levels, 32 attributes per tag), supports quoted attributes across
+lines and standard/numeric XML character references, and rejects DTD/entity
+declarations. Unsupported file versions are rejected explicitly. It is not a
+general-purpose XML processor.
+
+The supplied Easy Octagon reconstructed as 6 tiers, 37 facets, 41 vertices and
+76 edges. All face normals match the input after the coordinate conversion;
+vertex error is below 0.000001 design units. Run an optional example check with:
+
+```text
+python tools/test_gcs.py "path/to/2007 - Novice - Easy Octagon.gcs"
+```
+
+Only the base requires new GCS functionality; the display update changes the
+empty-folder extension hint. No changes to motor control, wiring or telemetry.
 
 ## Format reference
 

@@ -180,6 +180,9 @@ def parseAllLines(txt):
 
 
 def loadGemCADFile(pth):
+    if str(pth).lower().endswith('.gcs'):
+        from gcs_io import load_gcs
+        return load_gcs(pth)
     if str(pth).lower().endswith('.gem'):
         from gem_binary import load_binary_gem
         return load_binary_gem(pth)

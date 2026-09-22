@@ -1,5 +1,6 @@
 #include "sdGemLoader.h"
 #include "gemBinaryReader.h"
+#include "gcsReader.h"
 
 #include <SD.h>
 #include <SPI.h>
@@ -41,7 +42,7 @@ bool supportedName(const char* name)
 {
     if (!name) return false;
     const char* dot = strrchr(name, '.');
-    return dot && (!strcasecmp(dot, ".asc") || !strcasecmp(dot, ".fct") || !strcasecmp(dot,".gem"));
+    return dot && (!strcasecmp(dot, ".asc") || !strcasecmp(dot, ".fct") || !strcasecmp(dot,".gem") || !strcasecmp(dot,".gcs"));
 }
 
 const char* leafName(const char* path)
@@ -617,7 +618,7 @@ bool gemSdFileTitleAt(size_t index, char* title, size_t size)
     char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return false;
     const char* extension=strrchr(path,'.');
-    if(extension && !strcasecmp(extension,".gem")) {
+    if(extension && (!strcasecmp(extension,".gem") || !strcasecmp(extension,".gcs"))) {
         GemSdDesign metadata;
         if(loadGemSdFileAt(index,&metadata)!=GemSdResult::OK)return false;
         return copyText(title,size,metadata.title);
@@ -648,7 +649,7 @@ bool readGemSdMetadataAt(size_t index, GemSdDesign* design)
     char path[GEM_SD_PATH_LENGTH] = {};
     if (!design || !findFile(index,path,sizeof(path))) return false;
     const char* extension=strrchr(path,'.');
-    if(extension && !strcasecmp(extension,".gem")) {
+    if(extension && (!strcasecmp(extension,".gem") || !strcasecmp(extension,".gcs"))) {
         GemSdDesign metadata;
         if(loadGemSdFileAt(index,&metadata)!=GemSdResult::OK)return false;
         design->symmetry=metadata.symmetry;design->mirror=metadata.mirror;
@@ -726,6 +727,7 @@ GemSdResult loadGemSdFileAt(size_t index, GemSdDesign* design)
     copyText(candidate.fileName, sizeof(candidate.fileName), leafName(path));
     const char* dot = strrchr(path, '.');
     GemSdResult result = dot && !strcasecmp(dot,".gem") ? readBinaryGem(file,candidate) :
+        dot && !strcasecmp(dot,".gcs") ? readGcs(file,candidate) :
         parseDesign(file, dot && !strcasecmp(dot, ".fct"), &candidate);
     if(result==GemSdResult::OK)propagateTierNames(&candidate);
     file.close();

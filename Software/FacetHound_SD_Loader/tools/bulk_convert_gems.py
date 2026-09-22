@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Facet Hound .fhc SD caches for one ASC/GEM file or an entire folder.
+"""Build Facet Hound .fhc SD caches for one ASC/GEM/GCS file or an entire folder.
 
 The output is the same versioned, source-CRC-checked format written by the
 Pico 2 base firmware. Keep each .fhc beside its same-named source on the card.
@@ -165,12 +165,12 @@ def find_sources(path: pathlib.Path, recursive: bool) -> list[pathlib.Path]:
     if path.is_file():
         return [path]
     iterator = path.rglob("*") if recursive else path.glob("*")
-    return sorted(item for item in iterator if item.is_file() and item.suffix.lower() in (".asc", ".gem"))
+    return sorted(item for item in iterator if item.is_file() and item.suffix.lower() in (".asc", ".gem", ".gcs"))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("path", type=pathlib.Path, help="ASC/GEM file or folder")
+    parser.add_argument("path", type=pathlib.Path, help="ASC/GEM/GCS file or folder")
     parser.add_argument("--output-dir", type=pathlib.Path)
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--force", action="store_true")
@@ -178,7 +178,7 @@ def main() -> int:
 
     sources = find_sources(args.path.resolve(), args.recursive)
     if not sources:
-        parser.error("no .asc or .gem files found")
+        parser.error("no .asc, .gem or .gcs files found")
     build_gem = load_builder(pathlib.Path(__file__))
     failures = 0
     for source in sources:
