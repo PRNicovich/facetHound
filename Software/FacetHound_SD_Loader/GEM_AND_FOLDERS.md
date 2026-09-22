@@ -27,6 +27,12 @@ current session. Selecting a replacement SD file remembers its new full path.
 Classic mode retains its immediate startup behavior.
 
 Both base and display need this recovery update (`GEMPICKER` / `GEMSELECTED`).
+The display splash must yield screen ownership if recovery opens the picker
+during serial reception: no remaining animation frames, final black clear, or
+setup HUD draw may overwrite it. Z encoder initialization precedes the splash,
+and both animated and low-memory splash paths continue transmitting feedback.
+Deferred HUD redraws wait until the menu closes. The Z-stale diagnostic remains
+enabled; this removes the startup feedback gap rather than hiding the fault.
 SD list indices now reserve zero for the built-in and start disk entries at one.
 Files are not moved, deleted or reformatted by recovery.
 

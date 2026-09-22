@@ -1143,7 +1143,12 @@ void drawSplashScreen()
     tft.setTextFont(1);
     tft.setTextColor(0x8410, TFT_BLACK);
     tft.drawString("A product of Advanced Precision Technologies, LLC", 160, 466);
-    delay(3000);
+    const uint32_t fallbackStarted=millis();
+    while(millis()-fallbackStarted<3000) {
+      rxUpdate();sendEncoder();
+      if(settingsMenu.isOpen())break;
+      delay(1);yield();
+    }
     return;
   }
   splash.setTextWrap(false, false);
@@ -1190,6 +1195,9 @@ void drawSplashScreen()
   while (int32_t(millis() - finishAt) < 0)
   {
     rxUpdate();
+    sendEncoder();
+    // Recovery can open the picker inside rxUpdate. It now owns the screen.
+    if(settingsMenu.isOpen())break;
     if ((bootModelPending || loadingDesign || meshReceiving) && millis()-started < 20000)
       finishAt = millis() + 350;
     const uint32_t elapsed = millis() - started;
@@ -1286,7 +1294,7 @@ void drawSplashScreen()
   if (footerReady) footer.deleteSprite();
   splash.unloadFont();
   splash.deleteSprite();
-  tft.fillScreen(TFT_BLACK);
+  if(!settingsMenu.isOpen())tft.fillScreen(TFT_BLACK);
 }
 
 void updateTiltSprite();
@@ -1911,6 +1919,12 @@ void setup()
 
   tft.init();
   tft.setRotation(2);
+  // Encoder feedback must be available while startup is receiving the model
+  // or presenting recovery UI, not only after the splash finishes.
+  encoder.begin();
+  // PioEncoder enables pulls; disable them for the PCB's resistor dividers.
+  gpio_disable_pulls(10);
+  gpio_disable_pulls(11);
   systemReady = true;
   if (displayMode == DisplayMode::CLASSIC) {
     bootModelPending=false; // Machine-status mode has no model dependency.
@@ -1921,7 +1935,11 @@ void setup()
     splashActive = false;
   }
 
-  if (bootModelPending || meshReceiving || loadingDesign || meshDisplayFailed) {
+  if(settingsMenu.isOpen()) {
+    restoreDisplayPending=false;
+    settingsMenu.draw();
+  }
+  else if (bootModelPending || meshReceiving || loadingDesign || meshDisplayFailed) {
     drawLoadingProgress(-1,true);
     restoreDisplayPending = true;
   }
@@ -1935,14 +1953,6 @@ void setup()
     gemUi.begin(displayMode);
     gemUi.tick(currentGemTelemetry());
   }
-
-  encoder.begin();
-  // PioEncoder enables internal pull-ups. They load the PCB's 100k/200k
-  // dividers enough to prevent encoder lows reaching a valid logic low.
-  // Disable pulls after begin(), which otherwise re-enables them.
-  gpio_disable_pulls(10);
-  gpio_disable_pulls(11);
-  delay(50);
 
   systemReady = true;
   baseSerial.print("@FW,DISPLAY,");
@@ -2009,7 +2019,7 @@ void loop()
     lastIndexSpinKeepalive = millis();
   }
 
-  if (restoreDisplayPending)
+  if (restoreDisplayPending && !settingsMenu.isOpen())
     restoreDisplayAfterSettings();
 
   if (settingsMenu.isOpen())
