@@ -48,7 +48,9 @@ static const float TIP_COUNTS_CLASSIC = 131072.0f;
 static const uint32_t DISPLAY_BAUD = 460800;
 // One short UART record per tick. The display-side SerialPIO FIFO is only 32
 // bytes, so sending the whole screen as one burst causes silent line loss.
-static const uint32_t DISPLAY_FAST_PERIOD_MS = 10;
+// One slot per loop opportunity, never a catch-up burst. 24 slots at 2 ms
+// provide ~20 Hz per value; all fields retain equal scheduling opportunities.
+static const uint32_t DISPLAY_FAST_PERIOD_MS = 2;
 static const uint32_t SAVE_DEBOUNCE_MS = 500;
 static uint32_t lastKeyboardActionMs = 0;
 static const float MARK_MATCH_TOLERANCE = 0.0025f;

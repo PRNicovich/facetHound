@@ -177,6 +177,7 @@ bool GemUi::begin(DisplayMode mode)
     lastStaticLinkAlive_ = false;
     lastFrameMs_ = 0;
     lastHudMs_ = 0;
+    hudStripsValid_ = false;
     tipHistoryCount_ = 0;
     lastTipSample_ = UINT32_MAX;
 
@@ -199,6 +200,7 @@ bool GemUi::begin(DisplayMode mode)
 
 void GemUi::invalidate()
 {
+    hudStripsValid_ = false;
     lastHudVersion_ = UINT32_MAX;
     lastStateVersion_ = UINT32_MAX;
     lastStaticVersion_ = UINT32_MAX;
@@ -903,7 +905,19 @@ void GemUi::pushGemCanvas()
 
 void GemUi::pushHudCanvas()
 {
-    if (hudCanvasReady_) hudCanvas_.pushSprite(0, kGemHeight);
+    if (!hudCanvasReady_) return;
+    // The existing 8-bit sprite is the only framebuffer. Hash 20-pixel strips
+    // to avoid sending unchanged text/background over SPI; no second sprite.
+    const auto* pixels=static_cast<const uint8_t*>(hudCanvas_.getPointer());
+    if(!pixels) return;
+    for(int strip=0;strip<8;++strip) {
+        uint32_t hash=2166136261UL;
+        for(int i=0;i<320*20;++i) {hash^=pixels[strip*320*20+i];hash*=16777619UL;}
+        if(!hudStripsValid_ || hash!=hudStripHashes_[strip])
+            hudCanvas_.pushSprite(0,kGemHeight+strip*20,0,strip*20,320,20);
+        hudStripHashes_[strip]=hash;
+    }
+    hudStripsValid_=true;
 }
 
 void GemUi::tick(const GemTelemetry& state)
@@ -921,6 +935,12 @@ void GemUi::tick(const GemTelemetry& state)
     const bool selectionChanged = state.jobTier != lastJobTier_ ||
                                   state.jobFacet != lastJobFacet_;
     bool gemPushed=false;
+    uint32_t headerHash=2166136261UL;
+    for(const char* text:{state.jobTitle,state.jobFacetName,state.tierComment}) {
+        if(text) while(*text) {headerHash^=uint8_t(*text++);headerHash*=16777619UL;}
+        headerHash^=0xff;headerHash*=16777619UL;
+    }
+    const bool headerChanged=headerHash!=renderedHeaderHash_;
 
     if(selectionChanged)tipHistoryCount_=0;
     const bool newTip=state.tipSampleSequence!=lastTipSample_;
@@ -942,12 +962,13 @@ void GemUi::tick(const GemTelemetry& state)
             lastFrameMs_ = now;
             const float oldTip=displayedRenderTip_,oldTwist=displayedRenderTwist_,oldRoll=displayedRoll_;
             updatePose(state);
-            if(selectionChanged || stateChanged ||
+            if(selectionChanged || headerChanged || lastStateVersion_==UINT32_MAX ||
                fabsf(displayedRenderTip_-oldTip)>0.002f || fabsf(displayedRenderTwist_-oldTwist)>0.002f ||
                fabsf(displayedRoll_-oldRoll)>0.002f) {
                 drawDynamic(state);
                 pushGemCanvas();
                 gemPushed=true;
+                renderedHeaderHash_=headerHash;
             }
         }
     }
@@ -959,11 +980,12 @@ void GemUi::tick(const GemTelemetry& state)
 
         if (stateChanged || firstFrame) updatePose(state);
 
-        if (firstFrame || linkChanged || selectedPlane_ != previousPlane)
+        if (firstFrame || linkChanged || headerChanged || selectedPlane_ != previousPlane)
         {
             drawStatic(state);
             pushGemCanvas();
             gemPushed=true;
+            renderedHeaderHash_=headerHash;
         }
 
         lastStaticVersion_ = state.version;

@@ -17,6 +17,8 @@ Applied offsets are stored with the current design identity. Loading a different
 
 ## Views
 
+Refresh scheduling: base telemetry rotates through all 24 fields at a 2 ms minimum slot interval (~20 Hz per field when the loop keeps up), without catch-up bursts. The graphical numeric HUD has a 33 ms minimum redraw interval; only changed 20-pixel-high strips are transmitted. Dynamic geometry is not redrawn for unrelated telemetry. These are scheduling ceilings, not measured hardware frame rates. Baud, SPI clock, and motor-control settings are unchanged.
+
 In Dynamic and Static, the large tip number is the selected facet's nominal machine angle. Tip error text and gauge history show measured angle minus that nominal angle; the measured angle is not separately displayed. Classic modes are unchanged.
 
 Static shows the selected tier's crown (T) or pavilion (B) cap plus a fixed side (S) projection. Each projection fits all vertices into its own bounds. Rear-facing side highlights are dark green; rear side edges are dim. The cap includes girdle edges.
