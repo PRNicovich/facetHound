@@ -670,6 +670,17 @@ void parseLine(char* line)
     sendLineBoth(hit ? "@MESHACK,CACHE_HIT" : "@MESHACK,CACHE_MISS");
     return;
   }
+  if (!strcmp(key,"GEMPICKER")) {
+    restoreDisplayPending=false;
+    splashActive=false;bootModelPending=false;loadingDesign=false;meshReceiving=false;
+    meshDisplayFailed=false;loadingProgress.deleteSprite();
+    openSettingsMenu();settingsMenu.openGemPicker();
+    sendLineBoth("@CFGGET,SD_FILES,0,6");
+    return;
+  }
+  if (!strcmp(key,"GEMSELECTED")) {
+    closeSettingsMenu();return;
+  }
   if (!strcmp(key, "GEMLOAD")) {
     char* title = strchr(valueText, ',');
     if (title) { *title++ = 0; snprintf(loadingTitle, sizeof(loadingTitle), "%.42s", title); }

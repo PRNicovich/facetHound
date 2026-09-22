@@ -15,6 +15,30 @@ existing card contents is needed. Existing geometry caches remain compatible;
 cache paths now follow the source folder. Avoid giving different source formats
 the same basename in one folder, since they share the `.fhc` cache filename.
 
+### Missing saved design recovery
+
+A moved/deleted saved file, missing parent folder, absent card, or failed design
+load opens the file picker instead of trapping startup on a loading error.
+The first entry in every directory is **Built-in gem**, available without SD.
+Selecting it clears stale loaded geometry and restore-failure state, unlocks
+index/Z, restores built-in targets and returns to the main screen. With a card,
+`/@builtin` is saved in `facetHound.last`; without one the choice lasts for the
+current session. Selecting a replacement SD file remembers its new full path.
+Classic mode retains its immediate startup behavior.
+
+Both base and display need this recovery update (`GEMPICKER` / `GEMSELECTED`).
+SD list indices now reserve zero for the built-in and start disk entries at one.
+Files are not moved, deleted or reformatted by recovery.
+
+Hardware acceptance checks:
+
+1. Load a gem, power down, move it into a new folder on the card, reboot in
+   Dynamic/Static: picker appears and can navigate to the replacement path.
+2. Delete the saved gem's parent directory: root picker remains navigable.
+3. Remove the card and reboot: choose Built-in gem, then navigate facets normally.
+4. Choose Built-in with a card inserted and reboot: built-in returns without
+   retrying the old missing path. Also verify a valid saved file still restores.
+
 ## Supported native GEM data
 
 The reader recovers facet planes from the stored polygon normals and vertices,

@@ -31,6 +31,11 @@ public:
     explicit SettingsMenu(TFT_eSPI& display);
 
     void open(DisplayMode currentMode);
+    void openGemPicker() {
+        page_=Page::SD_FILES;sdCursor_=0;invalidateSdCache(0);
+        snprintf(status_,sizeof(status_),"Choose a gem or the built-in");
+        draw();
+    }
     void close();
     bool isOpen() const { return open_; }
     bool indexSpinRunning() const { return indexSpinRunning_; }

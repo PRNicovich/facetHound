@@ -640,11 +640,7 @@ void SettingsMenu::drawSdFiles()
     snprintf(subtitle, sizeof(subtitle), "folder: %.42s", sdDirectory_);
     drawTitle(subtitle);
 
-    if (!strcasecmp(sdStatus_, "NO_CARD"))
-    {
-        drawRow(150, "No SD card", "check wiring/card", true);
-    }
-    else if (!sdFileCount_)
+    if (!sdFileCount_)
     {
         drawRow(150, "No design files", "ASC / GEM / GCS / FCT", true);
     }

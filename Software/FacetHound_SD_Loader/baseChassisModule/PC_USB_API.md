@@ -67,6 +67,11 @@ it does not start motion. Run `SD LIST` again after entering or leaving a folder
 Indices are relative to the current directory, shared with the display browser.
 Native binary GEM support and limits: [GEM_AND_FOLDERS.md](../GEM_AND_FOLDERS.md).
 
+Entry **0** is now always the built-in gem, even without an SD card. Disk entries
+start at 1; refresh `SD LIST` instead of reusing indices from older firmware.
+`GEM LOAD 0` cancels failed saved-design recovery, unlocks index/Z, restores the
+built-in mesh/targets and writes the built-in selection when a card is available.
+
 Malformed values receive a specific `@ERR,<command>,<reason>` reply. Unknown
 commands receive `@ERR,UNKNOWN,use HELP`.
 

@@ -93,10 +93,11 @@ File openRoot()
 
 bool findFile(size_t wanted, char* path, size_t pathSize)
 {
+    if(wanted==0)return false; // permanent virtual built-in entry
     File root = openRoot();
     if (!root || !root.isDirectory()) return false;
 
-    size_t found = 0;
+    size_t found = 1;
     for (File entry = root.openNextFile(); entry; entry = root.openNextFile())
     {
         if (leafName(entry.name())[0]!='.' &&
@@ -568,8 +569,8 @@ void probeGemSdFilesystem()
 size_t gemSdFileCount()
 {
     File root = openRoot();
-    if (!root || !root.isDirectory()) return 0;
-    size_t count = 0;
+    if (!root || !root.isDirectory()) return 1;
+    size_t count = 1;
     for (File entry = root.openNextFile(); entry; entry = root.openNextFile())
     {
         if (leafName(entry.name())[0]!='.' && (entry.isDirectory() || supportedName(entry.name()))) ++count;
@@ -582,6 +583,7 @@ size_t gemSdFileCount()
 
 bool gemSdFileNameAt(size_t index, char* output, size_t outputSize)
 {
+    if(index==0)return copyText(output,outputSize,"Built-in gem");
     char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return false;
     return copyText(output, outputSize, leafName(path));
@@ -614,6 +616,7 @@ bool gemSdFileTitleAt(size_t index, char* title, size_t size)
 {
     if (!title || !size) return false;
     snprintf(title, size, "null");
+    if(index==0)return copyText(title,size,"Always available");
     if(gemSdEntryIsDirectory(index)) {snprintf(title,size,"[Folder]");return true;}
     char path[GEM_SD_PATH_LENGTH] = {};
     if (!findFile(index, path, sizeof(path))) return false;
@@ -689,12 +692,13 @@ bool rememberGemSdPath(const char* path)
 
 int lastGemSdIndex()
 {
-    if (!sdReady) return -1;
+    if (!sdReady) return -2;
     File file = SD.open("/facetHound.last", FILE_READ);
     if (!file) return -1;
     char wanted[GEM_SD_PATH_LENGTH] = {};
     size_t n = file.readBytesUntil('\n', wanted, sizeof(wanted)-1); file.close();
     while (n && (wanted[n-1]=='\r' || wanted[n-1]=='\n')) wanted[--n]=0;
+    if(!strcmp(wanted,"/@builtin"))return -1;
     if(wanted[0]!='/' || strstr(wanted,"/../"))return -2;
     char* slash=strrchr(wanted,'/');
     if(!slash)return -2;

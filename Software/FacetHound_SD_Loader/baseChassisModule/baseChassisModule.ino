@@ -451,6 +451,9 @@ static void sendCfgNak(const char* id, const char* reason)
     dispSerial.print(",");
     dispSerial.println(reason);
     Serial.print("@CFGNAK,"); Serial.print(id); Serial.print(','); Serial.println(reason);
+    if(!strcmp(id,"LOAD_SD_FILE") && pendingGemLoad<0) {
+        dispSerial.print("@GEMPICKER,");dispSerial.println(reason);
+    }
 }
 
 static void safeProtocolText(const char* input, char* output, size_t outputSize)
@@ -706,7 +709,7 @@ static void meshTransferTask()
     meshSendLastMs = millis();
     if (!activeGemLoaded || activeGemGeometry.vertices.empty())
     {
-        sendDisplayLine(savedGemRestoreFailed ? "@GEMLOAD,ERROR,Saved gem unavailable" : "@MESHCLEAR,0");
+        sendDisplayLine(savedGemRestoreFailed ? "@GEMPICKER,Saved gem unavailable" : "@MESHCLEAR,0");
         meshSendStage = 0;
         return;
     }
@@ -801,19 +804,12 @@ static void meshTransferTask()
 
 static void sendSdFilePage(size_t start, size_t requested)
 {
-    if (!gemSdReady())
-    {
-        sendCfgText("SD_STATUS", "NO_CARD");
-        sendCfgCount("SD_FILE_COUNT", 0);
-        return;
-    }
-
     const size_t pageLimit = 6;
     size_t count = requested > pageLimit ? pageLimit : requested;
     size_t total = gemSdFileCount();
     if (start > total) start = total;
     if (count > total - start) count = total - start;
-    sendCfgText("SD_STATUS", "READY");
+    sendCfgText("SD_STATUS", gemSdReady()?"READY":"NO_CARD");
     sendCfgText("SD_DIR",gemSdDirectory());
     Serial.print("@SD_DIR,");Serial.println(gemSdDirectory());
     sendCfgCount("SD_FILE_COUNT", total);
@@ -1252,6 +1248,32 @@ static void applyConfigAction(char* actionText)
         }
 
         if(pendingGemLoad>=0) {sendCfgNak(action,"LOAD_PENDING");return;}
+        if(index==0) {
+            hardStopTwist(S);S.indexSpinRpm=0;S.twistLock=0;setTwistDriverEnabled(false);
+            hardStopZ();S.zLock=0;setZedDriverEnabled(false);
+            activeGemLoaded=false;activeGemDesign=GemSdDesign();activeGemGeometry=GemRuntimeGeometry();
+            meshSendStage=0;savedGemRestorePending=false;savedGemRestoreFailed=false;
+            S.crownCheatTurns=S.pavilionCheatTurns=S.temporaryCheatTurns=0;S.cheatGemId=0;
+            updateWheelIndex(S,BuiltinGem::kWheelIndex);
+            S.markPoints.clear();
+            for(const auto& cut:BuiltinGem::kCuts) {
+                float value=machineIndexForFacet(cut.rawIndex,cut.storedTipDegrees,BuiltinGem::kWheelIndex);
+                bool duplicate=false;
+                for(float old:S.markPoints)if(fabsf(old-value)<0.0001f)duplicate=true;
+                if(!duplicate)S.markPoints.push_back(value);
+            }
+            std::sort(S.markPoints.begin(),S.markPoints.end());S.markIdx=0;
+            builtinCutIndex=0;lastBuiltinCutSent=-1;lastJobCutSent=-1;
+            targetBuiltinCut();
+            if(displayVisualMode==0 && !S.markPoints.empty()) {
+                S.targetTwist=S.markPoints[0];notifyTwistTargetChanged();
+            }
+            if(!rememberGemSdPath("/@builtin"))Serial.println("@GEM,REMEMBER_FAILED,no SD; built-in active for this session");
+            sendDisplayLine("@MESHCLEAR,0");sendCfgAck(action,"Built-in gem");
+            sendCfgText("SD_ACTIVE","Built-in gem");sendActiveCut(true);
+            sendDisplayLine("@GEMSELECTED,BUILTIN");
+            return;
+        }
         if(gemSdEntryIsDirectory(size_t(index))) {
             if(!gemSdEnterDirectory(size_t(index)))sendCfgNak(action,"OPEN_FAILED");
             else sendSdFilePage(0,6);
@@ -1325,6 +1347,7 @@ static void applyConfigAction(char* actionText)
         sendActiveCut(true);
         sendActiveMesh();
         savedGemRestoreFailed = false;
+        sendDisplayLine("@GEMSELECTED,SD");
         return;
     }
     sendCfgNak(action, "UNKNOWN_ACTION");
@@ -2794,6 +2817,7 @@ void loop()
             applyConfigAction(action);
         } else if (millis()-pendingGemLoadMs > 8000) {
             pendingGemLoad=-1; sendCfgNak("LOAD_SD_FILE","LAP_STOP_NOT_CONFIRMED");
+            if(!activeGemLoaded) {savedGemRestoreFailed=true;sendDisplayLine("@GEMPICKER,Load could not complete");}
         }
     }
 }
