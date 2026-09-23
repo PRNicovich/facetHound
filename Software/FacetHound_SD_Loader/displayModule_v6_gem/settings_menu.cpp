@@ -125,8 +125,10 @@ void SettingsMenu::requestSdWindow(MenuResult& result)
 {
     uint32_t start = (sdCursor_ / kSdCacheSize) * kSdCacheSize;
     if (start != sdCacheStart_) invalidateSdCache(start);
-    uint8_t slot = uint8_t(sdCursor_ - sdCacheStart_);
-    if (sdFileCount_ == 0 || slot >= kSdCacheSize || !sdFileValid_[slot])
+    bool missing=sdFileCount_==0;
+    for(uint8_t slot=0;slot<kSdCacheSize && start+slot<sdFileCount_;++slot)
+        missing=missing || !sdFileValid_[slot];
+    if (missing)
         setCommand(result, "@CFGGET,SD_FILES,%lu,%u",
                    static_cast<unsigned long>(start), kSdCacheSize);
 }
@@ -636,6 +638,9 @@ void SettingsMenu::drawIndexSpin()
 
 void SettingsMenu::drawSdFiles()
 {
+    // Clear slots left over from a longer directory/page, including placeholders.
+    tft_.fillRect(14, 78, 292, kVisibleRows * 56, C_BG);
+    tft_.fillRect(18, 45, 284, 25, C_BG);
     char subtitle[56] = {};
     snprintf(subtitle, sizeof(subtitle), "folder: %.42s", sdDirectory_);
     drawTitle(subtitle);
@@ -733,15 +738,9 @@ void SettingsMenu::drawSdRow(uint32_t index, uint8_t row)
     tft_.fillRoundRect(14, y, 292, 48, 5, bg);
     if (selected) tft_.fillTriangle(21, y+18, 21, y+30, 28, y+24, C_SELECT);
     tft_.setTextDatum(TL_DATUM); tft_.setTextFont(2);
-    const char* title = "...";
-    if (index >= sdCacheStart_ && index < sdCacheStart_+kSdCacheSize &&
-        sdFileTitles_[index-sdCacheStart_][0]) title = sdFileTitles_[index-sdCacheStart_];
-    char fit[48]; snprintf(fit,sizeof(fit),"%s",title);
-    while (strlen(fit) && tft_.textWidth(fit)>258) fit[strlen(fit)-1]=0;
-    tft_.setTextColor(selected ? C_SELECT : C_TEXT,bg); tft_.drawString(fit,36,y+5);
-    tft_.setTextFont(1); tft_.setTextColor(C_DIM,bg);
+    tft_.setTextColor(selected ? C_SELECT : C_TEXT,bg);
     while (strlen(label) && tft_.textWidth(label)>258) label[strlen(label)-1]=0;
-    tft_.drawString(label,36,y+30);
+    tft_.drawString(label,36,y+15);
 }
 
 void SettingsMenu::redrawAfterInput(Page oldPage, uint16_t oldRoot, uint16_t oldChoice,

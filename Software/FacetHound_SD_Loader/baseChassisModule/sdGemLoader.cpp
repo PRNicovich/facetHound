@@ -685,6 +685,7 @@ bool rememberGemSdPath(const char* path)
         && !memcmp(record,verify,length);
     check.close();
     if(!ok)Serial.println("@GEM_REMEMBER_ERROR,VERIFY");
+    else {Serial.print("@GEM_REMEMBER,VERIFIED,path=");Serial.println(path);}
     return ok;
 }
 
@@ -696,6 +697,7 @@ int lastGemSdIndex()
     char wanted[GEM_SD_PATH_LENGTH] = {};
     size_t n = file.readBytesUntil('\n', wanted, sizeof(wanted)-1); file.close();
     while (n && (wanted[n-1]=='\r' || wanted[n-1]=='\n')) wanted[--n]=0;
+    Serial.print("@GEM_RESTORE,path=");Serial.println(wanted);
     if(!strcmp(wanted,"/@builtin"))return -1;
     if(wanted[0]!='/' || strstr(wanted,"/../"))return -2;
     char* slash=strrchr(wanted,'/');

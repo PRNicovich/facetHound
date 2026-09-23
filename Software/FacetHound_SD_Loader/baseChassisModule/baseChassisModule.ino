@@ -804,6 +804,7 @@ static void meshTransferTask()
 
 static void sendSdFilePage(size_t start, size_t requested)
 {
+    sendDisplayLine("@CFGSYNC,BEGIN");
     const size_t pageLimit = 6;
     size_t count = requested > pageLimit ? pageLimit : requested;
     size_t total = gemSdFileCount();
@@ -823,12 +824,8 @@ static void sendSdFilePage(size_t start, size_t requested)
         snprintf(id, sizeof(id), "SD_FILE_%lu",
                  static_cast<unsigned long>(start + i));
         sendCfgText(id, safeName);
-        char title[GEM_SD_TITLE_LENGTH] = {};
-        gemSdFileTitleAt(start+i, title, sizeof(title));
-        safeProtocolText(title, safeName, sizeof(safeName));
-        snprintf(id, sizeof(id), "SD_TITLE_%lu", static_cast<unsigned long>(start+i));
-        sendCfgText(id, safeName);
     }
+    sendDisplayLine("@CFGSYNC,END");
 }
 
 static void rebuildLoadedMarksForMode()
