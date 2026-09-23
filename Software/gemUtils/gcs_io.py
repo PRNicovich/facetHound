@@ -58,7 +58,7 @@ def load_gcs(path):
             distances = [nx*number(v,'x')+ny*number(v,'y')+nz*number(v,'z') for v in vertices]
             distance = number(source,'depth', distances[0] if distances else None)
             if not math.isfinite(distance) or distance<=0 or any(
-                    not math.isfinite(d) or abs(d-distance)>1e-6*max(1,abs(distance)) for d in distances):
+                    not math.isfinite(d) or abs(d-distance)>1e-5*max(1,abs(distance)) for d in distances):
                 raise ValueError('Invalid/nonplanar GCS facet')
             tilt = math.copysign(math.degrees(math.atan2(math.hypot(nx,ny),abs(nz))),nz)
             # Rotate native XY by +90 degrees: (x,y,z) -> (-y,x,z).

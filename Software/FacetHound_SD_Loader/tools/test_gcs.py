@@ -57,6 +57,15 @@ class GcsTests(unittest.TestCase):
         <vertex x="0" y="-1" z="1"/></facet></tier></GemCutStudio>''')
         self.assertEqual(d['facetList'][0]['depth'],1)
 
+    def test_vertex_rounding_preserves_declared_depth(self):
+        sample='''<GemCutStudio version="1000"><index gear="96"/>
+        <tier angle="90" depth="1"><facet nx="0" ny="-1" nz="0">
+        <vertex x="0" y="-1.0000033" z="0"/>
+        </facet></tier></GemCutStudio>'''
+        self.assertEqual(self.load(sample)['facetList'][0]['depth'],1)
+        with self.assertRaises(ValueError):
+            self.load(sample.replace('-1.0000033','-1.001'))
+
     def test_bad_inputs(self):
         for text in (SAMPLE[:-20],SAMPLE.replace('gear="96"','gear="0"'),
                      SAMPLE.replace('depth="1"','depth="nan"'),

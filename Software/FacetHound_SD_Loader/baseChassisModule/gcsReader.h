@@ -171,7 +171,9 @@ template<class Stream> GemSdResult readGcs(Stream& file,GemSdDesign& design) {
                 double d=nx*x+ny*y+nz*z;
                 if(!isfinite(d))return GemSdResult::BAD_NUMBER;
                 if(!hasDistance) {distance=d;hasDistance=true;}
-                else if(fabs(d-distance)>1e-6*fmax(1.0,fabs(distance)))return GemSdResult::BAD_NUMBER;
+                // GCS mesh vertices can differ slightly from the declared plane
+                // (Sundial C4/C5: up to 3.27e-6). Preserve the tier depth.
+                else if(fabs(d-distance)>1e-5*fmax(1.0,fabs(distance)))return GemSdResult::BAD_NUMBER;
             }
         } else if(t.name=="info" && parent=="GemCutStudio") {
             if(t.get("title"))snprintf(design.title,sizeof(design.title),"%s",t.get("title"));

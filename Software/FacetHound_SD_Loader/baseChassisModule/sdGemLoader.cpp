@@ -13,6 +13,8 @@
 namespace
 {
 bool sdReady = false;
+// Separate short-name record: leave the old, non-writable marker untouched.
+constexpr const char* savedGemPathFile = "/FHLAST.TXT";
 char currentDirectory[GEM_SD_PATH_LENGTH] = "/";
 struct DirectoryEntry { String name; bool directory; };
 std::vector<DirectoryEntry> directoryEntries;
@@ -669,8 +671,8 @@ bool readGemSdMetadataAt(size_t index, GemSdDesign* design)
 bool rememberGemSdPath(const char* path)
 {
     if (!sdReady || !path || strlen(path) >= GEM_SD_PATH_LENGTH) return false;
-    File file = SD.open("/facetHound.last", "w");
-    if (!file) {Serial.println("@GEM_REMEMBER_ERROR,OPEN");return false;}
+    File file = SD.open(savedGemPathFile, "w");
+    if (!file) {Serial.print("@GEM_REMEMBER_ERROR,OPEN,file=");Serial.println(savedGemPathFile);return false;}
     char record[GEM_SD_PATH_LENGTH+2];
     size_t length=snprintf(record,sizeof(record),"%s\r\n",path);
     size_t written=file.write(reinterpret_cast<const uint8_t*>(record),length);
@@ -679,7 +681,7 @@ bool rememberGemSdPath(const char* path)
         Serial.print("@GEM_REMEMBER_ERROR,WRITE,wanted=");Serial.print(length);
         Serial.print(",written=");Serial.println(written);return false;
     }
-    File check=SD.open("/facetHound.last",FILE_READ);
+    File check=SD.open(savedGemPathFile,FILE_READ);
     char verify[GEM_SD_PATH_LENGTH+2]={};
     bool ok=check && check.size()==length && check.read(reinterpret_cast<uint8_t*>(verify),length)==int(length)
         && !memcmp(record,verify,length);
@@ -692,7 +694,11 @@ bool rememberGemSdPath(const char* path)
 int lastGemSdIndex()
 {
     if (!sdReady) return -2;
-    File file = SD.open("/facetHound.last", FILE_READ);
+    // Prefer new verified selections; migrate naturally on the next load.
+    // If the new record exists but is unreadable, do not silently restore an old gem.
+    const char* recordPath = SD.exists(savedGemPathFile) ? savedGemPathFile : "/facetHound.last";
+    File file = SD.open(recordPath, FILE_READ);
+    if (!file && !strcmp(recordPath,savedGemPathFile)) return -2;
     if (!file) return -1;
     char wanted[GEM_SD_PATH_LENGTH] = {};
     size_t n = file.readBytesUntil('\n', wanted, sizeof(wanted)-1); file.close();
