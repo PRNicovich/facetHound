@@ -936,7 +936,8 @@ void parseLine(char* line)
 
     if (!strcasecmp(valueText, "TOGGLE"))
     {
-      if (settingsMenu.isOpen()) closeSettingsMenu();
+      if (settingsMenu.isGemPicker()) handleSettingsKey(MenuKey::BACK);
+      else if (settingsMenu.isOpen()) closeSettingsMenu();
       else openSettingsMenu();
     }
     else if (!strcmp(valueText, "1") || !strcasecmp(valueText, "OPEN"))

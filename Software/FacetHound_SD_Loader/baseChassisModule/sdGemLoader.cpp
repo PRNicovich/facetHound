@@ -107,7 +107,8 @@ void cacheDirectory()
     {
         const char* name=leafName(entry.name());
         bool directory=entry.isDirectory();
-        if (name[0]!='.' && (directory || supportedName(name)))
+        if (name[0]!='.' && strcasecmp(name,"System Volume Information") &&
+            (directory || supportedName(name)))
         {
             const size_t cost=strlen(name)+1+sizeof(DirectoryEntry)+16;
             if(directoryEntries.size()>=1024 || bytes+cost>96*1024) {
