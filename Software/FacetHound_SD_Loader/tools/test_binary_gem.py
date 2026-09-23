@@ -1,6 +1,7 @@
 """Native GEM regressions. Run directly in Spyder; no hardware required."""
 from pathlib import Path
 import struct
+import re
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,24 @@ def fixture(gear=96, meridian=0):
 
 
 class BinaryGemTests(unittest.TestCase):
+    def test_firmware_footer_avoids_arduino_word_macro(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  'baseChassisModule/gemBinaryReader.h').read_text()
+        source = re.sub(r'//[^\n]*', '', source)
+        self.assertNotRegex(source, r'\bword\s*\(')
+        for offset in (0, 8, 12, 16):
+            self.assertIn(f'readLe32({offset})', source)
+
+    def test_reported_tessellation_footer(self):
+        footer = bytes.fromhex(
+            '00000000F069F8C0040000000100000060000000'
+            'E17A14AE47E1F63FFF7F00000000000000000000')
+        zero, _, folds, mirror, gear, ri, _, meridian = struct.unpack('<IIIIidId', footer)
+        self.assertEqual((zero, folds, mirror, gear, meridian), (0, 4, 1, 96, 0))
+        self.assertAlmostEqual(ri, 1.43)
+        data = fixture()
+        self.assertEqual(self.load(data[:-46] + footer + b'\x04Test\x00')['boldTitle'], 'Test')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

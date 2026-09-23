@@ -10,6 +10,7 @@ static_assert(sizeof(double)==8,"GEM requires IEEE-754 binary64 doubles");
 template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& design)
 {
     uint8_t replay[40];size_t replayAt=0,replayEnd=0;
+    uint32_t sourceCrc=0xffffffff;
     // A Stream may return a short read. Accumulate it, without treating an
     // empty metadata string as an I/O operation or retrying a failed read.
     auto bytes=[&](void* dst,size_t n) {
@@ -21,6 +22,10 @@ template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& desi
                 Serial.print("@GEM_READ_ERROR,offset=");Serial.print(file.position());
                 Serial.print(",wanted=");Serial.print(n-done);Serial.print(",got=");Serial.println(got);
                 return false;
+            }
+            for(int i=0;i<got;++i) {
+                sourceCrc^=out[done+size_t(i)];
+                for(int bit=0;bit<8;++bit)sourceCrc=(sourceCrc>>1)^((sourceCrc&1)?0xedb88320UL:0);
             }
             done+=size_t(got);
         }
@@ -40,11 +45,12 @@ template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& desi
         // Inspect the footer discriminator once, then replay those bytes from
         // RAM if this is a polygon. Never rewind the SD file for every face.
         uint8_t header[40];if(!bytes(header,sizeof(header)))return GemSdResult::BAD_HEADER;
-        auto word=[&](size_t p) {return uint32_t(header[p])|(uint32_t(header[p+1])<<8)|
+        // Avoid Arduino's word(...) macro, which replaces function calls.
+        auto readLe32=[&](size_t p) {return uint32_t(header[p])|(uint32_t(header[p+1])<<8)|
             (uint32_t(header[p+2])<<16)|(uint32_t(header[p+3])<<24);};
-        auto scalar=[&](size_t p) {uint64_t bits=uint64_t(word(p))|(uint64_t(word(p+4))<<32);
+        auto scalar=[&](size_t p) {uint64_t bits=uint64_t(readLe32(p))|(uint64_t(readLe32(p+4))<<32);
             double v;memcpy(&v,&bits,8);return v;};
-        uint32_t zero=word(0),fold=word(8),mirror=word(12),gear=word(16);
+        uint32_t zero=readLe32(0),fold=readLe32(8),mirror=readLe32(12),gear=readLe32(16);
         double ri=scalar(20),meridian=scalar(32);
         const int32_t signedGear=int32_t(gear);
         if(zero==0 && fold>0 && fold<=400 && mirror<=1 && signedGear!=0 &&
@@ -62,6 +68,7 @@ template<class Stream> GemSdResult readBinaryGem(Stream& file, GemSdDesign& desi
                 else if(!footnotes && !design.attribution[0]) snprintf(design.attribution,sizeof(design.attribution),"%s",text);
             }
             // During polygon reads index temporarily holds an azimuth in turns.
+            Serial.print("@GEM_CRC32,");Serial.println(sourceCrc^0xffffffff,HEX);
             for(auto& cut:design.cuts) {
                 cut.index=fmod(cut.index*design.designIndexSign*design.wheelIndex+meridian,design.wheelIndex);
                 if(cut.index<0)cut.index+=design.wheelIndex;
