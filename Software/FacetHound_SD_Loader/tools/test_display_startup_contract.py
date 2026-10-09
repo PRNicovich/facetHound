@@ -9,7 +9,7 @@ display = (root / 'displayModule_v6_gem/displayModule_v6_gem.ino').read_text()
 
 class DisplayStartupContract(unittest.TestCase):
     def test_original_pins_and_first_baud(self):
-        self.assertIn('SerialPIO dispSerial(5, 4, 256);', base)
+        self.assertIn('SerialPIO dispSerial(5, 4, 255);', base)
         self.assertIn('static uint32_t displayBaud = 38400;', base)
         self.assertIn('displayBaud == 38400 ? 460800 : 38400', base)
 

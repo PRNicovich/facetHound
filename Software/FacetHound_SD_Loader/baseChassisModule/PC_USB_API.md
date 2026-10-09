@@ -102,7 +102,7 @@ identical to the physical UART keyboard path.
 
 ### Receive-path diagnosis
 
-`LINKCHECK` identifies diagnostic build `20261009-RX-CHECK1` and the actual
+`LINKCHECK` identifies diagnostic build `20261009-RX-WRAP-FIX` and the actual
 Arduino-Pico core version used for compilation. It reports mast-task invocation
 and byte counters, then the non-consuming `available()`/`peek()` results for
 mast, display and lap. PIO records include the matching input state machine,
@@ -122,6 +122,22 @@ A nonempty hardware FIFO with its interrupt source/NVIC disabled identifies a
 different receiver failure. Neither an empty FIFO nor these logs alone proves
 that valid bytes are present on the wire. Do not reset the port before taking
 the snapshots, because that would erase the failure state.
+
+The October 9 capture on core 4.5.2 demonstrated `queued=0,peek=64` repeatedly
+on the mast, while the main loop and PIO receiver remained active. That core's
+`available()` uses unsigned `(writer-reader) % fifoSize`. SerialPIO allocates
+one more entry than the requested capacity. The former 256-byte request thus
+allocated 257 entries; a wrapped full buffer produced `0xffffffff % 257 == 0`,
+so the parser never drained it and all further input overflowed. Requests are
+now 255 for mast/display, 127 for keyboard and 31 for lap, making the actual
+allocations powers of two. This fixes the wrap calculation without changing
+pins, baud rates, parsers or PIO programs, and also works on newer cores.
+
+Separately, core 4.5.3 includes upstream SerialPIO RX edge/sampling fix #2929.
+The queue-size correction does not include that sampling fix and does not
+claim to resolve the lap's CRC errors. See the upstream
+[4.5.3 release](https://github.com/earlephilhower/arduino-pico/releases/tag/4.5.3)
+and [receiver fix](https://github.com/earlephilhower/arduino-pico/pull/2929).
 
 `@STATE` is a comma-separated set of `name=value` fields:
 

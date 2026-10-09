@@ -25,11 +25,16 @@
 constexpr bool KEYBOARD_UART_SWAP_TRIAL = false;
 constexpr bool MAST_UART_SWAP_TRIAL = false;
 
+// SerialPIO adds one reserved entry. Core 4.5.2 computes available() as
+// unsigned (writer-reader) % allocation; this is correct across wrap only
+// when the allocation divides 2^32. Request 2^n-1 usable bytes so the actual
+// allocation is 2^n. In particular, requesting 256 allocated 257 entries:
+// a full wrapped queue then reported (UINT32_MAX % 257) == 0 forever.
 SerialPIO keysSerial(KEYBOARD_UART_SWAP_TRIAL ? 6 : 7,
-                     KEYBOARD_UART_SWAP_TRIAL ? 7 : 6, 128);
-SerialPIO dispSerial(5, 4, 256);
+                     KEYBOARD_UART_SWAP_TRIAL ? 7 : 6, 127);
+SerialPIO dispSerial(5, 4, 255);
 SerialPIO mastSerial(MAST_UART_SWAP_TRIAL ? 2 : 3,
-                     MAST_UART_SWAP_TRIAL ? 3 : 2, 256);
+                     MAST_UART_SWAP_TRIAL ? 3 : 2, 255);
 
 SystemState S;
 GemSdDesign activeGemDesign;
@@ -2949,7 +2954,7 @@ static void receiveCheckTask()
 {
     if (!receiveCheckRemaining || int32_t(millis() - receiveCheckDueMs) < 0) return;
     --receiveCheckRemaining;
-    Serial.print("@LINKCHECK,build=20261009-RX-CHECK1,core=");
+    Serial.print("@LINKCHECK,build=20261009-RX-WRAP-FIX,core=");
     Serial.print(ARDUINO_PICO_VERSION_STR);
     Serial.print(",ms="); Serial.print(millis());
     Serial.print(",clock="); Serial.print(clock_get_hz(clk_sys));

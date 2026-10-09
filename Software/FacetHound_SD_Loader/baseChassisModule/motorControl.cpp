@@ -11,8 +11,9 @@ static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
 static SerialPIO pumpSerial (PUMP_TX_PIN, 0xff);
 #if USE_LAP_MOTOR_RS485
-// Match the proven standalone BLD demo's explicit 32-byte SerialPIO queue.
-static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN, 32);
+// SerialPIO reserves one extra entry: 31 usable bytes allocate 32 entries,
+// avoiding core 4.5.2's unsigned available() wrap bug. A reply is <=8 bytes.
+static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN, 31);
 #endif
 
 TMC2209 twistDriver;
