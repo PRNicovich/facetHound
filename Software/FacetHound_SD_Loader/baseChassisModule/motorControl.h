@@ -149,6 +149,7 @@ struct LapMotorDiagnostics
 
 void initSteppers();
 void initESCMotor();
+void reportLapReceiveCheck();
 void updateMotors(SystemState &S);
 void updateWheelIndex(SystemState &S, float newWheelValue);
 void setTwistDriverEnabled(bool enabled);

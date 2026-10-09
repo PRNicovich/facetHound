@@ -47,6 +47,7 @@ unknown lines for forward compatibility.
 |---|---|---|
 | `HELP` | List commands supported by the running firmware | One or more `@HELP,...` lines |
 | `STATUS` | Emit one complete state and I/O snapshot | `@STATE,...` then `@IO,...` |
+| `LINKCHECK` | Two receive-path snapshots one second apart, without restarting UARTs or consuming their input | `@LINKCHECK`, `@RXCHECK`, `@RXPIO` |
 | `STREAM ON [ms]` | Stream snapshots every 50-5000 ms; default 250 ms | `@ACK,STREAM,ON` |
 | `STREAM OFF` | Stop periodic snapshots | `@ACK,STREAM,OFF` |
 | `PROBE` | Immediately query the mast, display, and lap Modbus links | `@ACK,PROBE,MAST_DISPLAY_AND_LAP` |
@@ -98,6 +99,29 @@ selects the previous tier. Menu suppression and menu-specific key meanings are
 identical to the physical UART keyboard path.
 
 ## State telemetry
+
+### Receive-path diagnosis
+
+`LINKCHECK` identifies diagnostic build `20261009-RX-CHECK1` and the actual
+Arduino-Pico core version used for compilation. It reports mast-task invocation
+and byte counters, then the non-consuming `available()`/`peek()` results for
+mast, display and lap. PIO records include the matching input state machine,
+enable flag, hardware RX FIFO level, RX interrupt-source enable, NVIC enable,
+program counter, current instruction, divider and configuration registers.
+These are snapshots, not a wire capture; a high RX pin alone does not prove an
+idle wire. Snapshot printing can allow further input to arrive.
+
+The command does not change baud, pins, PIO programs, interrupt enables, queue
+contents, or motor commands. The ordinary loop runs between snapshots. It does
+not clear the overflow latch; `STATUS` remains the command that reads/clears it.
+
+For frozen mast values with a repeatedly set overflow flag, compare both
+snapshots: rising task calls with frozen byte count rules out a missing loop
+invocation. `queued=0` with `peek>=0` exposes inconsistent queue API results.
+A nonempty hardware FIFO with its interrupt source/NVIC disabled identifies a
+different receiver failure. Neither an empty FIFO nor these logs alone proves
+that valid bytes are present on the wire. Do not reset the port before taking
+the snapshots, because that would erase the failure state.
 
 `@STATE` is a comma-separated set of `name=value` fields:
 

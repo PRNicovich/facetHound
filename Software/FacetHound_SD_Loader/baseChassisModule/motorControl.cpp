@@ -2,6 +2,7 @@
 #include <math.h>
 #include "BLD510B.h"
 #include <pico/time.h>
+#include "serialLinkDiagnostics.h"
 
 AccelStepper twistDirStep(AccelStepper::DRIVER, TWIST_STEP_PIN, TWIST_DIR_PIN);
 AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
@@ -770,6 +771,13 @@ const LapMotorDiagnostics& lapMotorDiagnostics()
         false;
 #endif
     return lapDiagnostics;
+}
+
+void reportLapReceiveCheck()
+{
+#if USE_LAP_MOTOR_RS485
+    reportSerialReceiveCheck("LAP", lapMotorSerial, LAP_MOTOR_RX_PIN);
+#endif
 }
 
 void requestLapMotorProbe()

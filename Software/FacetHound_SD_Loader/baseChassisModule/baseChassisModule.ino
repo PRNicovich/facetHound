@@ -18,6 +18,7 @@
 #include "gemCache.h"
 #include "builtinGemCuts.h"
 #include "transferCheat.h"
+#include "serialLinkDiagnostics.h"
 
 // Integration trials: change one flag to true and upload only this base sketch
 // to reverse that link's GPIO direction without reflashing the remote module.
@@ -87,6 +88,9 @@ uint32_t lastKeyboardRxMs = 0;
 bool keyboardLinkReported = false;
 uint32_t lastMastRxMs = 0;
 bool mastLinkReported = false;
+uint32_t mastTaskCalls = 0;
+uint8_t receiveCheckRemaining = 0;
+uint32_t receiveCheckDueMs = 0;
 uint32_t lastDisplayRxMs = 0;
 bool displayLinkReported = false;
 uint32_t lastDisplayRoundTripMs = 0;
@@ -258,6 +262,7 @@ static int markTargetStatus()
 
 void mastTask()
 {
+    ++mastTaskCalls;
     while (mastSerial.available())
     {
         char c = mastSerial.read();
@@ -1867,6 +1872,7 @@ static void stopAllFromUsb()
 static void printUsbHelp()
 {
     Serial.println("@HELP,STATUS | STREAM ON [ms] | STREAM OFF");
+    Serial.println("@HELP,LINKCHECK (two read-only receive snapshots; no UART reset)");
     Serial.println("@HELP,KEY <hid-code> | JOG TWIST <index-units> | JOG Z <steps>");
     Serial.println("@HELP,RPM <0..1500> | MOTOR CW|CCW|OFF|STATUS|PROBE|DEMOPROBE|LOOPBACK | FLOW <0..750>");
     Serial.println("@HELP,PUMP FWD|REV|OFF | STOP | HELP");
@@ -2191,6 +2197,12 @@ static void handleUsbCommand(char* line)
     if (!strcasecmp(command, "STATUS"))
     {
         sendUsbState();
+        return;
+    }
+    if (!strcasecmp(command, "LINKCHECK"))
+    {
+        receiveCheckRemaining = 2;
+        receiveCheckDueMs = millis();
         return;
     }
     if (!strcasecmp(command, "PROBE"))
@@ -2933,6 +2945,23 @@ void setup()
     Serial.println("Send STATUS or STREAM ON 500 to inspect link counters");
 }
 
+static void receiveCheckTask()
+{
+    if (!receiveCheckRemaining || int32_t(millis() - receiveCheckDueMs) < 0) return;
+    --receiveCheckRemaining;
+    Serial.print("@LINKCHECK,build=20261009-RX-CHECK1,core=");
+    Serial.print(ARDUINO_PICO_VERSION_STR);
+    Serial.print(",ms="); Serial.print(millis());
+    Serial.print(",clock="); Serial.print(clock_get_hz(clk_sys));
+    Serial.print(",mast_task_calls="); Serial.print(mastTaskCalls);
+    Serial.print(",mast_bytes="); Serial.print(S.mastRxCount);
+    Serial.print(",mast_age_ms="); Serial.println(lastMastRxMs ? millis()-lastMastRxMs : 0);
+    reportSerialReceiveCheck("MAST", mastSerial, MAST_UART_SWAP_TRIAL ? 3 : 2);
+    reportSerialReceiveCheck("DISPLAY", dispSerial, 4);
+    reportLapReceiveCheck();
+    receiveCheckDueMs = millis() + 1000;
+}
+
 void loop()
 {
     mastTask();
@@ -2949,6 +2978,7 @@ void loop()
         sendActiveMesh();
     keyboardTask();
     usbDiagnosticTask();
+    receiveCheckTask();
 
     twistWatchdogTask();
     pollDoubleClick(&S);
