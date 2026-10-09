@@ -2,6 +2,8 @@
 
 // Stop pulses but retain powered holding torque; unlock to re-arm motion.
 struct SystemState;
+void reinitializePump(SystemState& S);
+void printPumpStatus(const SystemState& S);
 void faultHoldTwist(SystemState &S);
 bool indexMotionFaultLatched();
 void startIndexPolarityProbe(SystemState &S);

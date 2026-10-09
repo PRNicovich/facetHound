@@ -60,6 +60,8 @@ unknown lines for forward compatibility.
 | `PUMP FWD` | Set forward pump direction | `@ACK,PUMP` |
 | `PUMP REV` | Set reverse pump direction | `@ACK,PUMP` |
 | `PUMP OFF` | Stop the pump direction command | `@ACK,PUMP` |
+| `PUMP REINIT` | Disable output, re-send original pump configuration, then reapply current direction/speed (resumes if commanded on) | `@PUMP,...` then `@ACK,PUMP,REINIT` |
+| `PUMP STATUS` | UART-ready state, transmitted-byte counters, enable pin and requested velocity/microsteps; not driver readback | `@PUMP,...` |
 | `STOP` | Stop index, Z, lap, and pump commands | `@ACK,STOP` |
 
 `GEM LOAD <index>` enters a folder when the selected SD LIST entry is a directory;

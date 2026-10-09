@@ -7,7 +7,18 @@ AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
 
 static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
-static SerialPIO pumpSerial (PUMP_TX_PIN, 0xff);
+class PumpSerial : public SerialPIO {
+public:
+    PumpSerial() : SerialPIO(PUMP_TX_PIN, 0xff) {}
+    uint32_t attempted=0, accepted=0;
+    size_t write(uint8_t value) override {
+        ++attempted;
+        size_t sent=SerialPIO::write(value);
+        accepted+=sent;
+        return sent;
+    }
+};
+static PumpSerial pumpSerial;
 #if USE_LAP_MOTOR_RS485
 // Match the proven standalone BLD demo's explicit 32-byte SerialPIO queue.
 static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN, 32);
@@ -642,6 +653,24 @@ static void setMotorPins(SystemState &S)
 #endif
 }
 
+static void configurePump()
+{
+    // Disable the output before resetting UART/register state.
+    pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
+    pumpSerial.flush();
+    pumpDriver.setup(pumpSerial, TMC2209_BAUD);
+    pumpDriver.setMicrostepsPerStep(PUMP_MICROSTEPS);
+    pumpDriver.setRMSCurrent(PUMP_RMS_CURRENT, 0.11f);
+    pumpDriver.enableAutomaticCurrentScaling();
+    pumpDriver.enableCoolStep();
+    pumpDriver.enableInverseMotorDirection();
+    pumpDriver.moveAtVelocity(0);
+    pumpDriver.disable();
+    pumpSerial.flush();
+    lastPumpDir=-1;
+    lastPumpFlow=-1;
+}
+
 void initSteppers()
 {
     pinMode(TWIST_STEP_PIN, OUTPUT);
@@ -687,15 +716,7 @@ void initSteppers()
     zedSerial.end();
     zedDriverIsEnabled = false;
 
-    pumpDriver.setup(pumpSerial, TMC2209_BAUD);
-    pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
-    pumpDriver.setMicrostepsPerStep(PUMP_MICROSTEPS);
-    pumpDriver.setRMSCurrent(PUMP_RMS_CURRENT, 0.11f);
-    pumpDriver.enableAutomaticCurrentScaling();
-    pumpDriver.enableCoolStep();
-    pumpDriver.enableInverseMotorDirection();
-    pumpDriver.moveAtVelocity(0);
-    pumpDriver.disable();
+    configurePump();
 
     twistDirStep.setMinPulseWidth(1);
     twistDirStep.setMaxSpeed(TWIST_MAX_SPEED);
@@ -1152,6 +1173,28 @@ void updateMotors(SystemState &S)
     updateZMotor(S);
     updatePump(S);
     setMotorPins(S);
+}
+
+void printPumpStatus(const SystemState& S)
+{
+    Serial.print("@PUMP,uart_ready=");Serial.print(bool(pumpSerial)?1:0);
+    Serial.print(",tx_attempted=");Serial.print(pumpSerial.attempted);
+    Serial.print(",tx_accepted=");Serial.print(pumpSerial.accepted);
+    Serial.print(",tx_failed=");Serial.print(pumpSerial.attempted-pumpSerial.accepted);
+    Serial.print(",enable_pin=");Serial.print(digitalRead(PUMP_EN_PIN));
+    Serial.print(",dir=");Serial.print(S.flow_dir);
+    Serial.print(",velocity_command=");
+    Serial.print((S.flow_dir==0 || S.flow_dir==2)?int32_t(S.flowSetpoint)*4:0);
+    Serial.print(",microsteps_requested=");Serial.print(PUMP_MICROSTEPS);
+    Serial.println(",driver_readback=unavailable");
+}
+
+void reinitializePump(SystemState& S)
+{
+    configurePump();
+    updatePump(S); // Reapply even when direction and setpoint are unchanged.
+    pumpSerial.flush();
+    printPumpStatus(S);
 }
 
 void updateWheelIndex(SystemState &S, float newWheelValue)

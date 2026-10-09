@@ -2308,10 +2308,15 @@ static void handleUsbCommand(char* line)
         }
         else
         {
+            if (!strcasecmp(mode, "REINIT")) {
+                reinitializePump(S);
+                Serial.println("@ACK,PUMP,REINIT");return;
+            }
+            if (!strcasecmp(mode, "STATUS")) {printPumpStatus(S);return;}
             if (!strcasecmp(mode, "FWD")) S.flow_dir = 2;
             else if (!strcasecmp(mode, "REV")) S.flow_dir = 0;
             else if (!strcasecmp(mode, "OFF")) S.flow_dir = 1;
-            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF"); return; }
+            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF|REINIT|STATUS"); return; }
             Serial.println("@ACK,PUMP");
         }
         S.dirty = true;
