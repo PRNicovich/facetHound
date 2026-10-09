@@ -2716,8 +2716,6 @@ static void forceSafeBootState()
 
 void setup()
 {
-    Serial.begin(115200);
-
     initSteppers();
     delay(100);
 
@@ -2729,6 +2727,10 @@ void setup()
     // this executes only once per cold start.
     if (rp2040.getResetReason() == 1)
         rp2040.restart();
+
+    // Original startup order: initialize USB only after the cold-start reset.
+    Serial.begin(115200);
+    delay(500);
 
     initESCMotor();
 
