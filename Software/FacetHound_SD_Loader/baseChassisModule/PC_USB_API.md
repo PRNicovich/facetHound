@@ -60,25 +60,7 @@ unknown lines for forward compatibility.
 | `PUMP FWD` | Set forward pump direction | `@ACK,PUMP` |
 | `PUMP REV` | Set reverse pump direction | `@ACK,PUMP` |
 | `PUMP OFF` | Stop the pump direction command | `@ACK,PUMP` |
-| `PUMP REINIT` | Disable output, re-send original pump configuration, then reapply current direction/speed (resumes if commanded on) | `@PUMP,...` then `@ACK,PUMP,REINIT` |
-| `PUMP STATUS` | UART-ready state, enable pin, `drive=STEP_DIR`, generated STEP frequency and requested microsteps; not driver readback | `@PUMP,...` |
-| `PUMP STEPTEST` | With lap paused (measured RPM <= 10), stops/unlocks index and Z and disables index servo, then pulses GP20 at up to 200 Hz for 5 seconds using GP21 direction. Does not require a loaded gem or display acknowledgment. Stops automatically; `PUMP OFF`/`STOP` abort. Tests STEP/DIR instead of UART velocity. No calibration change; axes remain unlocked. | `@PUMP_STEPTEST,START,...` then `@PUMP_STEPTEST,DONE,pulses=...` |
 | `STOP` | Stop index, Z, lap, and pump commands | `@ACK,STOP` |
-
-Normal pump motion now uses GP20 STEP / GP21 DIR, the path verified by STEPTEST.
-A repeating hardware alarm supplies pulses without depending on the main-loop
-rate. UART remains for driver configuration; VACTUAL stays zero. Nominal frequency
-is `flow_ticks * 4 * 0.715 Hz`, preserving the previous UART-velocity scaling at
-the driver's nominal 12 MHz clock ([TMC2209 velocity conversion](https://www.analog.com/media/en/technical-documentation/data-sheets/tmc2209_datasheet_rev1.09.pdf)). Four microsteps are still requested, not read
-back; actual mL/min calibration must be measured. Pause stops STEP and disables
-EN immediately on the next motor update. No automatic motion on boot.
-Raw-flash autosave waits until the pump is paused, avoiding interrupt-blackout
-gaps in the timed STEP output.
-
-Mesh BEGIN failures print the exact `BEGIN_TX` record and accepted byte count,
-up to four `BEGIN_RX` records per attempt, and `ACK_LINK` freshness. Accepted TX
-bytes only prove local UART submission, not reception by the display. This uses
-the existing display protocol; no display firmware update is required.
 
 `GEM LOAD <index>` enters a folder when the selected SD LIST entry is a directory;
 it does not start motion. Run `SD LIST` again after entering or leaving a folder.

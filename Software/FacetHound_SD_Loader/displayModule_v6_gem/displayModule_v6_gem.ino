@@ -299,9 +299,8 @@ static void reportDisplayMode(const char* prefix)
 
 static void sendLineBoth(const char* line)
 {
-  // Machine protocol must never wait for an unattended USB serial monitor.
+  Serial.println(line);
   baseSerial.println(line);
-  if (Serial && Serial.availableForWrite() >= int(strlen(line) + 2)) Serial.println(line);
 }
 
 static void saveDisplayModeAndRestart(DisplayMode nextMode);
@@ -661,7 +660,6 @@ void parseLine(char* line)
   if (key[0] == 0) return;
   if (!strcmp(key,"MESHCACHE")) {
     const bool hit=selectCachedMesh(strtoull(valueText,nullptr,16));
-    sendLineBoth(hit ? "@MESHACK,CACHE_HIT" : "@MESHACK,CACHE_MISS");
     if (hit) {
       meshReceiving=false; meshDisplayFailed=false; bootModelPending=false; loadingDesign=false;
       closeSettingsMenu(); restoreDisplayPending=true;
@@ -669,6 +667,7 @@ void parseLine(char* line)
       if (!splashActive && !isClassicView(displayMode)) gemUi.begin(displayMode);
       ++telemetryVersion;
     }
+    sendLineBoth(hit ? "@MESHACK,CACHE_HIT" : "@MESHACK,CACHE_MISS");
     return;
   }
   if (!strcmp(key,"GEMPICKER")) {
@@ -735,8 +734,8 @@ void parseLine(char* line)
     snprintf(loadingStage, sizeof(loadingStage), "Receiving model");
     if (!ok) sendLineBoth("@ERR,MESHBEGIN,invalid counts or scale");
     else {
-      sendLineBoth("@MESHACK,BEGIN");
       if (!splashActive) drawLoadingProgress(0);
+      sendLineBoth("@MESHACK,BEGIN");
     }
     return;
   }
@@ -822,12 +821,12 @@ void parseLine(char* line)
       meshDisplayFailed = false;
       bootModelPending = false;
       loadingDesign = false;
-      sendLineBoth("@MESHACK,READY");
       closeSettingsMenu();
       restoreDisplayPending = true;
       loadingProgress.deleteSprite();
       if (!splashActive && !isClassicView(displayMode)) gemUi.begin(displayMode);
       ++telemetryVersion;
+      sendLineBoth("@MESHACK,READY");
     }
     else {
       meshDisplayFailed = true;

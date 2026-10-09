@@ -8,7 +8,7 @@ AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
 
 static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
-static SerialPIO pumpSerial(PUMP_TX_PIN, 0xff);
+static SerialPIO pumpSerial (PUMP_TX_PIN, 0xff);
 #if USE_LAP_MOTOR_RS485
 // Match the proven standalone BLD demo's explicit 32-byte SerialPIO queue.
 static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN, 32);
@@ -50,25 +50,23 @@ static int lastEscDir = -1;
 static int lastEscRpm = -1;
 static int lastPumpDir = -1;
 static int lastPumpFlow = -1;
-static bool pumpStepTest=false;
-static uint32_t pumpTestStartedMs=0,pumpTestLastPulseUs=0,pumpTestPulses=0;
 static repeating_timer_t pumpPulseTimer;
-static bool pumpPulseTimerActive=false;
-static volatile bool pumpPulseHigh=false;
-static float pumpStepHz=0;
+static bool pumpPulseTimerActive = false;
+static volatile bool pumpPulseHigh = false;
 
 static bool __not_in_flash_func(pumpPulseTick)(repeating_timer_t*)
 {
-    pumpPulseHigh=!pumpPulseHigh;
-    gpio_put(PUMP_STEP_PIN,pumpPulseHigh);
+    pumpPulseHigh = !pumpPulseHigh;
+    gpio_put(PUMP_STEP_PIN, pumpPulseHigh);
     return true;
 }
 
 static void stopPumpPulses()
 {
-    if(pumpPulseTimerActive) cancel_repeating_timer(&pumpPulseTimer);
-    pumpPulseTimerActive=false;pumpPulseHigh=false;pumpStepHz=0;
-    digitalWrite(PUMP_STEP_PIN,LOW);
+    if (pumpPulseTimerActive) cancel_repeating_timer(&pumpPulseTimer);
+    pumpPulseTimerActive = false;
+    pumpPulseHigh = false;
+    digitalWrite(PUMP_STEP_PIN, LOW);
 }
 static bool twistDriverIsEnabled = false;
 static bool zedDriverIsEnabled = false;
@@ -663,30 +661,6 @@ static void setMotorPins(SystemState &S)
 #endif
 }
 
-static void configurePump(bool reinitializing = false)
-{
-    stopPumpPulses();
-    pinMode(PUMP_STEP_PIN,OUTPUT);pinMode(PUMP_DIR_PIN,OUTPUT);
-    // Keep the original cold-start ordering. Only explicit reinitialization
-    // disables and drains an already-running UART before resetting it.
-    if(reinitializing) {
-        pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
-        pumpSerial.flush();
-    }
-    pumpDriver.setup(pumpSerial, TMC2209_BAUD);
-    pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
-    pumpDriver.setMicrostepsPerStep(PUMP_MICROSTEPS);
-    pumpDriver.setRMSCurrent(PUMP_RMS_CURRENT, 0.11f);
-    pumpDriver.enableAutomaticCurrentScaling();
-    pumpDriver.enableCoolStep();
-    pumpDriver.enableInverseMotorDirection();
-    pumpDriver.moveAtVelocity(0);
-    pumpDriver.disable();
-    if(reinitializing) pumpSerial.flush();
-    lastPumpDir=-1;
-    lastPumpFlow=-1;
-}
-
 void initSteppers()
 {
     pinMode(TWIST_STEP_PIN, OUTPUT);
@@ -732,7 +706,19 @@ void initSteppers()
     zedSerial.end();
     zedDriverIsEnabled = false;
 
-    configurePump();
+    digitalWrite(PUMP_STEP_PIN, LOW);
+    digitalWrite(PUMP_DIR_PIN, LOW);
+    pinMode(PUMP_STEP_PIN, OUTPUT);
+    pinMode(PUMP_DIR_PIN, OUTPUT);
+    pumpDriver.setup(pumpSerial, TMC2209_BAUD);
+    pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
+    pumpDriver.setMicrostepsPerStep(PUMP_MICROSTEPS);
+    pumpDriver.setRMSCurrent(PUMP_RMS_CURRENT, 0.11f);
+    pumpDriver.enableAutomaticCurrentScaling();
+    pumpDriver.enableCoolStep();
+    pumpDriver.enableInverseMotorDirection();
+    pumpDriver.moveAtVelocity(0);
+    pumpDriver.disable();
 
     twistDirStep.setMinPulseWidth(1);
     twistDirStep.setMaxSpeed(TWIST_MAX_SPEED);
@@ -1140,24 +1126,6 @@ static void updateZMotor(SystemState &S)
 
 static void updatePump(SystemState &S)
 {
-    if(pumpStepTest) {
-        if(millis()-pumpTestStartedMs>=5000 || S.flow_dir!=2) {
-            digitalWrite(PUMP_STEP_PIN,LOW);
-            digitalWrite(PUMP_EN_PIN,HIGH);
-            pumpDriver.moveAtVelocity(0);pumpDriver.disable();
-            pumpStepTest=false;S.flow_dir=1;S.dirty=true;
-            lastPumpDir=-1;lastPumpFlow=-1;
-            Serial.print("@PUMP_STEPTEST,DONE,pulses=");Serial.println(pumpTestPulses);
-        } else {
-            uint32_t now=micros();
-            if(now-pumpTestLastPulseUs>=5000) {
-                pumpTestLastPulseUs=now;
-                digitalWrite(PUMP_STEP_PIN,HIGH);delayMicroseconds(3);
-                digitalWrite(PUMP_STEP_PIN,LOW);++pumpTestPulses;
-            }
-            return;
-        }
-    }
     int flow = int(S.flowSetpoint);
 
     if (S.flow_dir == lastPumpDir && flow == lastPumpFlow)
@@ -1166,32 +1134,28 @@ static void updatePump(SystemState &S)
     lastPumpDir = S.flow_dir;
     lastPumpFlow = flow;
 
-    // The installed pump moves with STEPTEST but not UART VACTUAL. Use that
-    // proven STEP/DIR path for normal operation too. A hardware alarm keeps
-    // pulses independent of SD reads, geometry building and display traffic.
+    // Keep the verified STEP/DIR pump path; UART is only driver configuration.
     stopPumpPulses();
-    digitalWrite(PUMP_EN_PIN,HIGH);
-    if((S.flow_dir!=0 && S.flow_dir!=2) || flow<=0) return;
-    if(flow>750) flow=750;
+    digitalWrite(PUMP_EN_PIN, HIGH);
+    if ((S.flow_dir != 0 && S.flow_dir != 2) || flow <= 0) return;
+    if (flow > 750) flow = 750;
     pumpDriver.moveUsingStepDirInterface();
     pumpDriver.disableInverseMotorDirection();
     pumpDriver.enable();
     pumpSerial.flush();
-    digitalWrite(PUMP_EN_PIN,HIGH);
-    digitalWrite(PUMP_DIR_PIN,S.flow_dir==0 ? HIGH : LOW);
-    // TMC2209 library documents 0.715 microsteps/s per VACTUAL unit at
-    // its nominal internal clock. Preserve the old flow*4 velocity scaling;
-    // this is not a new volumetric calibration or microstep readback.
-    const float requestedHz=float(flow)*4.0f*0.715f;
-    const int64_t halfPeriodUs=int64_t(lroundf(500000.0f/requestedHz));
-    pumpPulseTimerActive=add_repeating_timer_us(-halfPeriodUs,pumpPulseTick,nullptr,&pumpPulseTimer);
-    if(!pumpPulseTimerActive) {
-        S.flow_dir=1;lastPumpDir=1;S.dirty=true;
+    digitalWrite(PUMP_EN_PIN, HIGH);
+    digitalWrite(PUMP_DIR_PIN, S.flow_dir == 0 ? HIGH : LOW);
+    // Preserve the working pulse rate and provisional calibration.
+    const float requestedHz = float(flow) * 4.0f * 0.715f;
+    const int64_t halfPeriodUs = int64_t(lroundf(500000.0f / requestedHz));
+    pumpPulseTimerActive = add_repeating_timer_us(
+        -halfPeriodUs, pumpPulseTick, nullptr, &pumpPulseTimer);
+    if (!pumpPulseTimerActive) {
+        S.flow_dir = 1; lastPumpDir = 1; S.dirty = true;
         Serial.println("@FAULT,PUMP,STEP_TIMER_UNAVAILABLE");
         return;
     }
-    pumpStepHz=500000.0f/float(halfPeriodUs);
-    digitalWrite(PUMP_EN_PIN,LOW);
+    digitalWrite(PUMP_EN_PIN, LOW);
 }
 
 void updateMotors(SystemState &S)
@@ -1200,49 +1164,6 @@ void updateMotors(SystemState &S)
     updateZMotor(S);
     updatePump(S);
     setMotorPins(S);
-}
-
-void printPumpStatus(const SystemState& S)
-{
-    Serial.print("@PUMP,uart_ready=");Serial.print(bool(pumpSerial)?1:0);
-    Serial.print(",enable_pin=");Serial.print(digitalRead(PUMP_EN_PIN));
-    Serial.print(",dir=");Serial.print(S.flow_dir);
-    Serial.print(",step_test=");Serial.print(pumpStepTest?1:0);
-    Serial.print(",step_pulses=");Serial.print(pumpTestPulses);
-    Serial.print(",drive=STEP_DIR,step_hz=");Serial.print(pumpStepHz,3);
-    Serial.print(",velocity_command=");
-    Serial.print(0); // UART velocity generator is no longer used.
-    Serial.print(",microsteps_requested=");Serial.print(PUMP_MICROSTEPS);
-    Serial.println(",driver_readback=unavailable");
-}
-
-void reinitializePump(SystemState& S)
-{
-    stopPumpPulses();
-    pumpStepTest=false;
-    digitalWrite(PUMP_STEP_PIN,LOW);
-    configurePump(true);
-    updatePump(S); // Reapply even when direction and setpoint are unchanged.
-    pumpSerial.flush();
-    printPumpStatus(S);
-}
-
-void startPumpStepTest(SystemState& S)
-{
-    stopPumpPulses();
-    // Exercise the existing STEP/DIR wires instead of the UART velocity generator.
-    // UART is still needed to clear a previously accepted VACTUAL command.
-    digitalWrite(PUMP_EN_PIN,HIGH);
-    pumpDriver.moveUsingStepDirInterface();
-    pumpDriver.enable();
-    pumpSerial.flush();
-    digitalWrite(PUMP_EN_PIN,HIGH);
-    digitalWrite(PUMP_STEP_PIN,LOW);pinMode(PUMP_STEP_PIN,OUTPUT);
-    digitalWrite(PUMP_DIR_PIN,LOW);pinMode(PUMP_DIR_PIN,OUTPUT);
-    pumpTestPulses=0;pumpTestStartedMs=millis();pumpTestLastPulseUs=micros();
-    S.flow_dir=2;pumpStepTest=true;
-    digitalWrite(PUMP_EN_PIN,LOW);
-    Serial.println("@PUMP_STEPTEST,START,max_hz=200,timeout_ms=5000");
 }
 
 void updateWheelIndex(SystemState &S, float newWheelValue)

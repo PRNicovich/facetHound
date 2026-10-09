@@ -639,26 +639,13 @@ static size_t meshSendIndex = 0;
 static uint32_t meshSendLastMs = 0;
 static uint8_t meshBeginAttempts = 0;
 static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
-static uint8_t meshEndAttempts = 0;
-static char meshCacheRequest[40] = {};
-static uint8_t meshBeginRxSamples = 0;
 
 static void retryMeshTransfer(const char* reason)
 {
     Serial.print("@GEM,DISPLAY_RETRY,"); Serial.println(reason);
-    Serial.print("@GEM,ACK_WAIT,stage="); Serial.print(meshSendStage);
-    Serial.print(",row_stage="); Serial.print(meshRowStage);
-    Serial.print(",next_row="); Serial.println(meshSendIndex);
-    Serial.print("@GEM,ACK_LINK,rx_bytes=");Serial.print(displayRxCount);
-    Serial.print(",roundtrip_age_ms=");Serial.print(lastDisplayRoundTripMs ? millis()-lastDisplayRoundTripMs : 0);
-    Serial.print(",roundtrip_seen=");Serial.println(lastDisplayRoundTripMs ? 1 : 0);
     if (++meshRestartCount <= 2) {
-        // Check the existing cache identity first: READY may have been lost
-        // after the display successfully committed this exact model.
-        meshSendStage = 9; meshSendIndex = 0; meshBeginAttempts = 0;
-        meshEndAttempts = 0;
+        meshSendStage = 1; meshSendIndex = 0; meshBeginAttempts = 0;
         meshRowRetries = 0; meshSendLastMs = millis();
-        sendDisplayLine(meshCacheRequest);
     } else {
         meshSendStage = 0;
         Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(reason);
@@ -672,7 +659,6 @@ static void sendActiveMesh()
     meshBeginAttempts = 0;
     meshRestartCount = 0;
     meshRowRetries = 0;
-    meshEndAttempts = 0;
     meshSendLastMs = millis();
     uint64_t hash=14695981039346656037ULL;
     auto add=[&](const auto& value) {
@@ -689,8 +675,8 @@ static void sendActiveMesh()
     for (const auto& p:activeGemGeometry.planes) {
         add(p.angleDegrees); add(p.index); add(p.tier); add(p.facet); add(p.name);
     }
-    snprintf(meshCacheRequest,sizeof(meshCacheRequest),"@MESHCACHE,%016llx",(unsigned long long)hash);
-    if (activeGemLoaded) sendDisplayLine(meshCacheRequest); else meshSendStage=1;
+    char key[40]; snprintf(key,sizeof(key),"@MESHCACHE,%016llx",(unsigned long long)hash);
+    if (activeGemLoaded) sendDisplayLine(key); else meshSendStage=1;
 }
 
 static void meshTransferTask()
@@ -710,20 +696,12 @@ static void meshTransferTask()
         return;
     }
     if (meshSendStage == 2 || meshSendStage == 7) {
-        if (meshSendStage == 7 && millis() - meshSendLastMs > 1000 && meshEndAttempts < 3) {
-            // MESHEND is idempotent on the receiver. Retry its confirmation,
-            // not the entire geometry, when the final ACK is dropped.
-            ++meshEndAttempts;
-            sendDisplayLine("@MESHEND,1");
-            meshSendLastMs = millis();
-            return;
-        }
         if (meshSendStage == 2 && millis() - meshSendLastMs > 1000 && meshBeginAttempts < 3) {
             meshSendStage = 1;
             return;
         }
         if (millis() - meshSendLastMs > 3000) {
-            retryMeshTransfer(meshSendStage == 2 ? "BEGIN acknowledgment timeout" : "READY acknowledgment timeout");
+            retryMeshTransfer("mesh acknowledgment timeout");
         }
         return;
     }
@@ -738,16 +716,17 @@ static void meshTransferTask()
 
     if (meshSendStage == 1) {
         ++meshBeginAttempts;
-        char beginLine[100];
-        snprintf(beginLine,sizeof(beginLine),"@MESHBEGIN,%u,%u,%u,%.4f,%.7f,%d",
-            unsigned(activeGemGeometry.vertices.size()),unsigned(activeGemGeometry.edges.size()),
-            unsigned(activeGemGeometry.planes.size()),double(activeGemDesign.wheelIndex),
-            double(activeGemGeometry.radius),int(activeGemDesign.designIndexSign));
-        size_t accepted=dispSerial.println(beginLine);
-        Serial.print("@GEM,BEGIN_TX,accepted=");Serial.print(accepted);
-        Serial.print(",expected=");Serial.print(strlen(beginLine)+2);
-        Serial.print(",line=");Serial.println(beginLine);
-        meshBeginRxSamples=0;
+        dispSerial.print("@MESHBEGIN,");
+        dispSerial.print(activeGemGeometry.vertices.size());
+        dispSerial.print(",");
+        dispSerial.print(activeGemGeometry.edges.size());
+        dispSerial.print(",");
+        dispSerial.print(activeGemGeometry.planes.size());
+        dispSerial.print(",");
+        dispSerial.print(activeGemDesign.wheelIndex, 4);
+        dispSerial.print(",");
+        dispSerial.print(activeGemGeometry.radius, 7);
+        dispSerial.print(','); dispSerial.println(activeGemDesign.designIndexSign);
         meshSendStage = 2;
         return;
     }
@@ -1399,13 +1378,6 @@ void displayRxTask()
         {
             dispBuf[dispIdx] = '\0';
             dispIdx = 0;
-
-            // Bounded evidence for a BEGIN failure, without flooding USB with
-            // mast samples or requiring another manual TRACE command.
-            if(meshSendStage==2 && meshBeginRxSamples<4) {
-                ++meshBeginRxSamples;
-                Serial.print("@GEM,BEGIN_RX,");Serial.println(dispBuf);
-            }
 
             if (uartTraceEnabled)
             {
@@ -2336,25 +2308,10 @@ static void handleUsbCommand(char* line)
         }
         else
         {
-            if (!strcasecmp(mode, "STEPTEST")) {
-                if(S.motorDir==1 || S.motorDir==3 || S.RPMValue>10) {
-                    Serial.println("@ERR,PUMP,pause lap before STEPTEST");return;
-                }
-                // This pump-only test must not depend on gem/display readiness.
-                // Stop index/Z/servo rather than requiring a working display to
-                // unlock them. Never resume these axes when the test finishes.
-                S.spinServoIdx=0;hardStopTwist(S);S.zLock=0;hardStopZ();
-                startPumpStepTest(S);return;
-            }
-            if (!strcasecmp(mode, "REINIT")) {
-                reinitializePump(S);
-                Serial.println("@ACK,PUMP,REINIT");return;
-            }
-            if (!strcasecmp(mode, "STATUS")) {printPumpStatus(S);return;}
             if (!strcasecmp(mode, "FWD")) S.flow_dir = 2;
             else if (!strcasecmp(mode, "REV")) S.flow_dir = 0;
             else if (!strcasecmp(mode, "OFF")) S.flow_dir = 1;
-            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF|REINIT|STATUS|STEPTEST"); return; }
+            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF"); return; }
             Serial.println("@ACK,PUMP");
         }
         S.dirty = true;
@@ -2663,7 +2620,7 @@ void autoSave()
     // STEP pulses to save the cursor/target after each key in a burst.
     if (millis() - lastKeyboardActionMs < 1500 || twistMotionActive() ||
         zedDirStep.distanceToGo() != 0 ||
-        ((S.flow_dir==0 || S.flow_dir==2) && S.flowSetpoint>0))
+        ((S.flow_dir == 0 || S.flow_dir == 2) && S.flowSetpoint > 0))
         return;
 
     lastSave = millis();
@@ -2716,6 +2673,8 @@ static void forceSafeBootState()
 
 void setup()
 {
+    Serial.begin(115200);
+
     initSteppers();
     delay(100);
 
@@ -2727,10 +2686,6 @@ void setup()
     // this executes only once per cold start.
     if (rp2040.getResetReason() == 1)
         rp2040.restart();
-
-    // Original startup order: initialize USB only after the cold-start reset.
-    Serial.begin(115200);
-    delay(500);
 
     initESCMotor();
 
@@ -2826,11 +2781,6 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
-    Serial.print("@BASE_RUNTIME,cpu_hz=");Serial.print(rp2040.f_cpu());
-    Serial.print(",heap_free=");Serial.print(rp2040.getFreeHeap());
-    Serial.print(",keyboard_uart=");Serial.print(bool(keysSerial)?1:0);
-    Serial.print(",display_uart=");Serial.print(bool(dispSerial)?1:0);
-    Serial.print(",mast_uart=");Serial.println(bool(mastSerial)?1:0);
     Serial.println("@BUILD,BASE,INTEGRATION-RELEASE-20260918");
     Serial.print("KEYBOARD UART MAP: ");
     Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");
