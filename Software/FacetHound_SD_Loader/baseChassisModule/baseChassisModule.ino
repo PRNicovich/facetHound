@@ -4,6 +4,10 @@
 #include <utility>
 #include <algorithm>
 #include <SerialPIO.h>
+#include <hardware/clocks.h>
+#include <hardware/gpio.h>
+#include <hardware/pio.h>
+#include <hardware/irq.h>
 
 #include "systemState.h"
 #include "stateStore.h"
@@ -1157,6 +1161,33 @@ static bool isAllowedSpacing(float spacing)
            spacing == 16.0f || spacing == 32.0f;
 }
 
+static void reportLoadLinkState(const char* stage)
+{
+    // Read-only snapshots: no pinMode, GPIO writes, IRQ changes, or UART resets.
+    Serial.print("@LOAD_LINK,"); Serial.print(stage);
+    Serial.print(",clock="); Serial.print(clock_get_hz(clk_sys));
+    Serial.print(",heap="); Serial.print(rp2040.getFreeHeap());
+    Serial.print(",rx_pending=M"); Serial.print(mastSerial.available());
+    Serial.print("K"); Serial.print(keysSerial.available());
+    Serial.print("D"); Serial.print(dispSerial.available());
+    Serial.print(",gpio2_9=");
+    for (uint8_t pin=2; pin<=9; ++pin) {
+        if (pin!=2) Serial.print('-');
+        Serial.print(unsigned(gpio_get_function(pin)));
+    }
+    Serial.print(",pio_enabled="); Serial.print(pio0->ctrl & 15, HEX);
+    Serial.print('-'); Serial.print(pio1->ctrl & 15, HEX);
+#if defined(PICO_RP2350)
+    Serial.print('-'); Serial.print(pio2->ctrl & 15, HEX);
+#endif
+    Serial.print(",pio_irq="); Serial.print(irq_is_enabled(PIO0_IRQ_0) ? 1 : 0);
+    Serial.print(irq_is_enabled(PIO1_IRQ_0) ? 1 : 0);
+#if defined(PICO_RP2350)
+    Serial.print(irq_is_enabled(PIO2_IRQ_0) ? 1 : 0);
+#endif
+    Serial.println();
+}
+
 static void applyConfigAction(char* actionText)
 {
     char* action = nullptr;
@@ -1331,9 +1362,11 @@ static void applyConfigAction(char* actionText)
         }
         GemSdDesign candidate;
         GemRuntimeGeometry candidateGeometry;
+        reportLoadLinkState("before_read");
         dispSerial.print("@GEMLOAD,Reading,"); dispSerial.println(sourcePath);
         GemCacheResult cacheResult = loadGemCache(sourcePath, &candidate,
                                                   &candidateGeometry);
+        reportLoadLinkState("after_cache");
         if (cacheResult == GemCacheResult::OK)
         {
             readGemSdMetadataAt(size_t(index), &candidate);
@@ -1342,6 +1375,7 @@ static void applyConfigAction(char* actionText)
         else
         {
             GemSdResult result = loadGemSdFileAt(size_t(index), &candidate);
+            reportLoadLinkState("after_parse");
             if (result != GemSdResult::OK)
             {
                 sendCfgNak(action, gemSdResultText(result));
@@ -1351,6 +1385,7 @@ static void applyConfigAction(char* actionText)
             dispSerial.print("@GEMLOAD,Building geometry,"); dispSerial.println(sourcePath);
             GemGeometryResult geometryResult = buildGemGeometry(candidate,
                                                                  &candidateGeometry);
+            reportLoadLinkState("after_geometry");
             if (geometryResult != GemGeometryResult::OK)
             {
                 sendCfgNak(action, gemGeometryResultText(geometryResult));
@@ -1363,7 +1398,9 @@ static void applyConfigAction(char* actionText)
         }
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));
+        reportLoadLinkState("after_apply");
         if (!rememberGemSdPath(sourcePath)) Serial.println("@GEM,REMEMBER_FAILED");
+        reportLoadLinkState("after_remember");
         Serial.print("@GEM,LOADED,"); Serial.println(sourcePath);
         Serial.print("@GEM,GEOMETRY,"); Serial.print(activeGemCacheStatus);
         Serial.print(",vertices="); Serial.print(activeGemGeometry.vertices.size());
@@ -1443,6 +1480,7 @@ void displayRxTask()
                     lastDisplayRxMs = lastDisplayRoundTripMs = millis();
                     displayRoundTripReported = true;
                     Serial.print("@DISPLAY_LINK,READY,baud="); Serial.println(displayBaud);
+                    reportLoadLinkState("confirmed");
                     sendDisplayLine("@MODE,?");
                 }
                 continue;

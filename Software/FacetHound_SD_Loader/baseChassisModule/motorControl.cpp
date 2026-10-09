@@ -1144,7 +1144,8 @@ static void updatePump(SystemState &S)
     pumpDriver.enable();
     pumpSerial.flush();
     digitalWrite(PUMP_EN_PIN, HIGH);
-    digitalWrite(PUMP_DIR_PIN, S.flow_dir == 0 ? HIGH : LOW);
+    // Installed pump plumbing: forward needs DIR high, reverse DIR low.
+    digitalWrite(PUMP_DIR_PIN, S.flow_dir == 0 ? LOW : HIGH);
     // Preserve the working pulse rate and provisional calibration.
     const float requestedHz = float(flow) * 4.0f * 0.715f;
     const int64_t halfPeriodUs = int64_t(lroundf(500000.0f / requestedHz));
