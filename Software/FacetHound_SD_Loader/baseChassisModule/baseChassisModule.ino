@@ -639,21 +639,28 @@ static size_t meshSendIndex = 0;
 static uint32_t meshSendLastMs = 0;
 static uint8_t meshBeginAttempts = 0;
 static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
+static bool meshRecoveryPending = false;
+static uint32_t meshRecoveryAfterMs = 0;
 
 static void retryMeshTransfer(const char* reason)
 {
     Serial.print("@GEM,DISPLAY_RETRY,"); Serial.println(reason);
+    Serial.print("@GEM,TRANSFER_STATE,stage=");Serial.print(meshSendStage);
+    Serial.print(",row=");Serial.println(meshSendIndex);
     if (++meshRestartCount <= 2) {
         meshSendStage = 1; meshSendIndex = 0; meshBeginAttempts = 0;
         meshRowRetries = 0; meshSendLastMs = millis();
     } else {
         meshSendStage = 0;
+        meshRecoveryPending = true;
+        meshRecoveryAfterMs = millis();
         Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(reason);
     }
 }
 
 static void sendActiveMesh()
 {
+    meshRecoveryPending = false;
     meshSendStage = 9;
     meshSendIndex = 0;
     meshBeginAttempts = 0;
@@ -681,7 +688,21 @@ static void sendActiveMesh()
 
 static void meshTransferTask()
 {
+    const uint32_t now = millis();
+    const bool displayReady = lastDisplayRoundTripMs && now-lastDisplayRoundTripMs<2500;
+    if (meshRecoveryPending && activeGemLoaded && displayReady &&
+        now-meshRecoveryAfterMs>=5000) {
+        Serial.println("@GEM,DISPLAY_RECOVER");
+        sendActiveMesh();
+    }
     if (!meshSendStage) return;
+    // Do not exhaust retries while the display is booting or disconnected.
+    // A restored two-way link restarts the transaction from BEGIN, never mid-row.
+    if (!displayReady) {
+        meshSendStage=1;meshSendIndex=0;meshBeginAttempts=0;
+        meshRowRetries=0;meshSendLastMs=now;
+        return;
+    }
     if (meshSendStage==9) {
         if (millis()-meshSendLastMs>1000) meshSendStage=1;
         return;
@@ -700,7 +721,9 @@ static void meshTransferTask()
             meshSendStage = 1;
             return;
         }
-        if (millis() - meshSendLastMs > 3000) {
+        // Completing the mesh builds display-side structures and can take
+        // longer than a BEGIN acknowledgement, especially during the splash.
+        if (millis() - meshSendLastMs > (meshSendStage==7 ? 10000UL : 3000UL)) {
             retryMeshTransfer("mesh acknowledgment timeout");
         }
         return;
@@ -1249,7 +1272,7 @@ static void applyConfigAction(char* actionText)
             hardStopTwist(S);S.indexSpinRpm=0;S.twistLock=0;setTwistDriverEnabled(false);
             hardStopZ();S.zLock=0;setZedDriverEnabled(false);
             activeGemLoaded=false;activeGemDesign=GemSdDesign();activeGemGeometry=GemRuntimeGeometry();
-            meshSendStage=0;savedGemRestorePending=false;savedGemRestoreFailed=false;
+            meshSendStage=0;meshRecoveryPending=false;savedGemRestorePending=false;savedGemRestoreFailed=false;
             S.crownCheatTurns=S.pavilionCheatTurns=S.temporaryCheatTurns=0;S.cheatGemId=0;
             updateWheelIndex(S,BuiltinGem::kWheelIndex);
             S.markPoints.clear();

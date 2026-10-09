@@ -653,12 +653,16 @@ static void setMotorPins(SystemState &S)
 #endif
 }
 
-static void configurePump()
+static void configurePump(bool reinitializing = false)
 {
-    // Disable the output before resetting UART/register state.
-    pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
-    pumpSerial.flush();
+    // Keep the original cold-start ordering. Only explicit reinitialization
+    // disables and drains an already-running UART before resetting it.
+    if(reinitializing) {
+        pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
+        pumpSerial.flush();
+    }
     pumpDriver.setup(pumpSerial, TMC2209_BAUD);
+    pumpDriver.setHardwareEnablePin(PUMP_EN_PIN);
     pumpDriver.setMicrostepsPerStep(PUMP_MICROSTEPS);
     pumpDriver.setRMSCurrent(PUMP_RMS_CURRENT, 0.11f);
     pumpDriver.enableAutomaticCurrentScaling();
@@ -666,7 +670,7 @@ static void configurePump()
     pumpDriver.enableInverseMotorDirection();
     pumpDriver.moveAtVelocity(0);
     pumpDriver.disable();
-    pumpSerial.flush();
+    if(reinitializing) pumpSerial.flush();
     lastPumpDir=-1;
     lastPumpFlow=-1;
 }
@@ -1191,7 +1195,7 @@ void printPumpStatus(const SystemState& S)
 
 void reinitializePump(SystemState& S)
 {
-    configurePump();
+    configurePump(true);
     updatePump(S); // Reapply even when direction and setpoint are unchanged.
     pumpSerial.flush();
     printPumpStatus(S);
