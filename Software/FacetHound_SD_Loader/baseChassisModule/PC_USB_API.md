@@ -19,6 +19,12 @@ the rate after confirmation. Mast/keyboard ports and display firmware are not
 reconfigured. Continued TRY messages mean no round trip at either supported
 rate, not a geometry-parser failure.
 
+Restoring the saved gem does not rewrite its already-saved SD selection marker;
+new selections still save normally. After loading, three bounded PING attempts
+test the existing link before model metadata/cache/mesh transmission. USB reports
+`@GEM,POSTLOAD_PING_OK` or `@GEM,DISPLAY_ERROR,POSTLOAD_PING_TIMEOUT`.
+No UART resets or baud changes occur during this post-load test.
+
 ## Transport and framing
 
 - USB CDC serial, conventionally opened as 115200 baud, 8-N-1. USB CDC does

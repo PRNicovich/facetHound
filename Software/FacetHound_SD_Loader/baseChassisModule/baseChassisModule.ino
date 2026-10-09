@@ -43,6 +43,7 @@ char activeGemCacheStatus[20] = "NONE";
 int pendingGemLoad = -1;
 bool savedGemRestoreFailed = false;
 bool savedGemRestorePending = true;
+bool restoringSavedGem = false;
 uint32_t pendingGemLoadMs = 0;
 
 static const float TWIST_ENCODER_COUNTS = 4096.0f;
@@ -678,6 +679,11 @@ static size_t meshSendIndex = 0;
 static uint32_t meshSendLastMs = 0;
 static uint8_t meshBeginAttempts = 0;
 static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
+static char meshCacheRequest[40] = {}, meshProbeToken[40] = {};
+static uint32_t meshProbeSequence = 0;
+static uint8_t meshProbeAttempts = 0;
+static bool gemAnnouncementPending = false;
+static void announceLoadedGem();
 
 static void retryMeshTransfer(const char* reason)
 {
@@ -694,7 +700,7 @@ static void retryMeshTransfer(const char* reason)
 static void sendActiveMesh()
 {
     if (!displayBaudConfirmed) { displayMeshRequested = true; return; }
-    meshSendStage = 9;
+    meshSendStage = 10; // Verify the link again after the synchronous load.
     meshSendIndex = 0;
     meshBeginAttempts = 0;
     meshRestartCount = 0;
@@ -715,14 +721,37 @@ static void sendActiveMesh()
     for (const auto& p:activeGemGeometry.planes) {
         add(p.angleDegrees); add(p.index); add(p.tier); add(p.facet); add(p.name);
     }
-    char key[40]; snprintf(key,sizeof(key),"@MESHCACHE,%016llx",(unsigned long long)hash);
-    if (activeGemLoaded) sendDisplayLine(key); else meshSendStage=1;
+    snprintf(meshCacheRequest,sizeof(meshCacheRequest),"@MESHCACHE,%016llx",(unsigned long long)hash);
+    snprintf(meshProbeToken,sizeof(meshProbeToken),"BASE_AFTER_LOAD_%lu",(unsigned long)++meshProbeSequence);
+    meshProbeAttempts = 0;
+    if (!activeGemLoaded) meshSendStage=1;
 }
 
 static void meshTransferTask()
 {
     if (!displayBaudConfirmed) return;
     if (!meshSendStage) return;
+    if (meshSendStage == 10) {
+        if (!meshProbeAttempts || millis()-meshSendLastMs >= 750) {
+            if (meshProbeAttempts >= 3) {
+                meshSendStage = 0;
+                Serial.println("@GEM,DISPLAY_ERROR,POSTLOAD_PING_TIMEOUT");
+                return;
+            }
+            ++meshProbeAttempts;
+            meshSendLastMs = millis();
+            dispSerial.print("\n@PING,"); dispSerial.println(meshProbeToken);
+            Serial.print("@GEM,POSTLOAD_PING,"); Serial.println(meshProbeAttempts);
+        }
+        return;
+    }
+    if (meshSendStage == 11) {
+        if (gemAnnouncementPending) announceLoadedGem();
+        sendDisplayLine(meshCacheRequest);
+        meshSendStage = 9;
+        meshSendLastMs = millis();
+        return;
+    }
     if (meshSendStage==9) {
         if (millis()-meshSendLastMs>1000) meshSendStage=1;
         return;
@@ -1188,6 +1217,22 @@ static void reportLoadLinkState(const char* stage)
     Serial.println();
 }
 
+static void announceLoadedGem()
+{
+    gemAnnouncementPending = false;
+    char title[GEM_SD_TITLE_LENGTH] = {};
+    safeProtocolText(activeGemDesign.title, title, sizeof(title));
+    sendCfgAck("LOAD_SD_FILE", title);
+    sendCfgText("SD_ACTIVE", title);
+    sendCfgCount("SD_CUT_COUNT", activeGemDesign.cuts.size());
+    sendCfgCount("SD_TIER_COUNT", activeGemDesign.tierCount);
+    sendCfgText("GEM_CACHE", activeGemCacheStatus);
+    sendCfgFloat("WHEEL_INDEX", S.wheelIndex);
+    sendCfgCount("POSITION_COUNT", S.markPoints.size());
+    sendActiveCut(true);
+    sendDisplayLine("@GEMSELECTED,SD");
+}
+
 static void applyConfigAction(char* actionText)
 {
     char* action = nullptr;
@@ -1317,7 +1362,7 @@ static void applyConfigAction(char* actionText)
             hardStopTwist(S);S.indexSpinRpm=0;S.twistLock=0;setTwistDriverEnabled(false);
             hardStopZ();S.zLock=0;setZedDriverEnabled(false);
             activeGemLoaded=false;activeGemDesign=GemSdDesign();activeGemGeometry=GemRuntimeGeometry();
-            meshSendStage=0;savedGemRestorePending=false;savedGemRestoreFailed=false;
+            meshSendStage=0;gemAnnouncementPending=false;savedGemRestorePending=false;savedGemRestoreFailed=false;
             S.crownCheatTurns=S.pavilionCheatTurns=S.temporaryCheatTurns=0;S.cheatGemId=0;
             updateWheelIndex(S,BuiltinGem::kWheelIndex);
             S.markPoints.clear();
@@ -1399,26 +1444,19 @@ static void applyConfigAction(char* actionText)
 
         applyLoadedGemDesign(std::move(candidate), std::move(candidateGeometry));
         reportLoadLinkState("after_apply");
-        if (!rememberGemSdPath(sourcePath)) Serial.println("@GEM,REMEMBER_FAILED");
+        // Boot restore already read this path from the saved marker. Rewriting
+        // it here adds SD writes and blocking time without changing selection.
+        if (restoringSavedGem) Serial.println("@GEM_REMEMBER,UNCHANGED_RESTORE");
+        else if (!rememberGemSdPath(sourcePath)) Serial.println("@GEM,REMEMBER_FAILED");
         reportLoadLinkState("after_remember");
         Serial.print("@GEM,LOADED,"); Serial.println(sourcePath);
         Serial.print("@GEM,GEOMETRY,"); Serial.print(activeGemCacheStatus);
         Serial.print(",vertices="); Serial.print(activeGemGeometry.vertices.size());
         Serial.print(",edges="); Serial.print(activeGemGeometry.edges.size());
         Serial.print(",planes="); Serial.println(activeGemGeometry.planes.size());
-        char title[GEM_SD_TITLE_LENGTH] = {};
-        safeProtocolText(activeGemDesign.title, title, sizeof(title));
-        sendCfgAck(action, title);
-        sendCfgText("SD_ACTIVE", title);
-        sendCfgCount("SD_CUT_COUNT", activeGemDesign.cuts.size());
-        sendCfgCount("SD_TIER_COUNT", activeGemDesign.tierCount);
-        sendCfgText("GEM_CACHE", activeGemCacheStatus);
-        sendCfgFloat("WHEEL_INDEX", S.wheelIndex);
-        sendCfgCount("POSITION_COUNT", S.markPoints.size());
-        sendActiveCut(true);
+        gemAnnouncementPending = true;
         sendActiveMesh();
         savedGemRestoreFailed = false;
-        sendDisplayLine("@GEMSELECTED,SD");
         return;
     }
     sendCfgNak(action, "UNKNOWN_ACTION");
@@ -1433,7 +1471,9 @@ static bool restoreSavedGemForDisplay()
     savedGemRestoreFailed=index == -2;
     if(index>=0) {
         char action[48]; snprintf(action,sizeof(action),"LOAD_SD_FILE,%d",index);
+        restoringSavedGem = true;
         applyConfigAction(action);
+        restoringSavedGem = false;
         savedGemRestoreFailed=!activeGemLoaded && pendingGemLoad<0;
     }
     return true;
@@ -1617,6 +1657,13 @@ void displayRxTask()
                     Serial.print("@LINK,DISPLAY,ROUNDTRIP,");
                     Serial.println(valueText);
                 }
+            }
+            else if (!strcmp(key, "PONG") && meshSendStage == 10 &&
+                     !strcmp(valueText, meshProbeToken))
+            {
+                lastDisplayRoundTripMs = millis();
+                meshSendStage = 11;
+                Serial.println("@GEM,POSTLOAD_PING_OK");
             }
             else if (!strcmp(key, "PONG") && !strcmp(valueText, "BASE"))
             {
@@ -2546,6 +2593,7 @@ void rpmTask()
 void displayTask()
 {
     if (!displayBaudConfirmed) return;
+    if (meshSendStage == 10 || meshSendStage == 11) return;
     const uint32_t now = millis();
 
     if (displayLoopbackUntilMs && int32_t(displayLoopbackUntilMs - now) > 0)
