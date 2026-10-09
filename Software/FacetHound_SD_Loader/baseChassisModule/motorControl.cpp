@@ -8,18 +8,7 @@ AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
 
 static SerialPIO twistSerial(TWIST_TX_PIN, 0xff);
 static SerialPIO zedSerial  (ZED_TX_PIN, 0xff);
-class PumpSerial : public SerialPIO {
-public:
-    PumpSerial() : SerialPIO(PUMP_TX_PIN, 0xff) {}
-    uint32_t attempted=0, accepted=0;
-    size_t write(uint8_t value) override {
-        ++attempted;
-        size_t sent=SerialPIO::write(value);
-        accepted+=sent;
-        return sent;
-    }
-};
-static PumpSerial pumpSerial;
+static SerialPIO pumpSerial(PUMP_TX_PIN, 0xff);
 #if USE_LAP_MOTOR_RS485
 // Match the proven standalone BLD demo's explicit 32-byte SerialPIO queue.
 static SerialPIO lapMotorSerial(LAP_MOTOR_TX_PIN, LAP_MOTOR_RX_PIN, 32);
@@ -1216,9 +1205,6 @@ void updateMotors(SystemState &S)
 void printPumpStatus(const SystemState& S)
 {
     Serial.print("@PUMP,uart_ready=");Serial.print(bool(pumpSerial)?1:0);
-    Serial.print(",tx_attempted=");Serial.print(pumpSerial.attempted);
-    Serial.print(",tx_accepted=");Serial.print(pumpSerial.accepted);
-    Serial.print(",tx_failed=");Serial.print(pumpSerial.attempted-pumpSerial.accepted);
     Serial.print(",enable_pin=");Serial.print(digitalRead(PUMP_EN_PIN));
     Serial.print(",dir=");Serial.print(S.flow_dir);
     Serial.print(",step_test=");Serial.print(pumpStepTest?1:0);

@@ -9,6 +9,16 @@ MOTORS = (ROOT / "baseChassisModule/motorControl.cpp").read_text()
 
 
 class TransferContracts(unittest.TestCase):
+    def test_pump_uses_original_serial_class(self):
+        self.assertIn("static SerialPIO pumpSerial(PUMP_TX_PIN, 0xff);", MOTORS)
+        self.assertNotIn("class PumpSerial", MOTORS)
+
+    def test_original_usb_reset_order(self):
+        setup = BASE.split("void setup()", 1)[1].split("void loop()", 1)[0]
+        self.assertLess(setup.index("initSteppers();"), setup.index("rp2040.restart();"))
+        self.assertLess(setup.index("rp2040.restart();"), setup.index("Serial.begin(115200);"))
+        self.assertLess(setup.index("Serial.begin(115200);"), setup.index("delay(500);"))
+
     def test_final_ack_before_redraw(self):
         body = DISPLAY.split("if (runtimeGemMesh().finishTransfer())", 1)[1]
         self.assertLess(body.index('sendLineBoth("@MESHACK,READY")'),

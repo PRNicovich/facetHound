@@ -61,7 +61,7 @@ unknown lines for forward compatibility.
 | `PUMP REV` | Set reverse pump direction | `@ACK,PUMP` |
 | `PUMP OFF` | Stop the pump direction command | `@ACK,PUMP` |
 | `PUMP REINIT` | Disable output, re-send original pump configuration, then reapply current direction/speed (resumes if commanded on) | `@PUMP,...` then `@ACK,PUMP,REINIT` |
-| `PUMP STATUS` | UART-ready state, transmitted-byte counters, enable pin, `drive=STEP_DIR`, generated STEP frequency and requested microsteps; not driver readback | `@PUMP,...` |
+| `PUMP STATUS` | UART-ready state, enable pin, `drive=STEP_DIR`, generated STEP frequency and requested microsteps; not driver readback | `@PUMP,...` |
 | `PUMP STEPTEST` | With lap paused (measured RPM <= 10), stops/unlocks index and Z and disables index servo, then pulses GP20 at up to 200 Hz for 5 seconds using GP21 direction. Does not require a loaded gem or display acknowledgment. Stops automatically; `PUMP OFF`/`STOP` abort. Tests STEP/DIR instead of UART velocity. No calibration change; axes remain unlocked. | `@PUMP_STEPTEST,START,...` then `@PUMP_STEPTEST,DONE,pulses=...` |
 | `STOP` | Stop index, Z, lap, and pump commands | `@ACK,STOP` |
 
