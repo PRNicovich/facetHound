@@ -62,6 +62,7 @@ unknown lines for forward compatibility.
 | `PUMP OFF` | Stop the pump direction command | `@ACK,PUMP` |
 | `PUMP REINIT` | Disable output, re-send original pump configuration, then reapply current direction/speed (resumes if commanded on) | `@PUMP,...` then `@ACK,PUMP,REINIT` |
 | `PUMP STATUS` | UART-ready state, transmitted-byte counters, enable pin and requested velocity/microsteps; not driver readback | `@PUMP,...` |
+| `PUMP STEPTEST` | With axes/servo/lap stopped and mesh idle, pulse GP20 at up to 200 Hz for 5 seconds using GP21 direction. Stops automatically; `PUMP OFF`/`STOP` abort. Tests STEP/DIR instead of UART velocity. No calibration change. | `@PUMP_STEPTEST,START,...` then `@PUMP_STEPTEST,DONE,pulses=...` |
 | `STOP` | Stop index, Z, lap, and pump commands | `@ACK,STOP` |
 
 `GEM LOAD <index>` enters a folder when the selected SD LIST entry is a directory;

@@ -4,6 +4,7 @@
 struct SystemState;
 void reinitializePump(SystemState& S);
 void printPumpStatus(const SystemState& S);
+void startPumpStepTest(SystemState& S);
 void faultHoldTwist(SystemState &S);
 bool indexMotionFaultLatched();
 void startIndexPolarityProbe(SystemState &S);

@@ -60,6 +60,8 @@ static int lastEscDir = -1;
 static int lastEscRpm = -1;
 static int lastPumpDir = -1;
 static int lastPumpFlow = -1;
+static bool pumpStepTest=false;
+static uint32_t pumpTestStartedMs=0,pumpTestLastPulseUs=0,pumpTestPulses=0;
 static bool twistDriverIsEnabled = false;
 static bool zedDriverIsEnabled = false;
 static LapMotorDiagnostics lapDiagnostics;
@@ -1128,6 +1130,24 @@ static void updateZMotor(SystemState &S)
 
 static void updatePump(SystemState &S)
 {
+    if(pumpStepTest) {
+        if(millis()-pumpTestStartedMs>=5000 || S.flow_dir!=2) {
+            digitalWrite(PUMP_STEP_PIN,LOW);
+            digitalWrite(PUMP_EN_PIN,HIGH);
+            pumpDriver.moveAtVelocity(0);pumpDriver.disable();
+            pumpStepTest=false;S.flow_dir=1;S.dirty=true;
+            lastPumpDir=-1;lastPumpFlow=-1;
+            Serial.print("@PUMP_STEPTEST,DONE,pulses=");Serial.println(pumpTestPulses);
+        } else {
+            uint32_t now=micros();
+            if(now-pumpTestLastPulseUs>=5000) {
+                pumpTestLastPulseUs=now;
+                digitalWrite(PUMP_STEP_PIN,HIGH);delayMicroseconds(3);
+                digitalWrite(PUMP_STEP_PIN,LOW);++pumpTestPulses;
+            }
+            return;
+        }
+    }
     int flow = int(S.flowSetpoint);
 
     if (S.flow_dir == lastPumpDir && flow == lastPumpFlow)
@@ -1187,18 +1207,39 @@ void printPumpStatus(const SystemState& S)
     Serial.print(",tx_failed=");Serial.print(pumpSerial.attempted-pumpSerial.accepted);
     Serial.print(",enable_pin=");Serial.print(digitalRead(PUMP_EN_PIN));
     Serial.print(",dir=");Serial.print(S.flow_dir);
+    Serial.print(",step_test=");Serial.print(pumpStepTest?1:0);
+    Serial.print(",step_pulses=");Serial.print(pumpTestPulses);
     Serial.print(",velocity_command=");
-    Serial.print((S.flow_dir==0 || S.flow_dir==2)?int32_t(S.flowSetpoint)*4:0);
+    Serial.print(!pumpStepTest && (S.flow_dir==0 || S.flow_dir==2)?int32_t(S.flowSetpoint)*4:0);
     Serial.print(",microsteps_requested=");Serial.print(PUMP_MICROSTEPS);
     Serial.println(",driver_readback=unavailable");
 }
 
 void reinitializePump(SystemState& S)
 {
+    pumpStepTest=false;
+    digitalWrite(PUMP_STEP_PIN,LOW);
     configurePump(true);
     updatePump(S); // Reapply even when direction and setpoint are unchanged.
     pumpSerial.flush();
     printPumpStatus(S);
+}
+
+void startPumpStepTest(SystemState& S)
+{
+    // Exercise the existing STEP/DIR wires instead of the UART velocity generator.
+    // UART is still needed to clear a previously accepted VACTUAL command.
+    digitalWrite(PUMP_EN_PIN,HIGH);
+    pumpDriver.moveUsingStepDirInterface();
+    pumpDriver.enable();
+    pumpSerial.flush();
+    digitalWrite(PUMP_EN_PIN,HIGH);
+    digitalWrite(PUMP_STEP_PIN,LOW);pinMode(PUMP_STEP_PIN,OUTPUT);
+    digitalWrite(PUMP_DIR_PIN,LOW);pinMode(PUMP_DIR_PIN,OUTPUT);
+    pumpTestPulses=0;pumpTestStartedMs=millis();pumpTestLastPulseUs=micros();
+    S.flow_dir=2;pumpStepTest=true;
+    digitalWrite(PUMP_EN_PIN,LOW);
+    Serial.println("@PUMP_STEPTEST,START,max_hz=200,timeout_ms=5000");
 }
 
 void updateWheelIndex(SystemState &S, float newWheelValue)

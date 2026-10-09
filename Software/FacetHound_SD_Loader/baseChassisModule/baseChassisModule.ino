@@ -639,28 +639,21 @@ static size_t meshSendIndex = 0;
 static uint32_t meshSendLastMs = 0;
 static uint8_t meshBeginAttempts = 0;
 static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
-static bool meshRecoveryPending = false;
-static uint32_t meshRecoveryAfterMs = 0;
 
 static void retryMeshTransfer(const char* reason)
 {
     Serial.print("@GEM,DISPLAY_RETRY,"); Serial.println(reason);
-    Serial.print("@GEM,TRANSFER_STATE,stage=");Serial.print(meshSendStage);
-    Serial.print(",row=");Serial.println(meshSendIndex);
     if (++meshRestartCount <= 2) {
         meshSendStage = 1; meshSendIndex = 0; meshBeginAttempts = 0;
         meshRowRetries = 0; meshSendLastMs = millis();
     } else {
         meshSendStage = 0;
-        meshRecoveryPending = true;
-        meshRecoveryAfterMs = millis();
         Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(reason);
     }
 }
 
 static void sendActiveMesh()
 {
-    meshRecoveryPending = false;
     meshSendStage = 9;
     meshSendIndex = 0;
     meshBeginAttempts = 0;
@@ -688,21 +681,7 @@ static void sendActiveMesh()
 
 static void meshTransferTask()
 {
-    const uint32_t now = millis();
-    const bool displayReady = lastDisplayRoundTripMs && now-lastDisplayRoundTripMs<2500;
-    if (meshRecoveryPending && activeGemLoaded && displayReady &&
-        now-meshRecoveryAfterMs>=5000) {
-        Serial.println("@GEM,DISPLAY_RECOVER");
-        sendActiveMesh();
-    }
     if (!meshSendStage) return;
-    // Do not exhaust retries while the display is booting or disconnected.
-    // A restored two-way link restarts the transaction from BEGIN, never mid-row.
-    if (!displayReady) {
-        meshSendStage=1;meshSendIndex=0;meshBeginAttempts=0;
-        meshRowRetries=0;meshSendLastMs=now;
-        return;
-    }
     if (meshSendStage==9) {
         if (millis()-meshSendLastMs>1000) meshSendStage=1;
         return;
@@ -721,9 +700,7 @@ static void meshTransferTask()
             meshSendStage = 1;
             return;
         }
-        // Completing the mesh builds display-side structures and can take
-        // longer than a BEGIN acknowledgement, especially during the splash.
-        if (millis() - meshSendLastMs > (meshSendStage==7 ? 10000UL : 3000UL)) {
+        if (millis() - meshSendLastMs > 3000) {
             retryMeshTransfer("mesh acknowledgment timeout");
         }
         return;
@@ -1272,7 +1249,7 @@ static void applyConfigAction(char* actionText)
             hardStopTwist(S);S.indexSpinRpm=0;S.twistLock=0;setTwistDriverEnabled(false);
             hardStopZ();S.zLock=0;setZedDriverEnabled(false);
             activeGemLoaded=false;activeGemDesign=GemSdDesign();activeGemGeometry=GemRuntimeGeometry();
-            meshSendStage=0;meshRecoveryPending=false;savedGemRestorePending=false;savedGemRestoreFailed=false;
+            meshSendStage=0;savedGemRestorePending=false;savedGemRestoreFailed=false;
             S.crownCheatTurns=S.pavilionCheatTurns=S.temporaryCheatTurns=0;S.cheatGemId=0;
             updateWheelIndex(S,BuiltinGem::kWheelIndex);
             S.markPoints.clear();
@@ -2331,6 +2308,12 @@ static void handleUsbCommand(char* line)
         }
         else
         {
+            if (!strcasecmp(mode, "STEPTEST")) {
+                if(S.twistLock || S.zLock || S.spinServoIdx || S.motorDir==1 || S.motorDir==3 || meshSendStage) {
+                    Serial.println("@ERR,PUMP,stop motion and finish gem loading before STEPTEST");return;
+                }
+                startPumpStepTest(S);return;
+            }
             if (!strcasecmp(mode, "REINIT")) {
                 reinitializePump(S);
                 Serial.println("@ACK,PUMP,REINIT");return;
@@ -2339,7 +2322,7 @@ static void handleUsbCommand(char* line)
             if (!strcasecmp(mode, "FWD")) S.flow_dir = 2;
             else if (!strcasecmp(mode, "REV")) S.flow_dir = 0;
             else if (!strcasecmp(mode, "OFF")) S.flow_dir = 1;
-            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF|REINIT|STATUS"); return; }
+            else { Serial.println("@ERR,PUMP,expected FWD|REV|OFF|REINIT|STATUS|STEPTEST"); return; }
             Serial.println("@ACK,PUMP");
         }
         S.dirty = true;
