@@ -641,6 +641,7 @@ static uint8_t meshBeginAttempts = 0;
 static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
 static uint8_t meshEndAttempts = 0;
 static char meshCacheRequest[40] = {};
+static uint8_t meshBeginRxSamples = 0;
 
 static void retryMeshTransfer(const char* reason)
 {
@@ -648,6 +649,9 @@ static void retryMeshTransfer(const char* reason)
     Serial.print("@GEM,ACK_WAIT,stage="); Serial.print(meshSendStage);
     Serial.print(",row_stage="); Serial.print(meshRowStage);
     Serial.print(",next_row="); Serial.println(meshSendIndex);
+    Serial.print("@GEM,ACK_LINK,rx_bytes=");Serial.print(displayRxCount);
+    Serial.print(",roundtrip_age_ms=");Serial.print(lastDisplayRoundTripMs ? millis()-lastDisplayRoundTripMs : 0);
+    Serial.print(",roundtrip_seen=");Serial.println(lastDisplayRoundTripMs ? 1 : 0);
     if (++meshRestartCount <= 2) {
         // Check the existing cache identity first: READY may have been lost
         // after the display successfully committed this exact model.
@@ -734,17 +738,16 @@ static void meshTransferTask()
 
     if (meshSendStage == 1) {
         ++meshBeginAttempts;
-        dispSerial.print("@MESHBEGIN,");
-        dispSerial.print(activeGemGeometry.vertices.size());
-        dispSerial.print(",");
-        dispSerial.print(activeGemGeometry.edges.size());
-        dispSerial.print(",");
-        dispSerial.print(activeGemGeometry.planes.size());
-        dispSerial.print(",");
-        dispSerial.print(activeGemDesign.wheelIndex, 4);
-        dispSerial.print(",");
-        dispSerial.print(activeGemGeometry.radius, 7);
-        dispSerial.print(','); dispSerial.println(activeGemDesign.designIndexSign);
+        char beginLine[100];
+        snprintf(beginLine,sizeof(beginLine),"@MESHBEGIN,%u,%u,%u,%.4f,%.7f,%d",
+            unsigned(activeGemGeometry.vertices.size()),unsigned(activeGemGeometry.edges.size()),
+            unsigned(activeGemGeometry.planes.size()),double(activeGemDesign.wheelIndex),
+            double(activeGemGeometry.radius),int(activeGemDesign.designIndexSign));
+        size_t accepted=dispSerial.println(beginLine);
+        Serial.print("@GEM,BEGIN_TX,accepted=");Serial.print(accepted);
+        Serial.print(",expected=");Serial.print(strlen(beginLine)+2);
+        Serial.print(",line=");Serial.println(beginLine);
+        meshBeginRxSamples=0;
         meshSendStage = 2;
         return;
     }
@@ -1396,6 +1399,13 @@ void displayRxTask()
         {
             dispBuf[dispIdx] = '\0';
             dispIdx = 0;
+
+            // Bounded evidence for a BEGIN failure, without flooding USB with
+            // mast samples or requiring another manual TRACE command.
+            if(meshSendStage==2 && meshBeginRxSamples<4) {
+                ++meshBeginRxSamples;
+                Serial.print("@GEM,BEGIN_RX,");Serial.println(dispBuf);
+            }
 
             if (uartTraceEnabled)
             {
@@ -2652,7 +2662,8 @@ void autoSave()
     // Flash programming stalls execution. Do not interrupt navigation or
     // STEP pulses to save the cursor/target after each key in a burst.
     if (millis() - lastKeyboardActionMs < 1500 || twistMotionActive() ||
-        zedDirStep.distanceToGo() != 0)
+        zedDirStep.distanceToGo() != 0 ||
+        ((S.flow_dir==0 || S.flow_dir==2) && S.flowSetpoint>0))
         return;
 
     lastSave = millis();
@@ -2813,6 +2824,11 @@ void setup()
     lastRpmSampleMs = millis();
 
     Serial.println("BASE READY OLD MOTION NEW COMMS");
+    Serial.print("@BASE_RUNTIME,cpu_hz=");Serial.print(rp2040.f_cpu());
+    Serial.print(",heap_free=");Serial.print(rp2040.getFreeHeap());
+    Serial.print(",keyboard_uart=");Serial.print(bool(keysSerial)?1:0);
+    Serial.print(",display_uart=");Serial.print(bool(dispSerial)?1:0);
+    Serial.print(",mast_uart=");Serial.println(bool(mastSerial)?1:0);
     Serial.println("@BUILD,BASE,INTEGRATION-RELEASE-20260918");
     Serial.print("KEYBOARD UART MAP: ");
     Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");

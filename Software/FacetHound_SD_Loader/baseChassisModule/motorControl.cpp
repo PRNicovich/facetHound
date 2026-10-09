@@ -1,6 +1,7 @@
 #include "motorControl.h"
 #include <math.h>
 #include "BLD510B.h"
+#include <pico/time.h>
 
 AccelStepper twistDirStep(AccelStepper::DRIVER, TWIST_STEP_PIN, TWIST_DIR_PIN);
 AccelStepper zedDirStep  (AccelStepper::DRIVER, ZED_STEP_PIN,   ZED_DIR_PIN);
@@ -62,6 +63,24 @@ static int lastPumpDir = -1;
 static int lastPumpFlow = -1;
 static bool pumpStepTest=false;
 static uint32_t pumpTestStartedMs=0,pumpTestLastPulseUs=0,pumpTestPulses=0;
+static repeating_timer_t pumpPulseTimer;
+static bool pumpPulseTimerActive=false;
+static volatile bool pumpPulseHigh=false;
+static float pumpStepHz=0;
+
+static bool __not_in_flash_func(pumpPulseTick)(repeating_timer_t*)
+{
+    pumpPulseHigh=!pumpPulseHigh;
+    gpio_put(PUMP_STEP_PIN,pumpPulseHigh);
+    return true;
+}
+
+static void stopPumpPulses()
+{
+    if(pumpPulseTimerActive) cancel_repeating_timer(&pumpPulseTimer);
+    pumpPulseTimerActive=false;pumpPulseHigh=false;pumpStepHz=0;
+    digitalWrite(PUMP_STEP_PIN,LOW);
+}
 static bool twistDriverIsEnabled = false;
 static bool zedDriverIsEnabled = false;
 static LapMotorDiagnostics lapDiagnostics;
@@ -657,6 +676,8 @@ static void setMotorPins(SystemState &S)
 
 static void configurePump(bool reinitializing = false)
 {
+    stopPumpPulses();
+    pinMode(PUMP_STEP_PIN,OUTPUT);pinMode(PUMP_DIR_PIN,OUTPUT);
     // Keep the original cold-start ordering. Only explicit reinitialization
     // disables and drains an already-running UART before resetting it.
     if(reinitializing) {
@@ -1156,39 +1177,32 @@ static void updatePump(SystemState &S)
     lastPumpDir = S.flow_dir;
     lastPumpFlow = flow;
 
-    switch (S.flow_dir)
-    {
-        case 0:
-            pumpDriver.enable();
-            pumpDriver.enableInverseMotorDirection();
-            pumpDriver.moveAtVelocity(int32_t(flow) * 4);
-            break;
-
-        case 1:
-            pumpDriver.disable();
-            pumpDriver.enableInverseMotorDirection();
-            pumpDriver.moveAtVelocity(0);
-            break;
-
-        case 2:
-            pumpDriver.enable();
-            pumpDriver.disableInverseMotorDirection();
-            pumpDriver.moveAtVelocity(int32_t(flow) * 4);
-            break;
-
-        case 3:
-            pumpDriver.disable();
-            pumpDriver.disableInverseMotorDirection();
-            pumpDriver.moveAtVelocity(0);
-            break;
-
-        default:
-            S.flow_dir = 1;
-            lastPumpDir = S.flow_dir;
-            pumpDriver.disable();
-            pumpDriver.moveAtVelocity(0);
-            break;
+    // The installed pump moves with STEPTEST but not UART VACTUAL. Use that
+    // proven STEP/DIR path for normal operation too. A hardware alarm keeps
+    // pulses independent of SD reads, geometry building and display traffic.
+    stopPumpPulses();
+    digitalWrite(PUMP_EN_PIN,HIGH);
+    if((S.flow_dir!=0 && S.flow_dir!=2) || flow<=0) return;
+    if(flow>750) flow=750;
+    pumpDriver.moveUsingStepDirInterface();
+    pumpDriver.disableInverseMotorDirection();
+    pumpDriver.enable();
+    pumpSerial.flush();
+    digitalWrite(PUMP_EN_PIN,HIGH);
+    digitalWrite(PUMP_DIR_PIN,S.flow_dir==0 ? HIGH : LOW);
+    // TMC2209 library documents 0.715 microsteps/s per VACTUAL unit at
+    // its nominal internal clock. Preserve the old flow*4 velocity scaling;
+    // this is not a new volumetric calibration or microstep readback.
+    const float requestedHz=float(flow)*4.0f*0.715f;
+    const int64_t halfPeriodUs=int64_t(lroundf(500000.0f/requestedHz));
+    pumpPulseTimerActive=add_repeating_timer_us(-halfPeriodUs,pumpPulseTick,nullptr,&pumpPulseTimer);
+    if(!pumpPulseTimerActive) {
+        S.flow_dir=1;lastPumpDir=1;S.dirty=true;
+        Serial.println("@FAULT,PUMP,STEP_TIMER_UNAVAILABLE");
+        return;
     }
+    pumpStepHz=500000.0f/float(halfPeriodUs);
+    digitalWrite(PUMP_EN_PIN,LOW);
 }
 
 void updateMotors(SystemState &S)
@@ -1209,14 +1223,16 @@ void printPumpStatus(const SystemState& S)
     Serial.print(",dir=");Serial.print(S.flow_dir);
     Serial.print(",step_test=");Serial.print(pumpStepTest?1:0);
     Serial.print(",step_pulses=");Serial.print(pumpTestPulses);
+    Serial.print(",drive=STEP_DIR,step_hz=");Serial.print(pumpStepHz,3);
     Serial.print(",velocity_command=");
-    Serial.print(!pumpStepTest && (S.flow_dir==0 || S.flow_dir==2)?int32_t(S.flowSetpoint)*4:0);
+    Serial.print(0); // UART velocity generator is no longer used.
     Serial.print(",microsteps_requested=");Serial.print(PUMP_MICROSTEPS);
     Serial.println(",driver_readback=unavailable");
 }
 
 void reinitializePump(SystemState& S)
 {
+    stopPumpPulses();
     pumpStepTest=false;
     digitalWrite(PUMP_STEP_PIN,LOW);
     configurePump(true);
@@ -1227,6 +1243,7 @@ void reinitializePump(SystemState& S)
 
 void startPumpStepTest(SystemState& S)
 {
+    stopPumpPulses();
     // Exercise the existing STEP/DIR wires instead of the UART velocity generator.
     // UART is still needed to clear a previously accepted VACTUAL command.
     digitalWrite(PUMP_EN_PIN,HIGH);
