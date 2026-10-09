@@ -639,13 +639,22 @@ static size_t meshSendIndex = 0;
 static uint32_t meshSendLastMs = 0;
 static uint8_t meshBeginAttempts = 0;
 static uint8_t meshRowStage = 0, meshRowRetries = 0, meshRestartCount = 0;
+static uint8_t meshEndAttempts = 0;
+static char meshCacheRequest[40] = {};
 
 static void retryMeshTransfer(const char* reason)
 {
     Serial.print("@GEM,DISPLAY_RETRY,"); Serial.println(reason);
+    Serial.print("@GEM,ACK_WAIT,stage="); Serial.print(meshSendStage);
+    Serial.print(",row_stage="); Serial.print(meshRowStage);
+    Serial.print(",next_row="); Serial.println(meshSendIndex);
     if (++meshRestartCount <= 2) {
-        meshSendStage = 1; meshSendIndex = 0; meshBeginAttempts = 0;
+        // Check the existing cache identity first: READY may have been lost
+        // after the display successfully committed this exact model.
+        meshSendStage = 9; meshSendIndex = 0; meshBeginAttempts = 0;
+        meshEndAttempts = 0;
         meshRowRetries = 0; meshSendLastMs = millis();
+        sendDisplayLine(meshCacheRequest);
     } else {
         meshSendStage = 0;
         Serial.print("@GEM,DISPLAY_ERROR,"); Serial.println(reason);
@@ -659,6 +668,7 @@ static void sendActiveMesh()
     meshBeginAttempts = 0;
     meshRestartCount = 0;
     meshRowRetries = 0;
+    meshEndAttempts = 0;
     meshSendLastMs = millis();
     uint64_t hash=14695981039346656037ULL;
     auto add=[&](const auto& value) {
@@ -675,8 +685,8 @@ static void sendActiveMesh()
     for (const auto& p:activeGemGeometry.planes) {
         add(p.angleDegrees); add(p.index); add(p.tier); add(p.facet); add(p.name);
     }
-    char key[40]; snprintf(key,sizeof(key),"@MESHCACHE,%016llx",(unsigned long long)hash);
-    if (activeGemLoaded) sendDisplayLine(key); else meshSendStage=1;
+    snprintf(meshCacheRequest,sizeof(meshCacheRequest),"@MESHCACHE,%016llx",(unsigned long long)hash);
+    if (activeGemLoaded) sendDisplayLine(meshCacheRequest); else meshSendStage=1;
 }
 
 static void meshTransferTask()
@@ -696,12 +706,20 @@ static void meshTransferTask()
         return;
     }
     if (meshSendStage == 2 || meshSendStage == 7) {
+        if (meshSendStage == 7 && millis() - meshSendLastMs > 1000 && meshEndAttempts < 3) {
+            // MESHEND is idempotent on the receiver. Retry its confirmation,
+            // not the entire geometry, when the final ACK is dropped.
+            ++meshEndAttempts;
+            sendDisplayLine("@MESHEND,1");
+            meshSendLastMs = millis();
+            return;
+        }
         if (meshSendStage == 2 && millis() - meshSendLastMs > 1000 && meshBeginAttempts < 3) {
             meshSendStage = 1;
             return;
         }
         if (millis() - meshSendLastMs > 3000) {
-            retryMeshTransfer("mesh acknowledgment timeout");
+            retryMeshTransfer(meshSendStage == 2 ? "BEGIN acknowledgment timeout" : "READY acknowledgment timeout");
         }
         return;
     }
@@ -2309,9 +2327,13 @@ static void handleUsbCommand(char* line)
         else
         {
             if (!strcasecmp(mode, "STEPTEST")) {
-                if(S.twistLock || S.zLock || S.spinServoIdx || S.motorDir==1 || S.motorDir==3 || meshSendStage) {
-                    Serial.println("@ERR,PUMP,stop motion and finish gem loading before STEPTEST");return;
+                if(S.motorDir==1 || S.motorDir==3 || S.RPMValue>10) {
+                    Serial.println("@ERR,PUMP,pause lap before STEPTEST");return;
                 }
+                // This pump-only test must not depend on gem/display readiness.
+                // Stop index/Z/servo rather than requiring a working display to
+                // unlock them. Never resume these axes when the test finishes.
+                S.spinServoIdx=0;hardStopTwist(S);S.zLock=0;hardStopZ();
                 startPumpStepTest(S);return;
             }
             if (!strcasecmp(mode, "REINIT")) {
