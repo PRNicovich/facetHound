@@ -45,7 +45,13 @@ static const float TWIST_ENCODER_COUNTS = 4096.0f;
 
 static const float TIP_COUNTS_CLASSIC = 131072.0f;
 
-static const uint32_t DISPLAY_BAUD = 460800;
+// uiReno's rate first; retain compatibility with already-installed fast displays.
+static uint32_t displayBaud = 38400;
+static bool displayBaudConfirmed = false;
+static bool displayMeshRequested = false;
+static uint32_t displayBaudStartedMs = 0, displayBaudProbeMs = 0;
+static uint32_t displayBaudAttempt = 0;
+static char displayBaudToken[48] = {};
 // One short UART record per tick. The display-side SerialPIO FIFO is only 32
 // bytes, so sending the whole screen as one burst causes silent line loss.
 // One slot per loop opportunity, never a catch-up burst. 24 slots at 2 ms
@@ -406,7 +412,36 @@ void twistWatchdogTask()
 
 static void sendDisplayLine(const char* line)
 {
+    if (!displayBaudConfirmed) return;
     dispSerial.println(line);
+}
+
+static void displayLinkTask()
+{
+    // Startup only. Never retime an established link or restart the other UARTs.
+    if (displayBaudConfirmed) return;
+    const uint32_t now = millis();
+    if (!displayBaudAttempt || now - displayBaudStartedMs >= 3000) {
+        if (displayBaudAttempt) {
+            dispSerial.flush();
+            dispSerial.end();
+            displayBaud = displayBaud == 38400 ? 460800 : 38400;
+            dispSerial.begin(displayBaud);
+        }
+        dispIdx = 0;
+        ++displayBaudAttempt;
+        displayBaudStartedMs = now;
+        displayBaudProbeMs = now - 250;
+        snprintf(displayBaudToken, sizeof(displayBaudToken), "BASE_BAUD_%lu_%lu",
+                 (unsigned long)displayBaud, (unsigned long)displayBaudAttempt);
+        Serial.print("@DISPLAY_LINK,TRY,baud="); Serial.println(displayBaud);
+    }
+    if (now - displayBaudProbeMs >= 250) {
+        displayBaudProbeMs = now;
+        // Newline discards a partial record left by the previous baud attempt.
+        dispSerial.print("\n@PING,");
+        dispSerial.println(displayBaudToken);
+    }
 }
 
 static void sendCfgText(const char* id, const char* value)
@@ -654,6 +689,7 @@ static void retryMeshTransfer(const char* reason)
 
 static void sendActiveMesh()
 {
+    if (!displayBaudConfirmed) { displayMeshRequested = true; return; }
     meshSendStage = 9;
     meshSendIndex = 0;
     meshBeginAttempts = 0;
@@ -681,6 +717,7 @@ static void sendActiveMesh()
 
 static void meshTransferTask()
 {
+    if (!displayBaudConfirmed) return;
     if (!meshSendStage) return;
     if (meshSendStage==9) {
         if (millis()-meshSendLastMs>1000) meshSendStage=1;
@@ -1352,6 +1389,7 @@ static void applyConfigAction(char* actionText)
 
 static bool restoreSavedGemForDisplay()
 {
+    if (!displayBaudConfirmed) return false;
     if (!savedGemRestorePending || activeGemLoaded) return false;
     savedGemRestorePending=false;
     const int index=lastGemSdIndex();
@@ -1393,6 +1431,22 @@ void displayRxTask()
             *comma = '\0';
             const char* key = dispBuf + 1;
             char* valueText = comma + 1;
+
+            if (!displayBaudConfirmed) {
+                if (!strcmp(key, "CFGGET") && !strcmp(valueText, "MESH"))
+                    displayMeshRequested = true;
+                // Only an exact echoed challenge proves TX *and* RX at this rate.
+                // HELLO, byte counts, or an unsolicited MODE do not lock the rate.
+                if (displayBaudAttempt && !strcmp(key, "PONG") &&
+                    !strcmp(valueText, displayBaudToken)) {
+                    displayBaudConfirmed = true;
+                    lastDisplayRxMs = lastDisplayRoundTripMs = millis();
+                    displayRoundTripReported = true;
+                    Serial.print("@DISPLAY_LINK,READY,baud="); Serial.println(displayBaud);
+                    sendDisplayLine("@MODE,?");
+                }
+                continue;
+            }
 
             // Count raw bytes separately, but declare the link healthy only
             // after receiving a correctly framed protocol line.  This keeps a
@@ -1470,8 +1524,8 @@ void displayRxTask()
                 else if (!strcasecmp(valueText, "GEM_INFO")) sendLoadedGemInfo();
                 else if (!strcasecmp(valueText, "MESH"))
                 {
-                    restoreSavedGemForDisplay();
-                    sendActiveMesh();
+                    // Finish draining RX before entering the synchronous SD loader.
+                    displayMeshRequested = true;
                 }
                 else if (!strncasecmp(valueText, "POSITIONS,", 10))
                 {
@@ -2453,6 +2507,7 @@ void rpmTask()
 
 void displayTask()
 {
+    if (!displayBaudConfirmed) return;
     const uint32_t now = millis();
 
     if (displayLoopbackUntilMs && int32_t(displayLoopbackUntilMs - now) > 0)
@@ -2673,8 +2728,6 @@ static void forceSafeBootState()
 
 void setup()
 {
-    Serial.begin(115200);
-
     initSteppers();
     delay(100);
 
@@ -2687,10 +2740,14 @@ void setup()
     if (rp2040.getResetReason() == 1)
         rp2040.restart();
 
+    // uiReno's original USB ordering and settling delay.
+    Serial.begin(115200);
+    delay(500);
+
     initESCMotor();
 
     keysSerial.begin(115200);
-    dispSerial.begin(DISPLAY_BAUD);
+    dispSerial.begin(displayBaud);
     mastSerial.begin(115200);
 
     bool sdOk = beginGemSd();
@@ -2786,7 +2843,7 @@ void setup()
     Serial.println(KEYBOARD_UART_SWAP_TRIAL ? "SWAPPED base TX6/RX7" : "NORMAL base TX7/RX6");
     Serial.print("MAST UART MAP: ");
     Serial.println(MAST_UART_SWAP_TRIAL ? "SWAPPED base TX2/RX3" : "NORMAL base TX3/RX2");
-    Serial.println("DISPLAY UART: base TX5 -> display RX9; display TX8 -> base RX4; 460800 baud");
+    Serial.println("DISPLAY UART: base TX5 -> display RX9; display TX8 -> base RX4; probe 38400 then 460800 baud");
     Serial.println("Send STATUS or STREAM ON 500 to inspect link counters");
 }
 
@@ -2794,9 +2851,15 @@ void loop()
 {
     mastTask();
     displayRxTask();
+    displayLinkTask();
+    if (displayBaudConfirmed && displayMeshRequested) {
+        displayMeshRequested = false;
+        restoreSavedGemForDisplay();
+        if (!meshSendStage) sendActiveMesh();
+    }
     // MODE replies arrive even when the display retains its mesh and therefore
     // does not ask for CFGGET,MESH again. Restore before processing facet keys.
-    if(displayModeKnown && displayVisualMode!=0 && restoreSavedGemForDisplay())
+    if(displayModeKnown && displayVisualMode!=0 && restoreSavedGemForDisplay() && !meshSendStage)
         sendActiveMesh();
     keyboardTask();
     usbDiagnosticTask();

@@ -8,6 +8,17 @@ port and send these commands directly.
 This API is separate from the dedicated keyboard UART on GPIO 6/7 and from the
 base-to-display UART. Using USB CDC does not reconfigure either hardware link.
 
+At startup the base probes the display on the unchanged TX5/RX4 pins, first at
+uiReno's 38400 baud, then at 460800 for installed fast-display firmware. Each
+rate gets a 3-second window with an existing `@PING,<token>` probe every 250 ms.
+Only the matching `@PONG,<token>` confirms the rate; received byte counts and
+unsolicited messages do not. USB reports `@DISPLAY_LINK,TRY,baud=...` and
+`@DISPLAY_LINK,READY,baud=...`. Saved-gem restoration and model transmission wait
+for confirmation. Probing repeats if neither rate answers, but never changes
+the rate after confirmation. Mast/keyboard ports and display firmware are not
+reconfigured. Continued TRY messages mean no round trip at either supported
+rate, not a geometry-parser failure.
+
 ## Transport and framing
 
 - USB CDC serial, conventionally opened as 115200 baud, 8-N-1. USB CDC does
